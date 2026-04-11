@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "hands": {
+      "_comment_arch": "Choose ONE command line below based on your platform. Delete the other.",
+
+      "_option_x64": "For x64 Windows:",
+      "command": "C:/MCP/servers/hands.exe",
+
+      "_option_arm64": "For ARM64 Windows:",
+      "_command_arm64": "C:/MCP/servers/hands-arm64.exe",
+
+      "args": []
+    }
+  }
+}
