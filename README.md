@@ -18,8 +18,8 @@ Browser automation, Windows desktop automation, vision/OCR, and API discovery â€
 
 Grab the binary for your platform:
 
-- **x64 Windows**: [hands-x64-windows.exe](https://github.com/josephwander-arch/hands/releases/latest/download/hands-x64-windows.exe)
-- **ARM64 Windows**: [hands-arm64-windows.exe](https://github.com/josephwander-arch/hands/releases/latest/download/hands-arm64-windows.exe)
+- **x64 Windows**: [hands_x64_windows.exe](https://github.com/josephwander-arch/hands/releases/latest/download/hands_x64_windows.exe)
+- **ARM64 Windows**: [hands_arm64_windows.exe](https://github.com/josephwander-arch/hands/releases/latest/download/hands_arm64_windows.exe)
 
 Rename to `hands.exe` and place wherever you keep your MCP server binaries.
 
