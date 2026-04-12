@@ -1,0 +1,50 @@
+[package]
+name = "hands"
+version = "0.1.0"
+edition = "2021"
+description = "Unified interaction server: browser automation + UI automation + vision. The 'hands' that Claude uses to interact with everything on screen."
+
+[[bin]]
+name = "hands"
+path = "src/main.rs"
+
+[dependencies]
+# MCP protocol + async
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+chrono = "0.4"
+
+# Browser lib (CDP, scraping, smart_browse, etc.)
+browser-mcp = { path = "../browser-mcp" }
+
+# Vision (shared library - screenshot, OCR, diff, template match)
+vision-core = { path = "../vision-core" }
+
+# UIA (UI Automation - Windows native element inspection + input)
+uia-mcp = { path = "../uia-mcp" }
+
+# Image processing (for PrintWindow capture)
+image = "0.24"
+
+# Base64 encoding (for file_upload tool)
+base64 = "0.22"
+
+# Regex for URL pattern detection in browser_learn_api
+regex = "1"
+
+# Windows API for combo tools (drag, etc.)
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Shell",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
+]}
