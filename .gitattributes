@@ -1,0 +1,5 @@
+# Tell GitHub Linguist to classify docs/examples as documentation, not code
+*.md linguist-documentation
+docs/** linguist-documentation
+examples/** linguist-documentation
+.github/** linguist-documentation
