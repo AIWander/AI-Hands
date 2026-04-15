@@ -36,6 +36,12 @@ base64 = "0.22"
 # Regex for URL pattern detection in browser_learn_api
 regex = "1"
 
+# QR code decoding for TOTP 2FA registration
+rqrr = { version = "0.7", default-features = false }
+
+# Async utilities (catch_unwind for panic-safe meta-tool dispatch)
+futures = "0.3"
+
 # Windows API for combo tools (drag, etc.)
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

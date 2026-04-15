@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.1] - 2026-04-15 — Phase C Fix3
+
+### Fixed
+- **Meta-tool nested dispatch** — inline atomics pattern replaces nested meta-tool calls that caused double-dispatch errors
+- **Async Send bound** in `execute_step` — fixes compiler error when meta-tool futures cross await points
+- **Phase C instrumentation** — corrected tracing spans and error propagation in meta-tool dispatch path
+
+### Added
+- **`notify` tool** — Windows toast notifications (parity with local/manager servers)
+- **Meta-tool layer** (Phase A–C) — 10 meta-tools (`hands_navigate`, `hands_click`, `hands_read_page`, `hands_capture`, `hands_find`, `hands_type`, `hands_fill_form`, `hands_verify`, `hands_script`, `hands_app_action`) providing high-level orchestration over 87 browser/UIA/vision primitives with escalation ladders, session tracking, and self-healing retry logic
+- **QR/TOTP integration** — `hands_scan_qr` for 2FA registration flows
+- **Login recovery** — `hands_login_recovery` with template-based credential filling and submit detection
+
 ## v1.1.1 — Initial Public Release
 
 ### Browser Automation

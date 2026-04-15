@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 mod a11y_cache;
+mod meta;
 mod security;
 mod stealth;
 mod uia;
@@ -65,6 +66,9 @@ struct JsonRpcResponse {
 
 fn get_all_tool_definitions() -> Vec<Value> {
     let mut tools = Vec::new();
+
+    // --- Phase A Meta-tools (prepended — Claude defaults to these) ---
+    tools.extend(meta::meta_tool_definitions());
 
     // --- Browser tools (from browser-mcp lib) ---
     // Tools that support a11y_ref for accessibility-first interaction
@@ -1613,7 +1617,7 @@ fn handle_drag(args: &Value) -> Value {
     json!({"success": false, "error": "Drag only available on Windows"})
 }
 
-async fn handle_accessibility_snapshot(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
+pub(crate) async fn handle_accessibility_snapshot(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
     let root_selector = args.get("root_selector").and_then(|v| v.as_str()).unwrap_or("");
     let include_ignored = args.get("include_ignored").and_then(|v| v.as_bool()).unwrap_or(false);
     let max_depth = args.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(10);
@@ -2454,7 +2458,7 @@ async fn get_browser_url(browser: &browser_mcp::browser::SharedBrowser) -> Optio
 
 /// Resolve an a11y ref to a CSS selector by executing JS in the browser.
 /// The JS finds the element by role + accessible name, then generates a unique selector.
-async fn resolve_a11y_ref(
+pub(crate) async fn resolve_a11y_ref(
     ref_id: &str,
     _tool: &str,
     browser: &browser_mcp::browser::SharedBrowser,
@@ -2940,7 +2944,32 @@ fn dispatch_uia_tool(name: &str, args: &Value) -> Value {
 
 // ============ TOOL DISPATCH ============
 
-async fn handle_tool_call(name: &str, args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
+pub(crate) async fn handle_tool_call(name: &str, args: &Value, browser: &browser_mcp::browser::SharedBrowser, session: &meta::SessionHandle) -> Value {
+    // Phase A v2 Meta-tools (checked first — highest priority)
+    // Phase C fix1: catch_unwind boundary — meta-tool panics must never crash hands.exe
+    let meta_result = std::panic::AssertUnwindSafe(
+        meta::handle_meta_tool(name, args, browser, session)
+    );
+    match futures::FutureExt::catch_unwind(meta_result).await {
+        Ok(Some(result)) => return result,
+        Ok(None) => {} // Not a meta-tool, continue to other dispatch paths
+        Err(panic_info) => {
+            let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            eprintln!("[hands] PANIC CAUGHT in meta-tool '{}': {}", name, panic_msg);
+            return json!({
+                "success": false,
+                "error": format!("Internal error in '{}': {}", name, panic_msg),
+                "panic_caught": true,
+            });
+        }
+    }
+
     // Combo tools (unique to Hands)
     match name {
         "find_and_click" => return handle_find_and_click(args).await,
@@ -3137,7 +3166,7 @@ async fn handle_tool_call(name: &str, args: &Value, browser: &browser_mcp::brows
 
 // ============ MCP STDIO SERVER ============
 
-fn handle_request(request: &JsonRpcRequest, browser: &browser_mcp::browser::SharedBrowser, rt: &tokio::runtime::Handle) -> Option<JsonRpcResponse> {
+fn handle_request(request: &JsonRpcRequest, browser: &browser_mcp::browser::SharedBrowser, session: &meta::SessionHandle, rt: &tokio::runtime::Handle) -> Option<JsonRpcResponse> {
     let id = request.id.clone().unwrap_or(Value::Null);
     let method = request.method.as_deref().unwrap_or("");
 
@@ -3180,7 +3209,7 @@ fn handle_request(request: &JsonRpcRequest, browser: &browser_mcp::browser::Shar
                 .cloned()
                 .unwrap_or(json!({}));
 
-            let result = rt.block_on(handle_tool_call(tool_name, &tool_args, browser));
+            let result = rt.block_on(handle_tool_call(tool_name, &tool_args, browser, session));
 
             JsonRpcResponse {
                 jsonrpc: "2.0".into(),
@@ -3226,6 +3255,7 @@ fn main() {
         .expect("Failed to create tokio runtime");
 
     let browser = browser_mcp::browser::create_shared();
+    let session = meta::new_session();
 
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
@@ -3245,7 +3275,7 @@ fn main() {
             Err(_) => continue,
         };
 
-        if let Some(response) = handle_request(&request, &browser, rt.handle()) {
+        if let Some(response) = handle_request(&request, &browser, &session, rt.handle()) {
             let response_str = serde_json::to_string(&response).unwrap_or_default();
             let mut out = stdout.lock();
             let _ = writeln!(out, "{}", response_str);
