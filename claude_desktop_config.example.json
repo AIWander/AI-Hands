@@ -1,15 +1,13 @@
 {
   "mcpServers": {
     "hands": {
-      "_comment_arch": "Choose ONE command line below based on your platform. Delete the other.",
-
-      "_option_x64": "For x64 Windows:",
-      "command": "C:/MCP/servers/hands.exe",
-
-      "_option_arm64": "For ARM64 Windows:",
-      "_command_arm64": "C:/MCP/servers/hands-arm64.exe",
-
-      "args": []
+      "_comment_arch": "Choose the command path for your platform. x64 is the default.",
+      "_comment_x64": "x64 Windows (Intel/AMD):",
+      "command": "C:\\CPC\\servers\\hands.exe",
+      "_comment_arm64": "ARM64 Windows (Snapdragon/Qualcomm) — replace command above with:",
+      "_command_arm64": "C:\\CPC\\servers\\hands-arm64.exe",
+      "args": [],
+      "env": {}
     }
   }
 }

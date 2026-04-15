@@ -2,6 +2,22 @@
 
 **Hands** is a Rust MCP (Model Context Protocol) server that gives AI agents full desktop control through three automation tiers — not just pixel-guessing from screenshots.
 
+## Installation & Per-Machine Setup
+
+This is a standalone Rust MCP server for Claude Desktop / Claude Code. Each machine that runs the server needs its own copy of the binary plus a few config tweaks.
+
+**Quick install:**
+1. Download the right binary from [Releases](https://github.com/josephwander-arch/hands/releases) — `_arm64.exe` for Windows ARM64, `_x64.exe` for x64.
+2. Copy to `C:\CPC\servers\hands.exe`.
+3. Edit `%APPDATA%\Claude\claude_desktop_config.json` — paste the snippet from [`claude_desktop_config.example.json`](./claude_desktop_config.example.json) into your `mcpServers` object.
+4. Restart Claude Desktop.
+
+For full per-machine setup (paths, skills, credentials), see [`docs/per_machine_setup.md`](./docs/per_machine_setup.md).
+
+A future `cpc-setup.exe` helper will automate this entire process.
+
+---
+
 ## Why Hands?
 
 Anthropic's [Claude Computer Use](https://docs.anthropic.com/en/docs/agents-and-tools/computer-use) takes screenshots and clicks pixel coordinates. It works, but it's slow (screenshot after every action), imprecise (guessing where to click), and blind (no DOM, no accessibility tree, no structured data).
