@@ -493,29 +493,42 @@ async fn handle_focus(
     let target = find_single_window(&windows, wm, match_mode)?;
     let target_title = target.title.clone();
 
+    // Try hwnd-based focus first (more reliable), fall back to title if hwnd fails
     let rung_start = Instant::now();
-    let focus_args = if let Some(ref hwnd) = target.hwnd {
-        json!({"hwnd": hwnd})
+    let (focus_result, used_hwnd) = if let Some(ref hwnd) = target.hwnd {
+        let r = uia_lib::handle_tool_call("uia_focus_window", &json!({"hwnd": hwnd}));
+        let ok = r.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+        if ok {
+            (r, true)
+        } else {
+            // hwnd focus failed — fall back to title-based focus
+            let r2 = uia_lib::handle_tool_call("uia_focus_window", &json!({"title": &target_title}));
+            (r2, false)
+        }
     } else {
-        json!({"title": &target_title})
+        let r = uia_lib::handle_tool_call("uia_focus_window", &json!({"title": &target_title}));
+        (r, false)
     };
-    let focus_result = uia_lib::handle_tool_call("uia_focus_window", &focus_args);
     let rung_ms = rung_start.elapsed().as_millis() as u64;
 
     let focus_ok = focus_result.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
     if focus_ok {
-        rungs.push(RungAttempt::ok("uia_focus_window", rung_ms));
+        let method = if used_hwnd { "uia_focus_window(hwnd)" } else { "uia_focus_window(title)" };
+        rungs.push(RungAttempt::ok(method, rung_ms));
         instrumentation::log_rung_attempt(
             "hands_app_action", call_id, "uia_focus_window", true, rung_ms, Some(0.95), ctx,
         );
     } else {
-        rungs.push(RungAttempt::failed("uia_focus_window", rung_ms, "Focus failed"));
+        let error_detail = focus_result.get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("focus primitive returned failure");
+        rungs.push(RungAttempt::failed("uia_focus_window", rung_ms, error_detail));
         instrumentation::log_rung_attempt(
             "hands_app_action", call_id, "uia_focus_window", false, rung_ms, None, ctx,
         );
         return Err(MetaError::FocusLost {
             expected: target_title.clone(),
-            actual: "unknown".to_string(),
+            actual: format!("focus failed: {}", error_detail),
         });
     }
 

@@ -225,7 +225,16 @@ fn parse_verify_input(args: &Value) -> Result<VerifyConfig, String> {
         return Err("One of text, regex, element, natural_text, or template is required".into());
     }
     if input_count > 1 {
-        return Err("Only one of text, regex, element, natural_text, or template may be set".into());
+        let mut conflicting = Vec::new();
+        if has_text { conflicting.push("text"); }
+        if has_regex { conflicting.push("regex"); }
+        if has_element { conflicting.push("element"); }
+        if has_nl { conflicting.push("natural_text"); }
+        if has_template { conflicting.push("template"); }
+        return Err(format!(
+            "Only one of text, regex, element, natural_text, or template may be set (got: {})",
+            conflicting.join(", ")
+        ));
     }
 
     let negated = args.get("negated").and_then(|v| v.as_bool()).unwrap_or(false);

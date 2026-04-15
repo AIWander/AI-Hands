@@ -1,64 +1,30 @@
-# Contributing to Hands
+# Contributing
 
-## Filing Issues
+Contributions are welcome. Here is how to get started.
 
-Open an issue on [GitHub](https://github.com/josephwander-arch/hands/issues). Include:
+## Process
 
-- What you were trying to do
-- What happened instead
-- Your platform (x64 or ARM64, Windows version)
-- The tool(s) involved
-- Relevant error output
+1. Fork the repository.
+2. Create a feature branch from `main`.
+3. Make your changes.
+4. Run `cargo check` and `cargo clippy` before submitting.
+5. Open a pull request with a clear description of what changed and why.
 
-Don't paste full debug logs in the issue body — attach them as a file or use a collapsible section.
+## Code style
 
-## Pull Requests
+Follow the existing code style. Use `rustfmt` defaults. Keep functions focused and
+avoid unnecessary abstractions.
 
-1. Fork the repo and create a feature branch from `main`.
-2. Make your changes. Keep commits focused — one logical change per commit.
-3. Test on at least one platform (x64 or ARM64 Windows).
-4. Open a PR against `main` with a clear description of what and why.
+## Reporting bugs
 
-PRs that touch tool behavior should include a before/after example showing the change.
+Open an Issue with:
 
-## Build Instructions
+- Steps to reproduce the problem
+- Expected behavior vs. actual behavior
+- OS version and Rust toolchain version
+- Relevant log output or error messages
 
-### Prerequisites
+## Feature requests
 
-- [Rust](https://rustup.rs/) (stable toolchain)
-- Windows 10/11 (UIA tier requires Windows APIs)
-
-### x64 Build
-
-```bash
-cargo build --release --target x86_64-pc-windows-msvc
-```
-
-Output: `target/x86_64-pc-windows-msvc/release/hands.exe`
-
-### ARM64 Build
-
-```bash
-cargo build --release --target aarch64-pc-windows-msvc
-```
-
-Output: `target/aarch64-pc-windows-msvc/release/hands.exe`
-
-### Cross-compile Notes
-
-ARM64 builds require the ARM64 MSVC toolchain component. Install via Visual Studio Installer or:
-
-```bash
-rustup target add aarch64-pc-windows-msvc
-```
-
-## Code Style
-
-- Rust stable, no nightly features.
-- `cargo fmt` before committing.
-- `cargo clippy` should pass clean.
-- Keep tool implementations self-contained where possible — each tool should be understandable without reading the entire codebase.
-
-## Questions
-
-Email protipsinc@gmail.com or open a discussion on GitHub.
+Open an Issue describing the use case and why the feature would be useful.
+If you plan to implement it yourself, mention that so we can coordinate.

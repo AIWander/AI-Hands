@@ -1,33 +1,59 @@
-# Hands MCP Server
+# Hands — Multi-Layer Desktop Automation for AI Agents
 
-Browser automation, Windows desktop automation, vision/OCR, and API discovery — all through one MCP server. Single Rust binary, single-digit MB, zero runtime dependencies.
+**Hands** is a Rust MCP (Model Context Protocol) server that gives AI agents full desktop control through three automation tiers — not just pixel-guessing from screenshots.
 
-## What It Does
+## Why Hands?
 
-**Browser Automation** — Chrome DevTools Protocol (CDP) via `chromiumoxide`, a pure-Rust CDP client. HTTP scraping, headless Chrome, interactive sessions, form filling, accessibility-first element targeting, batch operations, network traffic capture, and API discovery.
+Anthropic's [Claude Computer Use](https://docs.anthropic.com/en/docs/agents-and-tools/computer-use) takes screenshots and clicks pixel coordinates. It works, but it's slow (screenshot after every action), imprecise (guessing where to click), and blind (no DOM, no accessibility tree, no structured data).
 
-**Windows Desktop Automation** — Native UI Automation (UIA) control of any Windows app. Click, type, read values, manage windows, snap layouts, launch apps. Works on x64 and ARM64 natively.
+Hands takes a different approach: **use the right automation layer for each task**.
 
-**Vision / OCR** — Screenshots, OCR, template matching, image diffing. Use for verification or when DOM/UIA can't reach the content.
+| Layer | What it does | When to use it |
+|-------|-------------|---------------|
+| **Browser** (Playwright) | Full DOM access, JS eval, network interception, form fill, multi-tab | Web apps, scraping, testing |
+| **UIA** (Windows UI Automation) | Accessibility tree, named elements, window management, app launch | Native Windows apps |
+| **Vision** (OCR + template matching) | Screenshot, OCR, image diff, visual analysis | Anything else, verification |
 
-**Graduation Pipeline** — Automate a flow in the browser once, capture the underlying API calls with `browser_learn_api`, then replay them via direct HTTP. No browser needed on future runs.
+## Comparison with Claude Computer Use
 
-## Install
+| Capability | Claude Computer Use | Hands |
+|-----------|-------------------|-------|
+| Element identification | Screenshot → guess coordinates | CSS selectors, XPath, UIA names, accessibility tree |
+| Speed | ~2s per action (screenshot cycle) | Milliseconds (direct API calls) |
+| Browser JS execution | No | Full eval, inject, extract |
+| Network interception | No | Route, mock, log requests |
+| Form handling | Type into coordinates | `fill_form`, `submit_form`, `get_forms` |
+| Multi-tab/context | No | Full tab and context management |
+| Native app control | Screenshot + click | Full UIA: find, click, type, read values, window snap/resize |
+| OCR | Relies on vision model | Dedicated OCR engine |
+| Template matching | No | `vision_find_template` |
+| Image diff | No | `vision_diff` |
+| Batch operations | One action per turn | `browser_batch`, `uia_batch` |
+| Tracing | No | `trace_start/stop/save`, metrics |
+| Platform | macOS only (consumer) | Windows (UIA + browser + vision) |
+| Setup | Zero (built into Claude) | MCP server binary |
 
-### Download
+## 71 Tools
 
-Grab the binary for your platform:
+### Browser Automation (40 tools)
+Navigate, click, type, screenshot, extract content, fill forms, eval JS, manage tabs/contexts, intercept network, scroll-and-collect, accessibility snapshots, smart browse with auto-retry.
 
-- **x64 Windows**: [hands_x64_windows.exe](https://github.com/josephwander-arch/hands/releases/latest/download/hands_x64_windows.exe)
-- **ARM64 Windows**: [hands_arm64_windows.exe](https://github.com/josephwander-arch/hands/releases/latest/download/hands_arm64_windows.exe)
+### Windows UIA (20 tools)
+Find elements by name/type/automation ID, click, type, read values, get state, window management (snap, move, resize), app launch, keyboard shortcuts, batch operations, event watching.
 
-Rename to `hands.exe` and place wherever you keep your MCP server binaries.
+### Vision (11 tools)
+Screenshot (full/window/region), OCR, template matching, image diff, visual analysis, screenshot+OCR combo, wait-for-visual condition.
 
-### Claude Desktop Config
+## Quick Start
 
-Add this to your `claude_desktop_config.json`:
+```bash
+# Build
+cargo build --release -p hands
 
-```json
+# Run as MCP server (stdio transport)
+./hands.exe
+
+# Add to Claude Desktop config
 {
   "mcpServers": {
     "hands": {
@@ -38,131 +64,35 @@ Add this to your `claude_desktop_config.json`:
 }
 ```
 
-See `claude_desktop_config.example.json` for the full snippet with both architecture options.
+## Compatible Clients
 
-### Prerequisites
-
-- **Chrome or Edge** — browser tools need a Chromium-based browser installed.
-- **Windows 10/11** — UIA desktop automation requires Windows.
-- No Node.js, no Python, no runtime dependencies.
-
-## Quickstart
-
-### Scrape a page (no browser needed)
-
-```
-browser_http_scrape(url: "https://example.com")
-```
-
-If the page needs JavaScript:
-
-```
-browser_smart_browse(url: "https://example.com")
-```
-
-If you need interaction:
-
-```
-browser_launch()
-browser_navigate(url: "https://example.com/login")
-browser_a11y_snapshot()  # see all interactive elements
-browser_click(a11y_ref: "ref_5")  # click by accessibility ref
-browser_close()
-```
-
-### Automate a Windows app
-
-```
-uia_app_launch(name: "notepad.exe")
-uia_list_window()
-uia_focus_window(title: "Untitled - Notepad")
-uia_type(text: "Hello from Hands")
-uia_shortcut(keys: "Ctrl+S")
-```
-
-### Visual verification
-
-```
-vision_screenshot_ocr()  # screenshot + OCR in one call
-```
-
-## The Escalation Ladder
-
-Always start cheap and escalate only when needed:
-
-```
-Rung 1: browser_http_scrape     — raw HTTP fetch, no browser
-Rung 2: browser_smart_browse    — JS-capable fetch, still no Chrome
-Rung 3: browser_extract_content — headless Chrome, clean text output
-Rung 4: browser_launch + tools  — full interactive Chrome session
-Rung 5: Vision (OCR/screenshot) — last resort or verification
-```
-
-Most tasks don't need a full Chrome session. Don't launch one unless you have to.
-
-## Documentation
-
-Full skill reference with every tool, usage patterns, anti-patterns, and the graduation pipeline:
-
-- [`skills/hands.md`](skills/hands.md)
-
-Recommended CLAUDE.md behavioral instructions:
-
-- [`skills/hands-recommended-instructions.md`](skills/hands-recommended-instructions.md)
+- Claude Desktop (Chat + Cowork)
+- Claude Code
+- Codex
+- Any MCP-compatible client
 
 ## Architecture
 
-- **Browser tier**: Chrome DevTools Protocol via `chromiumoxide` to Chrome/Edge
-- **UIA tier**: Windows UI Automation COM interop, native on both x64 and ARM64
-- **Vision tier**: Screenshot capture + OCR + template matching
-- **Combo tier**: Cross-tier convenience tools (find_and_click, read_screen_text, etc.)
-
-All tiers run in one process. No sidecar services, no daemon, no port binding.
-
-## Preflight Check
-
-Run the diagnostic script to verify your setup:
-
-```powershell
-.\doctor.ps1
+```
+hands.exe (MCP server, stdin/stdout JSON-RPC)
+├── browser.rs    — Playwright CDP automation
+├── uia.rs        — Windows UI Automation COM
+├── vision.rs     — Screenshot + OCR + template match
+└── tools.rs      — Tool definitions + dispatch
 ```
 
-Checks for the binary, Chrome/Edge installation, and screenshot capability.
+Single binary, no runtime dependencies. Playwright browser binaries are auto-managed.
 
----
+## When to Use What
 
-### Prerequisites: log into your browser first
-
-Before using hands for any site that needs authentication, open Chrome (or your preferred Chromium-based browser) manually and log into whatever you plan to automate — Gmail, GitHub, your bank, Twitter, whatever. Hands attaches to your existing browser profile via CDP, which means it inherits all your cookies and active sessions. If you're already logged in, hands is already logged in. If you're not, hands will see a login page just like a fresh browser would. This single step eliminates most `hands can't click past the login wall` friction.
-
-## Compatible With
-
-Works with any MCP client. Common install channels:
-
-- **Claude Desktop** (the main chat app) — add to `claude_desktop_config.json`. See `claude_desktop_config.example.json` in this repo.
-- **Claude Code** — add to `~/.claude/mcp.json`, or point your `CLAUDE.md` at `skills/hands.md` to load it as a skill instead.
-- **OpenAI Codex CLI** — register via Codex's MCP config, or load the skill directly.
-- **Gemini CLI** — register via Gemini's MCP config, or load the skill directly.
-
-**Two install layouts:**
-
-1. **Local folder** — clone or download this repo, then point your client at the local directory or the extracted `.exe` binary.
-2. **Installed binary** — grab the `.exe` from the [Releases](https://github.com/josephwander-arch/hands/releases) page, place it wherever you keep your MCP binaries, then register its path in your client's config.
-
-**Also ships as a skill** — if your client supports Anthropic skill files, load `skills/hands.md` directly. Skill-only mode gives you the behavioral guidance without running the server; useful for planning, review, or read-only workflows.
-
-### First-run tip: enable "always-loaded tools"
-
-For the smoothest experience, enable **tools always loaded** in your Claude client settings (Claude Desktop: Settings → Tools, or equivalent in Claude Code / Codex / Gemini). This ensures Claude recognizes the tool surface on first use without needing to re-discover it every session. Most users hit friction on day one because this is off by default.
+```
+Is it a web page?
+  → Yes → Browser layer (fast, structured, reliable)
+  → No → Is it a Windows app?
+    → Yes → UIA layer (named elements, accessibility tree)
+    → No → Vision layer (screenshot + OCR fallback)
+```
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE)
-
-Copyright 2026 Joseph Wander
-
-## Contact
-
-- Email: protipsinc@gmail.com
-- GitHub: [josephwander-arch](https://github.com/josephwander-arch/)
-- Donations: **$NeverRemember** (Cash App)
+MIT

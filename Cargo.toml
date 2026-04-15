@@ -1,6 +1,6 @@
 [package]
 name = "hands"
-version = "0.1.0"
+version = "1.3.0-dev"
 edition = "2021"
 description = "Unified interaction server: browser automation + UI automation + vision. The 'hands' that Claude uses to interact with everything on screen."
 
