@@ -359,6 +359,15 @@ fn get_all_tool_definitions() -> Vec<Value> {
     }));
 
     tools.push(json!({
+        "name": "hands_health",
+        "description": "Diagnostic health check for the hands server. Returns cpc-paths path resolution status (Volumes, install, backups) plus browser, vision, and UIA subsystem probe results.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    }));
+
+    tools.push(json!({
         "name": "browser_get_performance_log",
         "description": "Get recent network requests from the browser via performance.getEntriesByType('resource'). Returns URL, type, duration, and size for each request. Lightweight — no CDP hooks needed, works with any page. Clears entries after reading so subsequent calls return only new requests.",
         "inputSchema": {
@@ -2986,6 +2995,7 @@ pub(crate) async fn handle_tool_call(name: &str, args: &Value, browser: &browser
         "retry_click" => return handle_retry_click(args, browser).await,
         "file_upload" => return handle_file_upload(args, browser).await,
         "status" | "hands_status" => return handle_hands_status(),
+        "hands_health" => return meta::health::hands_health(),
         "browser_a11y_snapshot" | "browser_accessibility_snapshot" => return handle_accessibility_snapshot(args, browser).await,
         "browser_get_performance_log" => return handle_get_network_log(args, browser).await,
         "element_drag" => return handle_element_drag(args, browser).await,

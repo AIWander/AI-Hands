@@ -906,3 +906,46 @@ fn test_error_focus_lost() {
     assert!(display.contains("Chrome") || display.contains("Notepad"),
         "FocusLost should mention expected or actual window");
 }
+
+// ============ HANDS_HEALTH ============
+
+#[test]
+fn test_hands_health_shape() {
+    let result = health::hands_health();
+
+    // Top-level required fields
+    assert_eq!(result["server"], "hands", "server field must be 'hands'");
+    assert_eq!(result["version"], "1.3.0-dev", "version field must be '1.3.0-dev'");
+    assert!(result.get("paths").is_some(), "paths field must be present");
+    assert!(result.get("browser").is_some(), "browser field must be present");
+    assert!(result.get("vision").is_some(), "vision field must be present");
+    assert!(result.get("uia").is_some(), "uia field must be present");
+}
+
+#[test]
+fn test_hands_health_paths_fields() {
+    let result = health::hands_health();
+    let paths = &result["paths"];
+
+    // HealthReport fields from cpc-paths
+    assert!(paths.get("platform").is_some(), "paths.platform must be present");
+    assert!(paths.get("crate_version").is_some(), "paths.crate_version must be present");
+    assert!(paths.get("volumes").is_some(), "paths.volumes must be present");
+    assert!(paths.get("install").is_some(), "paths.install must be present");
+    assert!(paths.get("backups").is_some(), "paths.backups must be present");
+}
+
+#[test]
+fn test_hands_health_subsystem_status_values() {
+    let result = health::hands_health();
+
+    // Each subsystem must have a "status" field with a valid value
+    for subsystem in &["browser", "vision", "uia"] {
+        let status = result[subsystem]["status"].as_str()
+            .unwrap_or_else(|| panic!("{}.status must be a string", subsystem));
+        assert!(
+            matches!(status, "available" | "unavailable" | "unknown"),
+            "{}.status must be available/unavailable/unknown, got '{}'", subsystem, status
+        );
+    }
+}

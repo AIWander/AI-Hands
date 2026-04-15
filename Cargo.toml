@@ -1,6 +1,6 @@
 [package]
 name = "hands"
-version = "1.3.0-dev"
+version = "0.1.0"
 edition = "2021"
 description = "Unified interaction server: browser automation + UI automation + vision. The 'hands' that Claude uses to interact with everything on screen."
 
@@ -41,6 +41,9 @@ rqrr = { version = "0.7", default-features = false }
 
 # Async utilities (catch_unwind for panic-safe meta-tool dispatch)
 futures = "0.3"
+
+# Path discovery (cpc-paths: resolve Volumes, install, backups paths)
+cpc-paths = { git = "https://github.com/josephwander-arch/cpc-paths", tag = "v0.1.0" }
 
 # Windows API for combo tools (drag, etc.)
 [target.'cfg(windows)'.dependencies]

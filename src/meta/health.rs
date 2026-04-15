@@ -139,6 +139,51 @@ pub fn parse_ntp_drift(w32tm_output: &str) -> Option<i64> {
     None
 }
 
+/// Aggregated health report for the hands MCP tool.
+/// Combines cpc-paths path status with browser and vision subsystem probes.
+pub fn hands_health() -> serde_json::Value {
+    let paths = serde_json::to_value(cpc_paths::health_check())
+        .unwrap_or_else(|e| serde_json::json!({"error": format!("serialize: {}", e)}));
+
+    let browser_status = probe_browser();
+    let vision_status = probe_vision();
+    let uia_status = probe_uia();
+
+    let browser_str = match &browser_status {
+        SubsystemStatus::Available => "available",
+        SubsystemStatus::Unavailable { .. } => "unavailable",
+        SubsystemStatus::Unknown => "unknown",
+    };
+    let vision_str = match &vision_status {
+        SubsystemStatus::Available => "available",
+        SubsystemStatus::Unavailable { .. } => "unavailable",
+        SubsystemStatus::Unknown => "unknown",
+    };
+    let uia_str = match &uia_status {
+        SubsystemStatus::Available => "available",
+        SubsystemStatus::Unavailable { .. } => "unavailable",
+        SubsystemStatus::Unknown => "unknown",
+    };
+
+    serde_json::json!({
+        "server": "hands",
+        "version": "1.3.0-dev",
+        "paths": paths,
+        "browser": {
+            "status": browser_str,
+            "note": "call browser_launch or browser_attach to activate"
+        },
+        "vision": {
+            "status": vision_str,
+            "note": "screenshot + OCR + template matching"
+        },
+        "uia": {
+            "status": uia_str,
+            "note": "Windows UI Automation (desktop element inspection + input)"
+        }
+    })
+}
+
 /// Check if NTP drift is concerning (>15s off — TOTP codes fail silently).
 pub fn ntp_drift_warning(drift_ms: Option<i64>) -> Option<String> {
     match drift_ms {
