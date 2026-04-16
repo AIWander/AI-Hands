@@ -2,7 +2,6 @@
 name = "hands"
 version = "0.1.0"
 edition = "2021"
-license = "Apache-2.0"
 description = "Unified interaction server: browser automation + UI automation + vision. The 'hands' that Claude uses to interact with everything on screen."
 
 [[bin]]
@@ -45,6 +44,7 @@ futures = "0.3"
 
 # Path discovery (cpc-paths: resolve Volumes, install, backups paths)
 cpc-paths = { git = "https://github.com/josephwander-arch/cpc-paths", tag = "v0.1.0" }
+tiny_http = "0.12"
 
 [dev-dependencies]
 tempfile = "3"

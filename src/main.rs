@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 mod a11y_cache;
+mod dashboard_endpoint;
 mod meta;
 mod security;
 mod stealth;
@@ -2954,13 +2955,22 @@ fn dispatch_uia_tool(name: &str, args: &Value) -> Value {
 // ============ TOOL DISPATCH ============
 
 pub(crate) async fn handle_tool_call(name: &str, args: &Value, browser: &browser_mcp::browser::SharedBrowser, session: &meta::SessionHandle) -> Value {
+    // Record every tool invocation in the dashboard ring buffer
+    dashboard_endpoint::record_action(name, args);
+
     // Phase A v2 Meta-tools (checked first — highest priority)
     // Phase C fix1: catch_unwind boundary — meta-tool panics must never crash hands.exe
     let meta_result = std::panic::AssertUnwindSafe(
         meta::handle_meta_tool(name, args, browser, session)
     );
     match futures::FutureExt::catch_unwind(meta_result).await {
-        Ok(Some(result)) => return result,
+        Ok(Some(result)) => {
+            // Update browser snapshot after any meta-tool runs
+            if let Ok(guard) = browser.try_read() {
+                dashboard_endpoint::update_browser_snapshot(guard.status());
+            }
+            return result;
+        }
         Ok(None) => {} // Not a meta-tool, continue to other dispatch paths
         Err(panic_info) => {
             let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
@@ -2976,6 +2986,13 @@ pub(crate) async fn handle_tool_call(name: &str, args: &Value, browser: &browser
                 "error": format!("Internal error in '{}': {}", name, panic_msg),
                 "panic_caught": true,
             });
+        }
+    }
+
+    // Update browser snapshot for any browser_ prefixed tool calls
+    if name.starts_with("browser_") {
+        if let Ok(guard) = browser.try_read() {
+            dashboard_endpoint::update_browser_snapshot(guard.status());
         }
     }
 
@@ -3257,6 +3274,9 @@ fn main() {
             std::time::SystemTime::now(),
             std::process::id()),
     );
+
+    // Spawn HTTP dashboard endpoint (127.0.0.1:9102 by default)
+    dashboard_endpoint::spawn();
 
     // Create tokio runtime for async browser/vision operations
     let rt = tokio::runtime::Builder::new_multi_thread()
