@@ -111,4 +111,4 @@ Is it a web page?
 
 ## License
 
-MIT
+Apache-2.0

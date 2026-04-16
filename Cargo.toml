@@ -1,8 +1,10 @@
 [package]
 name = "hands"
-version = "0.1.0"
+version = "1.3.0"
 edition = "2021"
-description = "Unified interaction server: browser automation + UI automation + vision. The 'hands' that Claude uses to interact with everything on screen."
+description = "CPC hands MCP server — browser automation + Windows UIA + vision/OCR."
+license = "Apache-2.0"
+repository = "https://github.com/josephwander-arch/hands"
 
 [[bin]]
 name = "hands"
@@ -19,13 +21,13 @@ anyhow = "1.0"
 chrono = "0.4"
 
 # Browser lib (CDP, scraping, smart_browse, etc.)
-browser-mcp = { path = "../browser-mcp" }
+browser-mcp = { git = "https://github.com/josephwander-arch/browser-mcp", tag = "v0.1.1" }
 
 # Vision (shared library - screenshot, OCR, diff, template match)
-vision-core = { path = "../vision-core" }
+vision-core = { git = "https://github.com/josephwander-arch/vision-core", tag = "v0.1.0" }
 
 # UIA (UI Automation - Windows native element inspection + input)
-uia-mcp = { path = "../uia-mcp" }
+uia-mcp = { git = "https://github.com/josephwander-arch/uia-mcp", tag = "v1.0.0" }
 
 # Image processing (for PrintWindow capture)
 image = "0.24"
