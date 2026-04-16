@@ -34,6 +34,53 @@ This guide covers everything you need to do on each machine where you want to ru
 
 If you're on a different platform or your Drive is mounted elsewhere, set the env vars in your shell profile or system environment before launching Claude Desktop.
 
+## Two-Tier Storage
+
+Every CPC server writes data to exactly one of two roots. Keeping them separate is what makes multi-machine setups safe.
+
+### Tier 1 — Volumes (Drive-synced, cross-machine)
+
+- **Resolver:** `cpc_paths::volumes_path()`
+- **Default:** `C:\My Drive\Volumes\` (Windows) — wherever your Drive root is
+- **Override:** `CPC_VOLUMES_PATH` env var or `.cpc-config.toml`
+
+What lives here: knowledge base (Operating files, CATALOG.md, skills/), completed breadcrumb archives, handoffs, transcripts, behavioral patterns, shared reference docs.
+
+**Rule:** write-once or write-rarely. Cloud sync's last-write-wins doesn't corrupt because writes are sequential, not concurrent.
+
+### Tier 2 — Local data (per-machine, never sync)
+
+- **Resolver:** `cpc_paths::data_path("hands")`
+- **Default:** `%LOCALAPPDATA%\CPC\data\hands-data\` (Windows)
+- **Override:** `CPC_HANDS_DATA_DIR` env var or `.cpc-config.toml`
+
+What lives here: active breadcrumb state, Chrome debug profile, logs, per-machine config, cache/index files.
+
+**Rule:** anything with concurrent writes, OS file locks, executable code, or per-machine identity belongs here.
+
+### What NOT to sync
+
+| Do NOT sync | Reason |
+|-------------|--------|
+| Chrome debug profile (`chrome-debug-profile/`) | Chrome holds a file lock while running — syncing corrupts the profile DB |
+| Active breadcrumb state (`state/breadcrumbs/active.index.json`) | FLOCK-sensitive; concurrent servers write here |
+| Logs | High churn, per-machine context only |
+| MCP binaries | Per-arch executables — wrong arch binary on wrong machine breaks silently |
+
+Breadcrumb *archives* (completed breadcrumbs) DO live in Volumes — they're write-once and safe to sync.
+
+### Legacy paths (existing Joe-style installs)
+
+If you have `C:\CPC\logs\`, `C:\CPC\state\`, etc. from a pre-cpc-paths install, they continue to work. The server detects the legacy location at startup and uses it automatically. No migration required — new installs use the `%LOCALAPPDATA%\CPC\data\` default; existing installs stay put.
+
+### Setting up a second machine
+
+1. Verify Google Drive is syncing on the new machine — Volumes is already there.
+2. Download and install the MCP binaries (right arch) to `C:\CPC\servers\` or wherever you configure `CPC_INSTALL_PATH`.
+3. Copy the `mcpServers` entry from `claude_desktop_config.example.json` into your Claude Desktop config on the new machine.
+4. Re-enter credentials per machine via `workflow:credential_store` — secrets do NOT sync.
+5. Active session state starts fresh on each machine. That's intentional.
+
 ## Future: cpc-setup.exe (planned)
 
 A single-binary helper that automates this entire per-machine setup is planned. It will:
