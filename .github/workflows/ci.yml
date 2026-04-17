@@ -1,0 +1,320 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mojibake-scan:
+    name: Mojibake Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for double-encoded UTF-8
+        shell: python3 {0}
+        run: |
+          import os, sys, re
+
+          # Common mojibake byte sequences (double-encoded UTF-8)
+          MOJIBAKE_PATTERNS = [
+              (rb'\xc3\x83\xc2', 'Double-encoded UTF-8 (C3 83 C2)'),
+              (rb'\xc3\xa2\xc2\x80', 'Double-encoded em-dash/smart-quote region (C3 A2 C2 80)'),
+              (rb'\xef\xbf\xbd', 'Unicode replacement character U+FFFD'),
+              (rb'\xc3\x83\xc2\xa2\xc3\xa2\xe2\x82\xac', 'Triple-encoded UTF-8'),
+              (rb'\xc2\xc3', 'Bare C2 C3 adjacency'),
+          ]
+
+          # Also check for common text-level mojibake patterns
+          TEXT_PATTERNS = [
+              (r'\u00c3\u00a2\u00c2\u0080', 'Text-level double-encoded sequence'),
+              (r'\u00e2\u0080\u0099', None),  # skip — this is a valid right single quote
+          ]
+          TEXT_MOJIBAKE = [
+              (r'Ã¢', 'Mojibake a-circumflex sequence'),
+              (r'Ã©', 'Mojibake e-acute sequence'),
+              (r'Ã¨', 'Mojibake e-grave sequence'),
+              (r'Ã¼', 'Mojibake u-umlaut sequence'),
+              (r'Ã¶', 'Mojibake o-umlaut sequence'),
+              (r'Ã¤', 'Mojibake a-umlaut sequence'),
+              (r'Ã\u0083', 'Mojibake A-tilde sequence'),
+              (r'â€"', 'Mojibake em-dash'),
+              (r'â€™', 'Mojibake right single quote'),
+              (r'â€œ', 'Mojibake left double quote'),
+              (r'â€\u009d', 'Mojibake right double quote'),
+              (r'â†\u0090', 'Mojibake left arrow'),
+              (r'â†\u0092', 'Mojibake right arrow'),
+              (r'ÃƒÂ', 'Triple-encoded mojibake'),
+          ]
+
+          found = []
+          extensions = {'.md', '.toml', '.txt', '.yml', '.yaml', '.json'}
+
+          for root, dirs, files in os.walk('.'):
+              # Skip hidden dirs except .github, skip target/
+              dirs[:] = [d for d in dirs if d == '.github' or (not d.startswith('.') and d != 'target')]
+              for f in files:
+                  ext = os.path.splitext(f)[1].lower()
+                  if ext not in extensions:
+                      continue
+                  path = os.path.join(root, f)
+                  try:
+                      raw = open(path, 'rb').read()
+                  except (OSError, PermissionError):
+                      continue
+
+                  # Binary-level checks
+                  for pattern, desc in MOJIBAKE_PATTERNS:
+                      for m in re.finditer(pattern, raw):
+                          line_num = raw[:m.start()].count(b'\n') + 1
+                          found.append(f"{path}:{line_num}: {desc} (byte offset {m.start()})")
+
+                  # Text-level checks
+                  try:
+                      text = raw.decode('utf-8', errors='replace')
+                  except Exception:
+                      continue
+                  for pattern, desc in TEXT_MOJIBAKE:
+                      if desc is None:
+                          continue
+                      for m in re.finditer(re.escape(pattern), text):
+                          line_num = text[:m.start()].count('\n') + 1
+                          found.append(f"{path}:{line_num}: {desc}")
+
+          if found:
+              print(f"::error::Found {len(found)} mojibake occurrence(s):")
+              for item in found[:50]:  # cap output
+                  print(f"  {item}")
+              if len(found) > 50:
+                  print(f"  ... and {len(found) - 50} more")
+              sys.exit(1)
+          else:
+              print("No mojibake found.")
+
+  cargo-check:
+    name: Cargo Check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo check (x64)
+        run: cargo check --target x86_64-pc-windows-msvc
+
+      - name: cargo check (arm64)
+        run: cargo check --target aarch64-pc-windows-msvc
+
+  cargo-fmt:
+    name: Cargo Fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: cargo fmt --check
+        run: cargo fmt -- --check
+
+  cargo-clippy:
+    name: Cargo Clippy
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo clippy
+        run: cargo clippy -- -D warnings
+
+  version-alignment:
+    name: Version Alignment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need tags
+
+      - name: Check version consistency
+        shell: python3 {0}
+        run: |
+          import re, subprocess, sys
+
+          errors = []
+
+          # 1. Read Cargo.toml version
+          cargo_version = None
+          with open('Cargo.toml', 'r') as f:
+              for line in f:
+                  m = re.match(r'^version\s*=\s*"([^"]+)"', line)
+                  if m:
+                      cargo_version = m.group(1)
+                      break
+          if not cargo_version:
+              errors.append("Could not find version in Cargo.toml")
+              for e in errors:
+                  print(f"::error::{e}")
+              sys.exit(1)
+
+          print(f"Cargo.toml version: {cargo_version}")
+
+          # 2. Check README.md "What's New" header
+          try:
+              with open('README.md', 'r') as f:
+                  readme = f.read()
+              # Look for "What's New in vX.Y.Z" pattern
+              m = re.search(r"What's New in v([0-9]+\.[0-9]+\.[0-9]+)", readme)
+              if m:
+                  readme_version = m.group(1)
+                  if readme_version != cargo_version:
+                      errors.append(
+                          f"README 'What's New' references v{readme_version} "
+                          f"but Cargo.toml has v{cargo_version}"
+                      )
+                  else:
+                      print(f"README version matches: v{readme_version}")
+              else:
+                  print("No 'What's New in vX.Y.Z' header found in README — skipping README check")
+          except FileNotFoundError:
+              print("No README.md found — skipping README check")
+
+          # 3. Check CHANGELOG.md latest entry
+          try:
+              with open('CHANGELOG.md', 'r') as f:
+                  changelog = f.read()
+              # Look for first version header: ## [X.Y.Z] or ## X.Y.Z or [X.Y.Z]
+              m = re.search(r'##?\s*\[?v?([0-9]+\.[0-9]+\.[0-9]+)\]?', changelog)
+              if m:
+                  cl_version = m.group(1)
+                  if cl_version != cargo_version:
+                      errors.append(
+                          f"CHANGELOG latest entry is v{cl_version} "
+                          f"but Cargo.toml has v{cargo_version}"
+                      )
+                  else:
+                      print(f"CHANGELOG version matches: v{cl_version}")
+              else:
+                  print("Could not parse version from CHANGELOG.md — skipping")
+          except FileNotFoundError:
+              print("No CHANGELOG.md found — skipping CHANGELOG check")
+
+          # 4. Check latest git tag
+          result = subprocess.run(
+              ['git', 'tag', '-l', 'v*', '--sort=-version:refname'],
+              capture_output=True, text=True
+          )
+          tags = result.stdout.strip().split('\n')
+          tags = [t.strip() for t in tags if t.strip()]
+          if tags:
+              latest_tag = tags[0]
+              tag_version = latest_tag.lstrip('v')
+              # Only warn if tag is AHEAD of Cargo.toml (tag exists but Cargo wasn't bumped)
+              # Don't fail if Cargo is ahead of tags (normal: bump Cargo, then tag later)
+              if tag_version != cargo_version:
+                  print(
+                      f"::warning::Latest git tag {latest_tag} differs from "
+                      f"Cargo.toml v{cargo_version} (informational — not a failure)"
+                  )
+              else:
+                  print(f"Latest git tag matches: {latest_tag}")
+          else:
+              print("No v* git tags found — skipping tag check")
+
+          if errors:
+              for e in errors:
+                  print(f"::error::{e}")
+              sys.exit(1)
+          else:
+              print("All version checks passed.")
+
+  cpc-leakage-scan:
+    name: CPC Leakage Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan for private CPC references
+        shell: python3 {0}
+        run: |
+          import os, re, sys
+
+          FORBIDDEN = [
+              r'\bCPC\b',
+              r'Volumes',
+              r'C:\\My Drive',
+              r'C:/My Drive',
+              r'\bJoseph\b',
+              r'Operating_',
+              r'autonomous:',
+          ]
+
+          # Load allowlist if present
+          allowlist = set()
+          if os.path.isfile('.ci-allowlist.txt'):
+              with open('.ci-allowlist.txt', 'r') as f:
+                  for line in f:
+                      line = line.strip()
+                      if line and not line.startswith('#'):
+                          allowlist.add(line)
+
+          scan_dirs = []
+          if os.path.isdir('skills'):
+              scan_dirs.append('skills')
+          if os.path.isdir('docs'):
+              scan_dirs.append('docs')
+
+          if not scan_dirs:
+              print("No skills/ or docs/ directories to scan — skipping")
+              sys.exit(0)
+
+          found = []
+          for scan_dir in scan_dirs:
+              for root, dirs, files in os.walk(scan_dir):
+                  for f in files:
+                      path = os.path.join(root, f)
+                      # Check allowlist
+                      if path in allowlist or f in allowlist:
+                          continue
+                      try:
+                          text = open(path, 'r', encoding='utf-8', errors='replace').read()
+                      except (OSError, PermissionError):
+                          continue
+                      for pattern in FORBIDDEN:
+                          for m in re.finditer(pattern, text):
+                              line_num = text[:m.start()].count('\n') + 1
+                              # Skip if the match line is in allowlist
+                              line_text = text.split('\n')[line_num - 1].strip()
+                              skip = False
+                              for allowed in allowlist:
+                                  if allowed in line_text:
+                                      skip = True
+                                      break
+                              if skip:
+                                  continue
+                              found.append(f"{path}:{line_num}: matched '{pattern}' -> '{m.group()}'")
+
+          if found:
+              print(f"::error::Found {len(found)} private CPC reference(s) in public files:")
+              for item in found[:50]:
+                  print(f"  {item}")
+              if len(found) > 50:
+                  print(f"  ... and {len(found) - 50} more")
+              sys.exit(1)
+          else:
+              print("No CPC leakage found.")
