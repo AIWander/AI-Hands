@@ -1,5 +1,4 @@
-// TODO: remove dead code and remove the blanket allow
-#![allow(dead_code)]
+// All blanket lint allows removed — see per-module targeted allows
 //! Hands MCP Server — Unified interaction server
 //! Combines browser automation, UI automation, and vision into one binary.
 //! "The hands Claude uses to interact with everything on screen."

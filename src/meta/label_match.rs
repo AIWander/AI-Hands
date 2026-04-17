@@ -15,6 +15,7 @@ pub enum MatchTier {
 }
 
 impl MatchTier {
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Exact => "exact",
@@ -45,6 +46,7 @@ pub struct MatchResult {
     /// Match confidence (0.0-1.0).
     pub confidence: f32,
     /// Which tier matched.
+    #[allow(dead_code)]
     pub tier: MatchTier,
     /// Optional element role.
     pub role: Option<String>,

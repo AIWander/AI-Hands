@@ -1,3 +1,4 @@
+#![allow(dead_code)] // scaffolded module, awaiting integration
 //! Instrumentation logger — writes rung attempts to hands_meta.jsonl.
 //! Log directory resolved via legacy-fallback:
 //!   1. C:\CPC\logs — if it exists with hands_meta data (Joe's machine)

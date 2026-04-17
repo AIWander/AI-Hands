@@ -43,6 +43,7 @@ const TEMPLATES: &[&str] = &[
 ];
 
 /// List all available template names.
+#[allow(dead_code)]
 pub fn list_templates() -> Vec<&'static str> {
     TEMPLATES.to_vec()
 }

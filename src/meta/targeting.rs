@@ -1,3 +1,4 @@
+#![allow(dead_code)] // scaffolded module, awaiting integration
 //! Targeting reliability — shared helpers implementing all 31 adjustments.
 //! Each meta-tool calls into these helpers rather than reimplementing targeting logic.
 //!

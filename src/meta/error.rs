@@ -146,6 +146,7 @@ impl MetaError {
     }
 
     /// Convenience: no page loaded.
+    #[allow(dead_code)]
     pub fn no_page() -> Self {
         Self::NoPage
     }
@@ -159,6 +160,7 @@ impl MetaError {
     }
 
     /// Get the error category as a string.
+    #[allow(dead_code)]
     pub fn category(&self) -> &'static str {
         match self {
             Self::ElementNotFound { .. }

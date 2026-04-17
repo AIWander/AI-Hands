@@ -140,6 +140,7 @@ impl FieldRole {
     }
 
     /// Whether this field supports text input at all.
+    #[allow(dead_code)]
     pub fn is_text_input(&self) -> bool {
         matches!(
             self,

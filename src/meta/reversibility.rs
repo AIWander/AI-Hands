@@ -6,6 +6,7 @@ use super::response::Reversibility;
 
 /// Classify the reversibility of typing into a field.
 /// Typing is always reversible — you can clear the field.
+#[allow(dead_code)]
 pub fn classify_type_action() -> Reversibility {
     Reversibility::Reversible
 }
@@ -22,6 +23,7 @@ pub fn classify_submit_action(allow_submit: bool) -> Reversibility {
 
 /// Classify the reversibility of a select/checkbox/radio change.
 /// These are reversible — the old value can be restored.
+#[allow(dead_code)]
 pub fn classify_form_control_action() -> Reversibility {
     Reversibility::Reversible
 }

@@ -97,6 +97,7 @@ pub fn update_browser_snapshot(status: Value) {
 }
 
 /// Update the cached UIA state after a UIA tool runs.
+#[allow(dead_code)] // wired when dashboard polls UIA subsystem
 pub fn update_uia_snapshot(window: &str, action: &str) {
     let snap = json!({
         "last_focused_window": window,
@@ -109,6 +110,7 @@ pub fn update_uia_snapshot(window: &str, action: &str) {
 }
 
 /// Update the cached vision state after a screenshot or OCR runs.
+#[allow(dead_code)] // wired when dashboard polls vision subsystem
 pub fn update_vision_snapshot(screenshot_path: Option<&str>, ocr: bool) {
     let ts = chrono::Utc::now().to_rfc3339();
     if let Ok(mut guard) = vision_snapshot().lock() {
