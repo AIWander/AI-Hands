@@ -1,5 +1,6 @@
-// TODO: fix clippy lints and remove this blanket allow
+// TODO: fix clippy lints, remove dead code, and remove these blanket allows
 #![allow(clippy::all)]
+#![allow(dead_code)]
 //! Hands MCP Server — Unified interaction server
 //! Combines browser automation, UI automation, and vision into one binary.
 //! "The hands Claude uses to interact with everything on screen."
