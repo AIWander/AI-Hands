@@ -10,9 +10,9 @@
 //!   Vision (screen): screenshot, ocr, screenshot_ocr, diff, find_template, load_image, analyze
 //!   Combo (new):  find_and_click, read_screen_text, wait_for_visual, window_screenshot
 
-use std::io::{BufRead, Write};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::io::{BufRead, Write};
 
 mod a11y_cache;
 mod dashboard_endpoint;
@@ -26,7 +26,9 @@ use windows::{
     core::PCWSTR,
     Win32::{
         Foundation::{HWND, LPARAM, RECT, WPARAM},
-        Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITOR_DEFAULTTONEAREST, MONITORINFO},
+        Graphics::Gdi::{
+            GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        },
         UI::{
             Input::KeyboardAndMouse::{
                 SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
@@ -35,8 +37,8 @@ use windows::{
             Shell::ShellExecuteW,
             WindowsAndMessaging::{
                 GetWindowRect, PostMessageW, SetWindowPos, ShowWindow, SET_WINDOW_POS_FLAGS,
-                SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOWNORMAL, SWP_NOACTIVATE,
-                SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, WM_CLOSE,
+                SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_MAXIMIZE,
+                SW_MINIMIZE, SW_RESTORE, SW_SHOWNORMAL, WM_CLOSE,
             },
         },
     },
@@ -73,7 +75,15 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
     // --- Browser tools (from browser-mcp lib) ---
     // Tools that support a11y_ref for accessibility-first interaction
-    const A11Y_REF_TOOLS: &[&str] = &["click", "type", "type_text", "hover", "focus", "select", "scroll"];
+    const A11Y_REF_TOOLS: &[&str] = &[
+        "click",
+        "type",
+        "type_text",
+        "hover",
+        "focus",
+        "select",
+        "scroll",
+    ];
 
     // Tools that support stealth parameter
     const STEALTH_TOOLS: &[&str] = &["launch", "attach"];
@@ -548,8 +558,14 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
 async fn handle_find_and_click(args: &Value) -> Value {
     let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
-    let button = args.get("button").and_then(|v| v.as_str()).unwrap_or("left");
-    let double_click = args.get("double_click").and_then(|v| v.as_bool()).unwrap_or(false);
+    let button = args
+        .get("button")
+        .and_then(|v| v.as_str())
+        .unwrap_or("left");
+    let double_click = args
+        .get("double_click")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let offset_x = args.get("offset_x").and_then(|v| v.as_i64()).unwrap_or(0);
     let offset_y = args.get("offset_y").and_then(|v| v.as_i64()).unwrap_or(0);
     let window_title = args.get("window_title").and_then(|v| v.as_str());
@@ -562,7 +578,10 @@ async fn handle_find_and_click(args: &Value) -> Value {
 
     // Step 1: Screenshot + OCR
     let ocr_result = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
-    let ocr_text = ocr_result.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let ocr_text = ocr_result
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
     let search_lower = text.to_lowercase();
     let mut found_text = !ocr_text.is_empty() && ocr_text.to_lowercase().contains(&search_lower);
@@ -573,8 +592,14 @@ async fn handle_find_and_click(args: &Value) -> Value {
         let win_list = uia_lib::handle_tool_call("uia_list_windows", &json!({}));
         if let Some(windows) = win_list.get("windows").and_then(|v| v.as_array()) {
             // Filter out system/desktop windows
-            let skip_classes = ["Progman", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
-                                "Windows.UI.Core.CoreWindow", "WorkerW", "TopLevelWindowForOverflowXamlIsland"];
+            let skip_classes = [
+                "Progman",
+                "Shell_TrayWnd",
+                "Shell_SecondaryTrayWnd",
+                "Windows.UI.Core.CoreWindow",
+                "WorkerW",
+                "TopLevelWindowForOverflowXamlIsland",
+            ];
             for win in windows {
                 let class = win.get("class_name").and_then(|v| v.as_str()).unwrap_or("");
                 let title_val = win.get("title").and_then(|v| v.as_str()).unwrap_or("");
@@ -605,25 +630,37 @@ async fn handle_find_and_click(args: &Value) -> Value {
     }
 
     // Step 2: Use UIA to find the element and click it
-    let find_result = uia_lib::handle_tool_call("uia_find_element", &json!({
-        "name": text,
-        "max_depth": 8
-    }));
+    let find_result = uia_lib::handle_tool_call(
+        "uia_find_element",
+        &json!({
+            "name": text,
+            "max_depth": 8
+        }),
+    );
 
     if let Some(elements) = find_result.get("elements").and_then(|v| v.as_array()) {
         if let Some(first) = elements.first() {
             if let (Some(cx), Some(cy)) = (
-                first.get("center").and_then(|c| c.get("x")).and_then(|v| v.as_i64()),
-                first.get("center").and_then(|c| c.get("y")).and_then(|v| v.as_i64()),
+                first
+                    .get("center")
+                    .and_then(|c| c.get("x"))
+                    .and_then(|v| v.as_i64()),
+                first
+                    .get("center")
+                    .and_then(|c| c.get("y"))
+                    .and_then(|v| v.as_i64()),
             ) {
                 let click_x = cx + offset_x;
                 let click_y = cy + offset_y;
-                let click_result = uia_lib::handle_tool_call("uia_click", &json!({
-                    "x": click_x,
-                    "y": click_y,
-                    "button": button,
-                    "double_click": double_click
-                }));
+                let click_result = uia_lib::handle_tool_call(
+                    "uia_click",
+                    &json!({
+                        "x": click_x,
+                        "y": click_y,
+                        "button": button,
+                        "double_click": double_click
+                    }),
+                );
                 let mut result = json!({
                     "success": true,
                     "found_via": "uia",
@@ -653,7 +690,9 @@ async fn handle_find_and_click(args: &Value) -> Value {
 
             // Try single-word match first
             for (word_text, x, y, w, h) in &words {
-                if word_text.to_lowercase().contains(&search_lower) || search_lower.contains(&word_text.to_lowercase()) {
+                if word_text.to_lowercase().contains(&search_lower)
+                    || search_lower.contains(&word_text.to_lowercase())
+                {
                     match_x = Some((*x + w / 2.0) as i64 + offset_x);
                     match_y = Some((*y + h / 2.0) as i64 + offset_y);
                     break;
@@ -678,17 +717,22 @@ async fn handle_find_and_click(args: &Value) -> Value {
                             break;
                         }
                     }
-                    if match_x.is_some() { break; }
+                    if match_x.is_some() {
+                        break;
+                    }
                 }
             }
 
             if let (Some(cx), Some(cy)) = (match_x, match_y) {
-                let click_result = uia_lib::handle_tool_call("uia_click", &json!({
-                    "x": cx,
-                    "y": cy,
-                    "button": button,
-                    "double_click": double_click
-                }));
+                let click_result = uia_lib::handle_tool_call(
+                    "uia_click",
+                    &json!({
+                        "x": cx,
+                        "y": cy,
+                        "button": button,
+                        "double_click": double_click
+                    }),
+                );
                 let mut result = json!({
                     "success": true,
                     "found_via": "ocr_coordinates",
@@ -732,8 +776,14 @@ async fn handle_read_screen_text(args: &Value) -> Value {
 async fn handle_wait_for_visual(args: &Value) -> Value {
     let text = args.get("text").and_then(|v| v.as_str());
     let template = args.get("template_path").and_then(|v| v.as_str());
-    let timeout_ms = args.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(10000);
-    let poll_ms = args.get("poll_interval_ms").and_then(|v| v.as_u64()).unwrap_or(500);
+    let timeout_ms = args
+        .get("timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10000);
+    let poll_ms = args
+        .get("poll_interval_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(500);
 
     if text.is_none() && template.is_none() {
         return json!({"success": false, "error": "Provide 'text' or 'template_path'"});
@@ -761,7 +811,10 @@ async fn handle_wait_for_visual(args: &Value) -> Value {
         if let Some(search_text) = text {
             let ocr = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
             if let Some(ocr_text) = ocr.get("text").and_then(|v| v.as_str()) {
-                if ocr_text.to_lowercase().contains(&search_text.to_lowercase()) {
+                if ocr_text
+                    .to_lowercase()
+                    .contains(&search_text.to_lowercase())
+                {
                     return json!({
                         "success": true,
                         "found": "text",
@@ -774,10 +827,18 @@ async fn handle_wait_for_visual(args: &Value) -> Value {
         }
 
         if let Some(tmpl) = template {
-            let result = vision_core::execute("vision_find_template", &json!({
-                "template_path": tmpl
-            })).await;
-            if result.get("found").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let result = vision_core::execute(
+                "vision_find_template",
+                &json!({
+                    "template_path": tmpl
+                }),
+            )
+            .await;
+            if result
+                .get("found")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 return json!({
                     "success": true,
                     "found": "template",
@@ -796,7 +857,10 @@ async fn handle_window_screenshot(args: &Value) -> Value {
     let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("");
     let save_path = args.get("save_path").and_then(|v| v.as_str());
     let do_ocr = args.get("ocr").and_then(|v| v.as_bool()).unwrap_or(true);
-    let behind = args.get("behind").and_then(|v| v.as_bool()).unwrap_or(false);
+    let behind = args
+        .get("behind")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     if behind {
         // PrintWindow path: capture window content even if obscured
@@ -805,7 +869,11 @@ async fn handle_window_screenshot(args: &Value) -> Value {
 
     // Original path: focus window, then screen-capture
     let focus_result = uia_lib::handle_tool_call("uia_focus_window", &json!({"title": title}));
-    if !focus_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if !focus_result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         return json!({
             "success": false,
             "error": format!("Could not focus window: {}", title),
@@ -819,7 +887,10 @@ async fn handle_window_screenshot(args: &Value) -> Value {
     if do_ocr {
         let mut ocr_args = json!({});
         if let Some(path) = save_path {
-            ocr_args.as_object_mut().unwrap().insert("save_path".to_string(), json!(path));
+            ocr_args
+                .as_object_mut()
+                .unwrap()
+                .insert("save_path".to_string(), json!(path));
         }
         let result = vision_core::execute("vision_screenshot_ocr", &ocr_args).await;
         json!({
@@ -831,7 +902,10 @@ async fn handle_window_screenshot(args: &Value) -> Value {
     } else {
         let mut ss_args = json!({});
         if let Some(path) = save_path {
-            ss_args.as_object_mut().unwrap().insert("save_path".to_string(), json!(path));
+            ss_args
+                .as_object_mut()
+                .unwrap()
+                .insert("save_path".to_string(), json!(path));
         }
         let result = vision_core::execute("vision_screenshot", &ss_args).await;
         json!({
@@ -846,17 +920,20 @@ async fn handle_window_screenshot(args: &Value) -> Value {
 /// Capture a window's content using PrintWindow API — works even if the window is behind others.
 /// Does NOT focus/raise the window.
 #[cfg(windows)]
-async fn handle_window_screenshot_behind(title: &str, save_path: Option<&str>, do_ocr: bool) -> Value {
+async fn handle_window_screenshot_behind(
+    title: &str,
+    save_path: Option<&str>,
+    do_ocr: bool,
+) -> Value {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
     use windows::Win32::Graphics::Gdi::{
-        CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
-        GetDC, GetDIBits, ReleaseDC, SelectObject,
-        BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+        CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
+        ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
     };
+    use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetClientRect, GetWindowTextW, IsWindowVisible,
     };
-    use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
 
     // PW_RENDERFULLCONTENT = 0x00000002, captures DWM-composed content
     const PW_RENDERFULLCONTENT: u32 = 2;
@@ -1008,7 +1085,8 @@ async fn handle_window_screenshot_behind(title: &str, save_path: Option<&str>, d
 
     // Step 8: Optionally run OCR on the saved image
     if do_ocr {
-        let ocr_result = vision_core::execute("vision_ocr", &json!({"image_path": output_path})).await;
+        let ocr_result =
+            vision_core::execute("vision_ocr", &json!({"image_path": output_path})).await;
         json!({
             "success": true,
             "window": ctx.found_title,
@@ -1031,7 +1109,11 @@ async fn handle_window_screenshot_behind(title: &str, save_path: Option<&str>, d
 }
 
 #[cfg(not(windows))]
-async fn handle_window_screenshot_behind(_title: &str, _save_path: Option<&str>, _do_ocr: bool) -> Value {
+async fn handle_window_screenshot_behind(
+    _title: &str,
+    _save_path: Option<&str>,
+    _do_ocr: bool,
+) -> Value {
     json!({
         "success": false,
         "error": "PrintWindow capture only available on Windows"
@@ -1092,7 +1174,10 @@ fn find_window_by_title(title: &str) -> Result<(Value, HWND), Value> {
     }
 
     let windows_result = uia_lib::handle_tool_call("uia_list_window", &json!({}));
-    let windows = match windows_result.get("windows").and_then(|value| value.as_array()) {
+    let windows = match windows_result
+        .get("windows")
+        .and_then(|value| value.as_array())
+    {
         Some(windows) => windows,
         None => {
             return Err(json!({
@@ -1111,7 +1196,10 @@ fn find_window_by_title(title: &str) -> Result<(Value, HWND), Value> {
             .map(|value| value.to_lowercase().contains(&filter_lower))
             .unwrap_or(false)
     }) {
-        let hwnd_str = window.get("hwnd").and_then(|value| value.as_str()).unwrap_or("");
+        let hwnd_str = window
+            .get("hwnd")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         return match parse_hwnd_debug_string(hwnd_str) {
             Some(hwnd) => Ok((window.clone(), hwnd)),
             None => Err(json!({
@@ -1165,12 +1253,14 @@ fn set_window_geometry(
     action: &str,
 ) -> Result<(), Value> {
     unsafe {
-        SetWindowPos(hwnd, HWND(std::ptr::null_mut()), x, y, width, height, flags).map_err(|error| {
-            json!({
-                "success": false,
-                "error": format!("{} failed: {}", action, error)
-            })
-        })?;
+        SetWindowPos(hwnd, HWND(std::ptr::null_mut()), x, y, width, height, flags).map_err(
+            |error| {
+                json!({
+                    "success": false,
+                    "error": format!("{} failed: {}", action, error)
+                })
+            },
+        )?;
     }
     Ok(())
 }
@@ -1233,7 +1323,10 @@ fn send_virtual_key(key: VIRTUAL_KEY) {
 
 #[cfg(windows)]
 fn handle_uia_window_resize(args: &Value) -> Value {
-    let title = args.get("title").and_then(|value| value.as_str()).unwrap_or("");
+    let title = args
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     let width = match get_required_positive_i32(args, "width") {
         Ok(value) => value,
         Err(error) => return error,
@@ -1277,7 +1370,10 @@ fn handle_uia_window_resize(args: &Value) -> Value {
 
 #[cfg(windows)]
 fn handle_uia_window_move(args: &Value) -> Value {
-    let title = args.get("title").and_then(|value| value.as_str()).unwrap_or("");
+    let title = args
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     let x = match get_required_i32(args, "x") {
         Ok(value) => value,
         Err(error) => return error,
@@ -1321,7 +1417,10 @@ fn handle_uia_window_move(args: &Value) -> Value {
 
 #[cfg(windows)]
 fn handle_uia_window_state(args: &Value) -> Value {
-    let title = args.get("title").and_then(|value| value.as_str()).unwrap_or("");
+    let title = args
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     let state = match args.get("state").and_then(|value| value.as_str()) {
         Some(value) => value.trim().to_lowercase(),
         None => {
@@ -1370,7 +1469,10 @@ fn handle_uia_window_state(args: &Value) -> Value {
 
 #[cfg(windows)]
 fn handle_uia_window_snap(args: &Value) -> Value {
-    let title = args.get("title").and_then(|value| value.as_str()).unwrap_or("");
+    let title = args
+        .get("title")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     let position = match args.get("position").and_then(|value| value.as_str()) {
         Some(value) => value.trim().to_lowercase(),
         None => {
@@ -1533,7 +1635,11 @@ fn handle_type_into_window(args: &Value) -> Value {
 
     // Focus
     let focus_result = uia_lib::handle_tool_call("uia_focus_window", &json!({"title": title}));
-    if !focus_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if !focus_result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         return json!({
             "success": false,
             "error": format!("Could not focus window: {}", title),
@@ -1568,7 +1674,10 @@ fn handle_drag(args: &Value) -> Value {
     let from_y = args.get("from_y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
     let to_x = args.get("to_x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
     let to_y = args.get("to_y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-    let duration_ms = args.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(300);
+    let duration_ms = args
+        .get("duration_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(300);
 
     #[cfg(windows)]
     {
@@ -1585,8 +1694,12 @@ fn handle_drag(args: &Value) -> Value {
                 r#type: INPUT_MOUSE,
                 Anonymous: INPUT_0 {
                     mi: MOUSEINPUT {
-                        dx: 0, dy: 0, mouseData: 0,
-                        dwFlags: MOUSEEVENTF_LEFTDOWN, time: 0, dwExtraInfo: 0,
+                        dx: 0,
+                        dy: 0,
+                        mouseData: 0,
+                        dwFlags: MOUSEEVENTF_LEFTDOWN,
+                        time: 0,
+                        dwExtraInfo: 0,
                     },
                 },
             }];
@@ -1607,8 +1720,12 @@ fn handle_drag(args: &Value) -> Value {
                 r#type: INPUT_MOUSE,
                 Anonymous: INPUT_0 {
                     mi: MOUSEINPUT {
-                        dx: 0, dy: 0, mouseData: 0,
-                        dwFlags: MOUSEEVENTF_LEFTUP, time: 0, dwExtraInfo: 0,
+                        dx: 0,
+                        dy: 0,
+                        mouseData: 0,
+                        dwFlags: MOUSEEVENTF_LEFTUP,
+                        time: 0,
+                        dwExtraInfo: 0,
                     },
                 },
             }];
@@ -1627,15 +1744,28 @@ fn handle_drag(args: &Value) -> Value {
     json!({"success": false, "error": "Drag only available on Windows"})
 }
 
-pub(crate) async fn handle_accessibility_snapshot(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
-    let root_selector = args.get("root_selector").and_then(|v| v.as_str()).unwrap_or("");
-    let include_ignored = args.get("include_ignored").and_then(|v| v.as_bool()).unwrap_or(false);
+pub(crate) async fn handle_accessibility_snapshot(
+    args: &Value,
+    browser: &browser_mcp::browser::SharedBrowser,
+) -> Value {
+    let root_selector = args
+        .get("root_selector")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let include_ignored = args
+        .get("include_ignored")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let max_depth = args.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(10);
-    let incremental = args.get("incremental").and_then(|v| v.as_bool()).unwrap_or(false);
+    let incremental = args
+        .get("incremental")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     // JavaScript that walks the DOM and builds an accessibility tree.
     // Uses HTML semantics + ARIA attributes to determine roles, names, and states.
-    let script = format!(r#"
+    let script = format!(
+        r#"
     (() => {{
         const MAX_DEPTH = {max_depth};
         const INCLUDE_IGNORED = {include_ignored};
@@ -1926,7 +2056,11 @@ pub(crate) async fn handle_accessibility_snapshot(args: &Value, browser: &browse
 
     match eval_result {
         Ok(tree_value) => {
-            let url = tree_value.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let url = tree_value
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             let mut tree = tree_value.get("tree").cloned().unwrap_or(json!(null));
 
             // Assign ref IDs to each node and cache the ref→selector mapping
@@ -1971,7 +2105,10 @@ pub(crate) async fn handle_accessibility_snapshot(args: &Value, browser: &browse
         Err(e) => {
             let err_str = format!("{}", e);
             // If browser not launched, provide helpful message
-            if err_str.contains("not launched") || err_str.contains("No active page") || err_str.contains("NoPage") {
+            if err_str.contains("not launched")
+                || err_str.contains("No active page")
+                || err_str.contains("NoPage")
+            {
                 json!({
                     "success": false,
                     "error": "Browser not connected. Call browser_launch or browser_attach first, then navigate to a page."
@@ -1994,7 +2131,11 @@ fn format_ax_tree(node: &Value, indent: usize) -> String {
 
     // Handle array (pass-through nodes that returned multiple children)
     if let Some(arr) = node.as_array() {
-        return arr.iter().map(|n| format_ax_tree(n, indent)).collect::<Vec<_>>().join("\n");
+        return arr
+            .iter()
+            .map(|n| format_ax_tree(n, indent))
+            .collect::<Vec<_>>()
+            .join("\n");
     }
 
     let prefix = "  ".repeat(indent);
@@ -2054,8 +2195,14 @@ fn format_ax_tree(node: &Value, indent: usize) -> String {
 }
 
 async fn handle_retry_click(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
-    let max_attempts = args.get("max_attempts").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
-    let retry_delay_ms = args.get("retry_delay_ms").and_then(|v| v.as_u64()).unwrap_or(500);
+    let max_attempts = args
+        .get("max_attempts")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3) as usize;
+    let retry_delay_ms = args
+        .get("retry_delay_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(500);
 
     if let Some(url) = get_browser_url(browser).await {
         if let Err(message) = security::check_browser_write_action(&url, "click") {
@@ -2069,12 +2216,14 @@ async fn handle_retry_click(args: &Value, browser: &browser_mcp::browser::Shared
     for attempt in 1..=max_attempts {
         let result = browser_mcp::tools::handle_tool(browser, "click", click_args.clone()).await;
 
-        let text_parts: Vec<String> = result.content.iter().filter_map(|c| {
-            match c {
+        let text_parts: Vec<String> = result
+            .content
+            .iter()
+            .filter_map(|c| match c {
                 browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
                 _ => None,
-            }
-        }).collect();
+            })
+            .collect();
         let combined = text_parts.join("\n");
 
         if !result.is_error {
@@ -2113,7 +2262,10 @@ async fn handle_file_upload(args: &Value, browser: &browser_mcp::browser::Shared
     };
 
     let file_paths: Vec<String> = match args.get("files") {
-        Some(Value::Array(arr)) => arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),
+        Some(Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
         Some(Value::String(s)) => vec![s.clone()],
         _ => return json!({"error": "files required (string or array of file paths)"}),
     };
@@ -2145,12 +2297,15 @@ async fn handle_file_upload(args: &Value, browser: &browser_mcp::browser::Shared
     }
 
     // Build JS to create File objects and set them on the input
-    let files_js: Vec<String> = file_data.iter().map(|(name, mime, b64)| {
-        format!(
+    let files_js: Vec<String> = file_data
+        .iter()
+        .map(|(name, mime, b64)| {
+            format!(
             "new File([Uint8Array.from(atob('{}'), c => c.charCodeAt(0))], '{}', {{type: '{}'}})",
             b64, name, mime
         )
-    }).collect();
+        })
+        .collect();
 
     let script = format!(
         r#"(() => {{
@@ -2172,12 +2327,14 @@ async fn handle_file_upload(args: &Value, browser: &browser_mcp::browser::Shared
     let eval_args = json!({"script": script});
     let result = browser_mcp::tools::handle_tool(browser, "eval", eval_args).await;
 
-    let text_parts: Vec<String> = result.content.iter().filter_map(|c| {
-        match c {
+    let text_parts: Vec<String> = result
+        .content
+        .iter()
+        .filter_map(|c| match c {
             browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
             _ => None,
-        }
-    }).collect();
+        })
+        .collect();
     let combined = text_parts.join("\n");
 
     if result.is_error {
@@ -2190,22 +2347,39 @@ async fn handle_file_upload(args: &Value, browser: &browser_mcp::browser::Shared
 
 fn guess_mime(filename: &str) -> String {
     let lower = filename.to_lowercase();
-    if lower.ends_with(".pdf") { "application/pdf".into() }
-    else if lower.ends_with(".png") { "image/png".into() }
-    else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") { "image/jpeg".into() }
-    else if lower.ends_with(".gif") { "image/gif".into() }
-    else if lower.ends_with(".csv") { "text/csv".into() }
-    else if lower.ends_with(".txt") { "text/plain".into() }
-    else if lower.ends_with(".doc") || lower.ends_with(".docx") { "application/msword".into() }
-    else if lower.ends_with(".xlsx") || lower.ends_with(".xls") { "application/vnd.ms-excel".into() }
-    else { "application/octet-stream".into() }
+    if lower.ends_with(".pdf") {
+        "application/pdf".into()
+    } else if lower.ends_with(".png") {
+        "image/png".into()
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg".into()
+    } else if lower.ends_with(".gif") {
+        "image/gif".into()
+    } else if lower.ends_with(".csv") {
+        "text/csv".into()
+    } else if lower.ends_with(".txt") {
+        "text/plain".into()
+    } else if lower.ends_with(".doc") || lower.ends_with(".docx") {
+        "application/msword".into()
+    } else if lower.ends_with(".xlsx") || lower.ends_with(".xls") {
+        "application/vnd.ms-excel".into()
+    } else {
+        "application/octet-stream".into()
+    }
 }
 
-async fn handle_get_network_log(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
-    let max_entries = args.get("max_entries").and_then(|v| v.as_u64()).unwrap_or(50);
+async fn handle_get_network_log(
+    args: &Value,
+    browser: &browser_mcp::browser::SharedBrowser,
+) -> Value {
+    let max_entries = args
+        .get("max_entries")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(50);
 
     // Use performance API to get resource timing entries, then clear them
-    let script = format!(r#"(() => {{
+    let script = format!(
+        r#"(() => {{
         const entries = performance.getEntriesByType('resource');
         const result = entries.slice(-{}).map(e => ({{
             url: e.name,
@@ -2216,16 +2390,20 @@ async fn handle_get_network_log(args: &Value, browser: &browser_mcp::browser::Sh
         }}));
         performance.clearResourceTimings();
         return JSON.stringify(result);
-    }})()"#, max_entries);
+    }})()"#,
+        max_entries
+    );
 
     let eval_args = json!({"script": script});
     let result = browser_mcp::tools::handle_tool(browser, "eval", eval_args).await;
-    let text_parts: Vec<String> = result.content.iter().filter_map(|c| {
-        match c {
+    let text_parts: Vec<String> = result
+        .content
+        .iter()
+        .filter_map(|c| match c {
             browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
             _ => None,
-        }
-    }).collect();
+        })
+        .collect();
     let combined = text_parts.join("\n");
 
     // If JS eval fails (e.g. CDP timeout, no page loaded), return empty rather than error
@@ -2244,13 +2422,19 @@ async fn handle_get_network_log(args: &Value, browser: &browser_mcp::browser::Sh
                 json!({"entries": val})
             }
         }
-        Err(_) => json!({"entries": [], "note": combined})
+        Err(_) => json!({"entries": [], "note": combined}),
     }
 }
 
 fn handle_a11y_find(args: &Value) -> Value {
-    let role_filter = args.get("role").and_then(|v| v.as_str()).map(|s| s.to_lowercase());
-    let name_filter = args.get("name").and_then(|v| v.as_str()).map(|s| s.to_lowercase());
+    let role_filter = args
+        .get("role")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_lowercase());
+    let name_filter = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_lowercase());
 
     if role_filter.is_none() && name_filter.is_none() {
         return json!({"error": "Provide at least one of 'role' or 'name' to search for."});
@@ -2258,14 +2442,25 @@ fn handle_a11y_find(args: &Value) -> Value {
 
     let snapshot = match a11y_cache::get_snapshot() {
         Some(s) => s,
-        None => return json!({"error": "No cached accessibility snapshot. Call browser_a11y_snapshot first."}),
+        None => {
+            return json!({"error": "No cached accessibility snapshot. Call browser_a11y_snapshot first."})
+        }
     };
 
     // Search the flattened tree
-    fn search_nodes(node: &Value, role_filter: &Option<String>, name_filter: &Option<String>, results: &mut Vec<Value>) {
-        if node.is_null() { return; }
+    fn search_nodes(
+        node: &Value,
+        role_filter: &Option<String>,
+        name_filter: &Option<String>,
+        results: &mut Vec<Value>,
+    ) {
+        if node.is_null() {
+            return;
+        }
         if let Some(arr) = node.as_array() {
-            for child in arr { search_nodes(child, role_filter, name_filter, results); }
+            for child in arr {
+                search_nodes(child, role_filter, name_filter, results);
+            }
             return;
         }
         if let Some(obj) = node.as_object() {
@@ -2273,8 +2468,12 @@ fn handle_a11y_find(args: &Value) -> Value {
             let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let ref_id = obj.get("ref").and_then(|v| v.as_str()).unwrap_or("");
 
-            let role_match = role_filter.as_ref().map_or(true, |f| role.to_lowercase() == *f);
-            let name_match = name_filter.as_ref().map_or(true, |f| name.to_lowercase().contains(f.as_str()));
+            let role_match = role_filter
+                .as_ref()
+                .map_or(true, |f| role.to_lowercase() == *f);
+            let name_match = name_filter
+                .as_ref()
+                .map_or(true, |f| name.to_lowercase().contains(f.as_str()));
 
             if role_match && name_match && !ref_id.is_empty() {
                 results.push(serde_json::json!({
@@ -2285,7 +2484,9 @@ fn handle_a11y_find(args: &Value) -> Value {
             }
 
             if let Some(children) = obj.get("children").and_then(|v| v.as_array()) {
-                for child in children { search_nodes(child, role_filter, name_filter, results); }
+                for child in children {
+                    search_nodes(child, role_filter, name_filter, results);
+                }
             }
         }
     }
@@ -2299,29 +2500,41 @@ fn handle_a11y_find(args: &Value) -> Value {
     })
 }
 
-async fn handle_get_all_network(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
-    let max_entries = args.get("max_entries").and_then(|v| v.as_u64()).unwrap_or(100);
+async fn handle_get_all_network(
+    args: &Value,
+    browser: &browser_mcp::browser::SharedBrowser,
+) -> Value {
+    let max_entries = args
+        .get("max_entries")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(100);
     let clear = args.get("clear").and_then(|v| v.as_bool()).unwrap_or(true);
 
     // Source 1: Route-based network log (via browser-mcp)
-    let route_result = browser_mcp::tools::handle_tool(
-        browser, "get_network_log", json!({"clear": clear}),
-    ).await;
-    let route_text: String = route_result.content.iter().filter_map(|c| {
-        match c {
+    let route_result =
+        browser_mcp::tools::handle_tool(browser, "get_network_log", json!({"clear": clear})).await;
+    let route_text: String = route_result
+        .content
+        .iter()
+        .filter_map(|c| match c {
             browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
             _ => None,
-        }
-    }).collect::<Vec<_>>().join("\n");
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let mut route_entries: Vec<Value> = if !route_result.is_error {
         serde_json::from_str::<Value>(&route_text)
             .ok()
             .and_then(|v| {
                 // The response may have entries at top level or nested
-                if let Some(arr) = v.as_array() { Some(arr.clone()) }
-                else if let Some(arr) = v.get("entries").and_then(|e| e.as_array()) { Some(arr.clone()) }
-                else { None }
+                if let Some(arr) = v.as_array() {
+                    Some(arr.clone())
+                } else if let Some(arr) = v.get("entries").and_then(|e| e.as_array()) {
+                    Some(arr.clone())
+                } else {
+                    None
+                }
             })
             .unwrap_or_default()
     } else {
@@ -2338,7 +2551,8 @@ async fn handle_get_all_network(args: &Value, browser: &browser_mcp::browser::Sh
 
     // Source 2: Performance API log
     let perf_result = handle_get_network_log(&json!({"max_entries": max_entries}), browser).await;
-    let mut perf_entries: Vec<Value> = perf_result.get("entries")
+    let mut perf_entries: Vec<Value> = perf_result
+        .get("entries")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -2369,51 +2583,86 @@ async fn handle_element_drag(args: &Value, browser: &browser_mcp::browser::Share
     let to_selector = args.get("to_selector").and_then(|v| v.as_str());
     let offset_x = args.get("offset_x").and_then(|v| v.as_i64());
     let offset_y = args.get("offset_y").and_then(|v| v.as_i64());
-    let duration_ms = args.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(300);
+    let duration_ms = args
+        .get("duration_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(300);
 
     if to_selector.is_none() && offset_x.is_none() && offset_y.is_none() {
         return json!({"error": "Must provide either 'to_selector' or 'offset_x'/'offset_y'"});
     }
 
     // Get bounds of from_selector
-    let from_bounds_result = browser_mcp::tools::handle_tool(
-        browser, "get_bounds", json!({"selector": from_selector}),
-    ).await;
-    let from_text: String = from_bounds_result.content.iter().filter_map(|c| {
-        match c { browser_mcp::types::ToolContent::Text { text } => Some(text.clone()), _ => None }
-    }).collect::<Vec<_>>().join("\n");
+    let from_bounds_result =
+        browser_mcp::tools::handle_tool(browser, "get_bounds", json!({"selector": from_selector}))
+            .await;
+    let from_text: String = from_bounds_result
+        .content
+        .iter()
+        .filter_map(|c| match c {
+            browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     if from_bounds_result.is_error {
         return json!({"error": format!("Cannot get bounds for from_selector: {}", from_text)});
     }
     let from_bounds: Value = match serde_json::from_str(&from_text) {
         Ok(v) => v,
-        Err(_) => return json!({"error": format!("Invalid bounds response for from_selector: {}", from_text)}),
+        Err(_) => {
+            return json!({"error": format!("Invalid bounds response for from_selector: {}", from_text)})
+        }
     };
 
     let from_x = from_bounds.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0)
-        + from_bounds.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0) / 2.0;
+        + from_bounds
+            .get("width")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0)
+            / 2.0;
     let from_y = from_bounds.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0)
-        + from_bounds.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0) / 2.0;
+        + from_bounds
+            .get("height")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0)
+            / 2.0;
 
     let (to_x, to_y) = if let Some(to_sel) = to_selector {
         // Resolve to_selector to coordinates
-        let to_bounds_result = browser_mcp::tools::handle_tool(
-            browser, "get_bounds", json!({"selector": to_sel}),
-        ).await;
-        let to_text: String = to_bounds_result.content.iter().filter_map(|c| {
-            match c { browser_mcp::types::ToolContent::Text { text } => Some(text.clone()), _ => None }
-        }).collect::<Vec<_>>().join("\n");
+        let to_bounds_result =
+            browser_mcp::tools::handle_tool(browser, "get_bounds", json!({"selector": to_sel}))
+                .await;
+        let to_text: String = to_bounds_result
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         if to_bounds_result.is_error {
             return json!({"error": format!("Cannot get bounds for to_selector: {}", to_text)});
         }
         let to_bounds: Value = match serde_json::from_str(&to_text) {
             Ok(v) => v,
-            Err(_) => return json!({"error": format!("Invalid bounds response for to_selector: {}", to_text)}),
+            Err(_) => {
+                return json!({"error": format!("Invalid bounds response for to_selector: {}", to_text)})
+            }
         };
         let tx = to_bounds.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0)
-            + to_bounds.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0) / 2.0;
+            + to_bounds
+                .get("width")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0)
+                / 2.0;
         let ty = to_bounds.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0)
-            + to_bounds.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0) / 2.0;
+            + to_bounds
+                .get("height")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0)
+                / 2.0;
         (tx, ty)
     } else {
         // Use offsets from from_selector center
@@ -2437,7 +2686,10 @@ async fn handle_element_drag(args: &Value, browser: &browser_mcp::browser::Share
 fn handle_hands_status() -> Value {
     let uia_ok = {
         let result = uia_lib::handle_tool_call("uia_list_windows", &json!({}));
-        result.get("success").and_then(|v| v.as_bool()).unwrap_or(false)
+        result
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
             || result.get("windows").is_some()
     };
 
@@ -2525,16 +2777,21 @@ pub(crate) async fn resolve_a11y_ref(
     let eval_args = json!({"script": script});
     let result = browser_mcp::tools::handle_tool(browser, "eval", eval_args).await;
 
-    let text_parts: Vec<String> = result.content.iter().filter_map(|c| {
-        match c {
+    let text_parts: Vec<String> = result
+        .content
+        .iter()
+        .filter_map(|c| match c {
             browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
             _ => None,
-        }
-    }).collect();
+        })
+        .collect();
     let combined = text_parts.join("\n");
 
     if result.is_error {
-        return Err(format!("Failed to resolve a11y ref '{}': {}", ref_id, combined));
+        return Err(format!(
+            "Failed to resolve a11y ref '{}': {}",
+            ref_id, combined
+        ));
     }
 
     // Parse the JSON result — eval returns string-within-string (e.g. "{\"selector\":\"...\"}")
@@ -2546,17 +2803,25 @@ pub(crate) async fn resolve_a11y_ref(
                 .map_err(|e| format!("Failed to parse inner ref result: {}", e))?
         }
         Ok(v) => v,
-        Err(_) => {
-            combined.trim_matches('"').replace("\\\"", "\"").parse::<Value>()
-                .map_err(|e| format!("Parse error: {}", e))?
-        }
+        Err(_) => combined
+            .trim_matches('"')
+            .replace("\\\"", "\"")
+            .parse::<Value>()
+            .map_err(|e| format!("Parse error: {}", e))?,
     };
 
     if let Some(err) = val.get("error").and_then(|v| v.as_str()) {
         // Auto-refresh: re-take a11y snapshot once and retry before failing
-        eprintln!("[hands] a11y ref '{}' not found, auto-refreshing snapshot...", ref_id);
+        eprintln!(
+            "[hands] a11y ref '{}' not found, auto-refreshing snapshot...",
+            ref_id
+        );
         let refresh_result = handle_accessibility_snapshot(&json!({}), browser).await;
-        if refresh_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if refresh_result
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             // Retry resolution with fresh cache
             if let Ok(resolve_js2) = a11y_cache::ref_resolution_js(ref_id) {
                 let script2 = format!(
@@ -2590,10 +2855,17 @@ pub(crate) async fn resolve_a11y_ref(
                     resolve_js2,
                     ref_id.replace('"', "\\\""),
                 );
-                let retry_result = browser_mcp::tools::handle_tool(browser, "eval", json!({"script": script2})).await;
-                let retry_text: Vec<String> = retry_result.content.iter().filter_map(|c| {
-                    match c { browser_mcp::types::ToolContent::Text { text } => Some(text.clone()), _ => None }
-                }).collect();
+                let retry_result =
+                    browser_mcp::tools::handle_tool(browser, "eval", json!({"script": script2}))
+                        .await;
+                let retry_text: Vec<String> = retry_result
+                    .content
+                    .iter()
+                    .filter_map(|c| match c {
+                        browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect();
                 let retry_combined = retry_text.join("\n");
                 if !retry_result.is_error {
                     if let Ok(retry_val) = serde_json::from_str::<Value>(&retry_combined) {
@@ -2608,7 +2880,10 @@ pub(crate) async fn resolve_a11y_ref(
                 }
             }
         }
-        return Err(format!("Ref '{}' resolution failed after auto-refresh: {}.", ref_id, err));
+        return Err(format!(
+            "Ref '{}' resolution failed after auto-refresh: {}.",
+            ref_id, err
+        ));
     }
 
     val.get("selector")
@@ -2621,18 +2896,29 @@ pub(crate) async fn resolve_a11y_ref(
 
 async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
     let filter_pattern = args.get("filter_pattern").and_then(|v| v.as_str());
-    let include_static = args.get("include_static").and_then(|v| v.as_bool()).unwrap_or(false);
-    let min_response_size = args.get("min_response_size").and_then(|v| v.as_u64()).unwrap_or(0);
+    let include_static = args
+        .get("include_static")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let min_response_size = args
+        .get("min_response_size")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
 
     // Get all network data (merges route + performance)
-    let network = handle_get_all_network(&json!({"max_entries": 500, "clear": false}), browser).await;
+    let network =
+        handle_get_all_network(&json!({"max_entries": 500, "clear": false}), browser).await;
     let entries = match network.get("entries").and_then(|v| v.as_array()) {
         Some(e) => e.clone(),
-        None => return json!({"success": false, "error": "No network data captured. Navigate and interact with a page first."}),
+        None => {
+            return json!({"success": false, "error": "No network data captured. Navigate and interact with a page first."})
+        }
     };
 
-    let static_exts = [".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
-                       ".woff", ".woff2", ".ttf", ".eot", ".map", ".webp", ".avif"];
+    let static_exts = [
+        ".js", ".css", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf",
+        ".eot", ".map", ".webp", ".avif",
+    ];
 
     let filter_re = filter_pattern.and_then(|p| regex::Regex::new(p).ok());
 
@@ -2641,10 +2927,14 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
     let total = entries.len();
 
     for entry in &entries {
-        let url = entry.get("url").and_then(|v| v.as_str())
+        let url = entry
+            .get("url")
+            .and_then(|v| v.as_str())
             .or_else(|| entry.get("name").and_then(|v| v.as_str()))
             .unwrap_or("");
-        if url.is_empty() { continue; }
+        if url.is_empty() {
+            continue;
+        }
 
         // Filter static assets
         if !include_static {
@@ -2653,7 +2943,8 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
                 || url_lower.contains("/static/")
                 || url_lower.contains("/assets/")
                 || url_lower.contains("fonts.")
-                || url_lower.contains("data:") {
+                || url_lower.contains("data:")
+            {
                 static_filtered += 1;
                 continue;
             }
@@ -2667,69 +2958,101 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
         }
 
         // Filter by min response size
-        let resp_size = entry.get("transferSize").and_then(|v| v.as_u64())
+        let resp_size = entry
+            .get("transferSize")
+            .and_then(|v| v.as_u64())
             .or_else(|| entry.get("response_size").and_then(|v| v.as_u64()))
             .unwrap_or(0);
         if resp_size < min_response_size && min_response_size > 0 {
             continue;
         }
 
-        let method = entry.get("method").and_then(|v| v.as_str()).unwrap_or("GET").to_string();
-        let content_type = entry.get("content_type").and_then(|v| v.as_str())
+        let method = entry
+            .get("method")
+            .and_then(|v| v.as_str())
+            .unwrap_or("GET")
+            .to_string();
+        let content_type = entry
+            .get("content_type")
+            .and_then(|v| v.as_str())
             .or_else(|| entry.get("contentType").and_then(|v| v.as_str()))
-            .unwrap_or("").to_string();
+            .unwrap_or("")
+            .to_string();
 
         // Build URL pattern: replace UUIDs and numeric IDs with {id}
-        let url_pattern = regex::Regex::new(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-            .unwrap().replace_all(url, "{uuid}").to_string();
+        let url_pattern =
+            regex::Regex::new(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+                .unwrap()
+                .replace_all(url, "{uuid}")
+                .to_string();
         let url_pattern = regex::Regex::new(r"/\d{2,}/")
-            .unwrap().replace_all(&url_pattern, "/{id}/").to_string();
+            .unwrap()
+            .replace_all(&url_pattern, "/{id}/")
+            .to_string();
         // Remove query params for pattern matching
-        let url_pattern_base = url_pattern.split('?').next().unwrap_or(&url_pattern).to_string();
+        let url_pattern_base = url_pattern
+            .split('?')
+            .next()
+            .unwrap_or(&url_pattern)
+            .to_string();
 
         // Extract headers (from route entries)
-        let headers = entry.get("request_headers").cloned()
+        let headers = entry
+            .get("request_headers")
+            .cloned()
             .or_else(|| entry.get("headers").cloned())
             .unwrap_or(json!({}));
 
         // Detect auth type from headers
         let auth_type = if let Some(obj) = headers.as_object() {
             if obj.keys().any(|k| k.to_lowercase() == "authorization") {
-                let auth_val = obj.iter()
+                let auth_val = obj
+                    .iter()
                     .find(|(k, _)| k.to_lowercase() == "authorization")
                     .map(|(_, v)| v.as_str().unwrap_or(""))
                     .unwrap_or("");
-                if auth_val.starts_with("Bearer ") { "bearer" }
-                else if auth_val.starts_with("Basic ") { "basic" }
-                else { "custom" }
-            } else if obj.keys().any(|k| k.to_lowercase().contains("api-key") || k.to_lowercase().contains("apikey")) {
+                if auth_val.starts_with("Bearer ") {
+                    "bearer"
+                } else if auth_val.starts_with("Basic ") {
+                    "basic"
+                } else {
+                    "custom"
+                }
+            } else if obj.keys().any(|k| {
+                k.to_lowercase().contains("api-key") || k.to_lowercase().contains("apikey")
+            }) {
                 "api_key"
             } else if obj.keys().any(|k| k.to_lowercase() == "cookie") {
                 "cookie"
             } else {
                 "none"
             }
-        } else { "none" };
+        } else {
+            "none"
+        };
 
         // Extract body template (from route entries with POST/PUT/PATCH)
         let body_template = if ["POST", "PUT", "PATCH"].contains(&method.as_str()) {
-            entry.get("request_body").cloned()
+            entry
+                .get("request_body")
+                .cloned()
                 .or_else(|| entry.get("body").cloned())
         } else {
             None
         };
 
         // Extract response shape (first-level JSON keys)
-        let response_shape: Option<Vec<String>> = entry.get("response_body")
-            .and_then(|v| {
-                if let Some(obj) = v.as_object() {
-                    Some(obj.keys().cloned().collect())
-                } else if let Some(s) = v.as_str() {
-                    serde_json::from_str::<Value>(s).ok().and_then(|parsed| {
-                        parsed.as_object().map(|o| o.keys().cloned().collect())
-                    })
-                } else { None }
-            });
+        let response_shape: Option<Vec<String>> = entry.get("response_body").and_then(|v| {
+            if let Some(obj) = v.as_object() {
+                Some(obj.keys().cloned().collect())
+            } else if let Some(s) = v.as_str() {
+                serde_json::from_str::<Value>(s)
+                    .ok()
+                    .and_then(|parsed| parsed.as_object().map(|o| o.keys().cloned().collect()))
+            } else {
+                None
+            }
+        });
 
         api_entries.push(json!({
             "url_pattern": url_pattern_base,
@@ -2745,27 +3068,42 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
     }
 
     // Deduplicate by method + url_pattern, keep one representative and count occurrences
-    let mut deduped: std::collections::HashMap<String, (Value, u64)> = std::collections::HashMap::new();
+    let mut deduped: std::collections::HashMap<String, (Value, u64)> =
+        std::collections::HashMap::new();
     for entry in &api_entries {
-        let key = format!("{}:{}",
+        let key = format!(
+            "{}:{}",
             entry.get("method").and_then(|v| v.as_str()).unwrap_or(""),
-            entry.get("url_pattern").and_then(|v| v.as_str()).unwrap_or(""));
+            entry
+                .get("url_pattern")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+        );
         let counter = deduped.entry(key).or_insert_with(|| (entry.clone(), 0));
         counter.1 += 1;
     }
 
-    let mut discovered: Vec<Value> = deduped.into_values().map(|(mut entry, count)| {
-        if let Some(obj) = entry.as_object_mut() {
-            obj.insert("calls_observed".into(), json!(count));
-            obj.remove("url_actual");
-        }
-        entry
-    }).collect();
+    let mut discovered: Vec<Value> = deduped
+        .into_values()
+        .map(|(mut entry, count)| {
+            if let Some(obj) = entry.as_object_mut() {
+                obj.insert("calls_observed".into(), json!(count));
+                obj.remove("url_actual");
+            }
+            entry
+        })
+        .collect();
 
     // Sort by frequency (most-called first)
     discovered.sort_by(|a, b| {
-        let ca = a.get("calls_observed").and_then(|v| v.as_u64()).unwrap_or(0);
-        let cb = b.get("calls_observed").and_then(|v| v.as_u64()).unwrap_or(0);
+        let ca = a
+            .get("calls_observed")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let cb = b
+            .get("calls_observed")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         cb.cmp(&ca)
     });
 
@@ -2789,8 +3127,12 @@ fn resolve_step_refs(value: &Value, results: &[Value]) -> Value {
             for cap in step_re.captures_iter(s) {
                 let idx: usize = cap[1].parse().unwrap_or(usize::MAX);
                 if let Some(prev) = results.get(idx) {
-                    let replacement = prev.get("result")
-                        .map(|v| match v { Value::String(s) => s.clone(), other => other.to_string() })
+                    let replacement = prev
+                        .get("result")
+                        .map(|v| match v {
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        })
                         .unwrap_or_default();
                     out = out.replace(&cap[0], &replacement);
                 }
@@ -2798,8 +3140,12 @@ fn resolve_step_refs(value: &Value, results: &[Value]) -> Value {
             // Replace $prev.result with last result
             if out.contains("$prev.result") {
                 if let Some(last) = results.last() {
-                    let replacement = last.get("result")
-                        .map(|v| match v { Value::String(s) => s.clone(), other => other.to_string() })
+                    let replacement = last
+                        .get("result")
+                        .map(|v| match v {
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        })
                         .unwrap_or_default();
                     out = out.replace("$prev.result", &replacement);
                 }
@@ -2820,12 +3166,18 @@ fn resolve_step_refs(value: &Value, results: &[Value]) -> Value {
     }
 }
 
-async fn handle_browser_batch(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
+async fn handle_browser_batch(
+    args: &Value,
+    browser: &browser_mcp::browser::SharedBrowser,
+) -> Value {
     let actions = match args.get("actions").and_then(|v| v.as_array()) {
         Some(a) => a,
         None => return json!({"success": false, "error": "actions array required"}),
     };
-    let continue_on_error = args.get("continue_on_error").and_then(|v| v.as_bool()).unwrap_or(false);
+    let continue_on_error = args
+        .get("continue_on_error")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let mut results: Vec<Value> = Vec::with_capacity(actions.len());
 
@@ -2833,8 +3185,15 @@ async fn handle_browser_batch(args: &Value, browser: &browser_mcp::browser::Shar
         let action_type = match action.get("type").and_then(|v| v.as_str()) {
             Some(t) => t,
             None => {
-                let err = json!({"index": i, "success": false, "error": "action missing 'type' field"});
-                if continue_on_error { results.push(err); continue; } else { results.push(err); break; }
+                let err =
+                    json!({"index": i, "success": false, "error": "action missing 'type' field"});
+                if continue_on_error {
+                    results.push(err);
+                    continue;
+                } else {
+                    results.push(err);
+                    break;
+                }
             }
         };
         let raw_params = action.get("params").cloned().unwrap_or(json!({}));
@@ -2857,17 +3216,25 @@ async fn handle_browser_batch(args: &Value, browser: &browser_mcp::browser::Shar
             }
             other => {
                 let err = json!({"index": i, "success": false, "error": format!("unknown action type: {}", other)});
-                if continue_on_error { results.push(err); continue; } else { results.push(err); break; }
+                if continue_on_error {
+                    results.push(err);
+                    continue;
+                } else {
+                    results.push(err);
+                    break;
+                }
             }
         };
 
         let result = browser_mcp::tools::handle_tool(browser, tool_name, params).await;
-        let text_parts: Vec<String> = result.content.iter().filter_map(|c| {
-            match c {
+        let text_parts: Vec<String> = result
+            .content
+            .iter()
+            .filter_map(|c| match c {
                 browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
                 _ => None,
-            }
-        }).collect();
+            })
+            .collect();
         let combined = text_parts.join("\n");
         let val = if result.is_error {
             json!({"index": i, "type": action_type, "success": false, "error": combined})
@@ -2879,7 +3246,9 @@ async fn handle_browser_batch(args: &Value, browser: &browser_mcp::browser::Shar
 
         let failed = result.is_error;
         results.push(val);
-        if failed && !continue_on_error { break; }
+        if failed && !continue_on_error {
+            break;
+        }
     }
 
     json!({"success": true, "results": results, "total": actions.len(), "executed": results.len()})
@@ -2890,7 +3259,10 @@ fn handle_uia_batch(args: &Value) -> Value {
         Some(a) => a,
         None => return json!({"success": false, "error": "actions array required"}),
     };
-    let continue_on_error = args.get("continue_on_error").and_then(|v| v.as_bool()).unwrap_or(false);
+    let continue_on_error = args
+        .get("continue_on_error")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let mut results: Vec<Value> = Vec::with_capacity(actions.len());
 
@@ -2898,8 +3270,15 @@ fn handle_uia_batch(args: &Value) -> Value {
         let action_type = match action.get("type").and_then(|v| v.as_str()) {
             Some(t) => t,
             None => {
-                let err = json!({"index": i, "success": false, "error": "action missing 'type' field"});
-                if continue_on_error { results.push(err); continue; } else { results.push(err); break; }
+                let err =
+                    json!({"index": i, "success": false, "error": "action missing 'type' field"});
+                if continue_on_error {
+                    results.push(err);
+                    continue;
+                } else {
+                    results.push(err);
+                    break;
+                }
             }
         };
         let params = action.get("params").cloned().unwrap_or(json!({}));
@@ -2915,7 +3294,13 @@ fn handle_uia_batch(args: &Value) -> Value {
             "scroll" => "uia_scroll",
             other => {
                 let err = json!({"index": i, "success": false, "error": format!("unknown action type: {}", other)});
-                if continue_on_error { results.push(err); continue; } else { results.push(err); break; }
+                if continue_on_error {
+                    results.push(err);
+                    continue;
+                } else {
+                    results.push(err);
+                    break;
+                }
             }
         };
 
@@ -2930,14 +3315,19 @@ fn handle_uia_batch(args: &Value) -> Value {
             dispatch_uia_tool(tool_name, &params)
         };
 
-        let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(true)
+        let success = result
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true)
             && result.get("error").is_none();
 
         let val = json!({"index": i, "type": action_type, "result": result});
 
         let failed = !success;
         results.push(val);
-        if failed && !continue_on_error { break; }
+        if failed && !continue_on_error {
+            break;
+        }
     }
 
     json!({"success": true, "results": results, "total": actions.len(), "executed": results.len()})
@@ -2954,20 +3344,28 @@ fn dispatch_uia_tool(name: &str, args: &Value) -> Value {
 
 // ============ TOOL DISPATCH ============
 
-pub(crate) async fn handle_tool_call(name: &str, args: &Value, browser: &browser_mcp::browser::SharedBrowser, session: &meta::SessionHandle) -> Value {
+pub(crate) async fn handle_tool_call(
+    name: &str,
+    args: &Value,
+    browser: &browser_mcp::browser::SharedBrowser,
+    session: &meta::SessionHandle,
+) -> Value {
     let _dispatch_start = std::time::Instant::now();
     let _result = handle_tool_call_inner(name, args, browser, session).await;
     dashboard_endpoint::record_action(name, args, _dispatch_start.elapsed().as_millis() as u64);
     _result
 }
 
-async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp::browser::SharedBrowser, session: &meta::SessionHandle) -> Value {
-
+async fn handle_tool_call_inner(
+    name: &str,
+    args: &Value,
+    browser: &browser_mcp::browser::SharedBrowser,
+    session: &meta::SessionHandle,
+) -> Value {
     // Phase A v2 Meta-tools (checked first — highest priority)
     // Phase C fix1: catch_unwind boundary — meta-tool panics must never crash hands.exe
-    let meta_result = std::panic::AssertUnwindSafe(
-        meta::handle_meta_tool(name, args, browser, session)
-    );
+    let meta_result =
+        std::panic::AssertUnwindSafe(meta::handle_meta_tool(name, args, browser, session));
     match futures::FutureExt::catch_unwind(meta_result).await {
         Ok(Some(result)) => {
             // Update browser snapshot after any meta-tool runs
@@ -2985,7 +3383,10 @@ async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp:
             } else {
                 "unknown panic".to_string()
             };
-            eprintln!("[hands] PANIC CAUGHT in meta-tool '{}': {}", name, panic_msg);
+            eprintln!(
+                "[hands] PANIC CAUGHT in meta-tool '{}': {}",
+                name, panic_msg
+            );
             return json!({
                 "success": false,
                 "error": format!("Internal error in '{}': {}", name, panic_msg),
@@ -3018,7 +3419,9 @@ async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp:
         "file_upload" => return handle_file_upload(args, browser).await,
         "status" | "hands_status" => return handle_hands_status(),
         "hands_health" => return meta::health::hands_health(),
-        "browser_a11y_snapshot" | "browser_accessibility_snapshot" => return handle_accessibility_snapshot(args, browser).await,
+        "browser_a11y_snapshot" | "browser_accessibility_snapshot" => {
+            return handle_accessibility_snapshot(args, browser).await
+        }
         "browser_get_performance_log" => return handle_get_network_log(args, browser).await,
         "element_drag" => return handle_element_drag(args, browser).await,
         "browser_batch" => return handle_browser_batch(args, browser).await,
@@ -3057,7 +3460,11 @@ async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp:
 
         // Default stealth=true when headless=true and stealth wasn't explicitly set
         if browser_tool == "launch" && stealth_explicit.is_none() {
-            if resolved_args.get("headless").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if resolved_args
+                .get("headless")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 wants_stealth = true;
             }
         }
@@ -3072,42 +3479,59 @@ async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp:
 
         // Auto-retry with temp profile on Chrome profile lock (exit code 21)
         if result.is_error && browser_tool == "launch" {
-            let err_text: String = result.content.iter().filter_map(|c| {
-                match c {
+            let err_text: String = result
+                .content
+                .iter()
+                .filter_map(|c| match c {
                     browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
                     _ => None,
-                }
-            }).collect::<Vec<_>>().join("\n");
-            if err_text.contains("ExitStatus(21)") || err_text.contains("before websocket URL") || err_text.contains("exit code: 21") {
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            if err_text.contains("ExitStatus(21)")
+                || err_text.contains("before websocket URL")
+                || err_text.contains("exit code: 21")
+            {
                 // Auto-retry: create temp profile and retry launch once
                 let temp_profile = std::env::temp_dir().join("hands_chrome_profile");
                 let _ = std::fs::create_dir_all(&temp_profile);
                 let temp_profile_str = temp_profile.to_string_lossy().to_string();
-                eprintln!("[hands] Chrome profile locked, retrying with temp profile: {}", temp_profile_str);
+                eprintln!(
+                    "[hands] Chrome profile locked, retrying with temp profile: {}",
+                    temp_profile_str
+                );
 
                 let mut retry_args = saved_args.clone();
                 if let Some(obj) = retry_args.as_object_mut() {
                     obj.insert("profile_path".into(), json!(temp_profile_str));
                 }
-                let retry_result = browser_mcp::tools::handle_tool(browser, browser_tool, retry_args).await;
+                let retry_result =
+                    browser_mcp::tools::handle_tool(browser, browser_tool, retry_args).await;
 
                 if !retry_result.is_error {
                     // Retry succeeded — inject stealth if needed, then return with auto_profile flag
                     if wants_stealth {
                         let stealth_result = browser_mcp::tools::handle_tool(
-                            browser, "evaluate",
+                            browser,
+                            "evaluate",
                             json!({"expression": stealth::STEALTH_JS}),
-                        ).await;
+                        )
+                        .await;
                         if stealth_result.is_error {
-                            eprintln!("[hands] Stealth JS injection warning (auto-retry): {:?}", stealth_result.content);
+                            eprintln!(
+                                "[hands] Stealth JS injection warning (auto-retry): {:?}",
+                                stealth_result.content
+                            );
                         }
                     }
-                    let retry_text: Vec<String> = retry_result.content.iter().filter_map(|c| {
-                        match c {
+                    let retry_text: Vec<String> = retry_result
+                        .content
+                        .iter()
+                        .filter_map(|c| match c {
                             browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
                             _ => None,
-                        }
-                    }).collect();
+                        })
+                        .collect();
                     let combined_retry = retry_text.join("\n");
                     let mut val = serde_json::from_str::<Value>(&combined_retry)
                         .unwrap_or_else(|_| json!({"result": combined_retry}));
@@ -3134,11 +3558,19 @@ async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp:
         if !result.is_error && browser_tool == "navigate" {
             let snap = handle_accessibility_snapshot(&json!({}), browser).await;
             let ref_count = snap.get("ref_count").and_then(|v| v.as_u64()).unwrap_or(0);
-            eprintln!("[hands] Auto a11y snapshot after navigate: {} refs cached", ref_count);
+            eprintln!(
+                "[hands] Auto a11y snapshot after navigate: {} refs cached",
+                ref_count
+            );
             // Inject a11y hint into the navigate response
-            let text_parts: Vec<String> = result.content.iter().filter_map(|c| {
-                match c { browser_mcp::types::ToolContent::Text { text } => Some(text.clone()), _ => None }
-            }).collect();
+            let text_parts: Vec<String> = result
+                .content
+                .iter()
+                .filter_map(|c| match c {
+                    browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect();
             let combined = text_parts.join("\n");
             let mut val = serde_json::from_str::<Value>(&combined)
                 .unwrap_or_else(|_| json!({"result": combined}));
@@ -3151,23 +3583,33 @@ async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp:
         }
 
         // After successful launch/attach with stealth, inject anti-detection JS
-        if wants_stealth && !result.is_error && (browser_tool == "launch" || browser_tool == "attach") {
+        if wants_stealth
+            && !result.is_error
+            && (browser_tool == "launch" || browser_tool == "attach")
+        {
             let stealth_result = browser_mcp::tools::handle_tool(
-                browser, "evaluate",
+                browser,
+                "evaluate",
                 json!({"expression": stealth::STEALTH_JS}),
-            ).await;
+            )
+            .await;
             if stealth_result.is_error {
-                eprintln!("[hands] Stealth JS injection warning: {:?}", stealth_result.content);
+                eprintln!(
+                    "[hands] Stealth JS injection warning: {:?}",
+                    stealth_result.content
+                );
             }
         }
 
         // Extract text content from ToolResult
-        let text_parts: Vec<String> = result.content.iter().filter_map(|c| {
-            match c {
+        let text_parts: Vec<String> = result
+            .content
+            .iter()
+            .filter_map(|c| match c {
                 browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
                 _ => None,
-            }
-        }).collect();
+            })
+            .collect();
         let combined = text_parts.join("\n");
         return if result.is_error {
             json!({"success": false, "error": combined})
@@ -3198,7 +3640,12 @@ async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp:
 
 // ============ MCP STDIO SERVER ============
 
-fn handle_request(request: &JsonRpcRequest, browser: &browser_mcp::browser::SharedBrowser, session: &meta::SessionHandle, rt: &tokio::runtime::Handle) -> Option<JsonRpcResponse> {
+fn handle_request(
+    request: &JsonRpcRequest,
+    browser: &browser_mcp::browser::SharedBrowser,
+    session: &meta::SessionHandle,
+    rt: &tokio::runtime::Handle,
+) -> Option<JsonRpcResponse> {
     let id = request.id.clone().unwrap_or(Value::Null);
     let method = request.method.as_deref().unwrap_or("");
 
@@ -3255,7 +3702,7 @@ fn handle_request(request: &JsonRpcRequest, browser: &browser_mcp::browser::Shar
                 })),
                 error: None,
             }
-        },
+        }
 
         _ => JsonRpcResponse {
             jsonrpc: "2.0".into(),
@@ -3275,9 +3722,11 @@ fn main() {
     // Log startup
     let _ = std::fs::write(
         std::env::temp_dir().join("hands_mcp_started.txt"),
-        format!("Hands MCP started at {:?}\nPID: {}\n",
+        format!(
+            "Hands MCP started at {:?}\nPID: {}\n",
             std::time::SystemTime::now(),
-            std::process::id()),
+            std::process::id()
+        ),
     );
 
     // Spawn HTTP dashboard endpoint (127.0.0.1:9102 by default)

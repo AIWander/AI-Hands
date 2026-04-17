@@ -66,10 +66,7 @@ mod tests {
 
     #[test]
     fn test_form_control_reversible() {
-        assert_eq!(
-            classify_form_control_action(),
-            Reversibility::Reversible
-        );
+        assert_eq!(classify_form_control_action(), Reversibility::Reversible);
     }
 
     #[test]

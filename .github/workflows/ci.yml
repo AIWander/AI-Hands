@@ -57,8 +57,8 @@ jobs:
           extensions = {'.md', '.toml', '.txt', '.yml', '.yaml', '.json'}
 
           for root, dirs, files in os.walk('.'):
-              # Skip hidden dirs except .github, skip target/
-              dirs[:] = [d for d in dirs if d == '.github' or (not d.startswith('.') and d != 'target')]
+              # Skip hidden dirs and target/
+              dirs[:] = [d for d in dirs if not d.startswith('.') and d != 'target']
               for f in files:
                   ext = os.path.splitext(f)[1].lower()
                   if ext not in extensions:

@@ -260,7 +260,11 @@ pub fn fuzzy_match_score(target: &str, candidate: &str) -> f32 {
     let c_chars: std::collections::HashSet<char> = c.chars().collect();
     let intersection = t_chars.intersection(&c_chars).count() as f32;
     let union = t_chars.union(&c_chars).count() as f32;
-    if union == 0.0 { 0.0 } else { intersection / union }
+    if union == 0.0 {
+        0.0
+    } else {
+        intersection / union
+    }
 }
 
 /// Classify a click target's reversibility based on text patterns.
@@ -269,9 +273,17 @@ pub fn classify_reversibility(target_text: &str) -> super::response::Reversibili
 
     // Destructive patterns
     let destructive = [
-        "delete", "remove", "destroy", "erase", "purge",
-        "confirm payment", "pay now", "place order", "purchase",
-        "publish", "send permanently",
+        "delete",
+        "remove",
+        "destroy",
+        "erase",
+        "purge",
+        "confirm payment",
+        "pay now",
+        "place order",
+        "purchase",
+        "publish",
+        "send permanently",
     ];
     for pattern in &destructive {
         if lower.contains(pattern) {
@@ -281,9 +293,17 @@ pub fn classify_reversibility(target_text: &str) -> super::response::Reversibili
 
     // Requires confirmation patterns
     let confirm = [
-        "submit", "confirm", "sign up", "create account", "subscribe",
-        "cancel subscription", "close account", "unsubscribe",
-        "save", "apply changes", "update",
+        "submit",
+        "confirm",
+        "sign up",
+        "create account",
+        "subscribe",
+        "cancel subscription",
+        "close account",
+        "unsubscribe",
+        "save",
+        "apply changes",
+        "update",
     ];
     for pattern in &confirm {
         if lower.contains(pattern) {

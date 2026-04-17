@@ -17,14 +17,14 @@
 use serde_json::{json, Value};
 use std::time::Instant;
 
-use super::response::{MetaToolResult, RungAttempt, Confidence, Reversibility};
-use super::error::MetaError;
-use super::field_role::FieldRole;
-use super::label_match;
 use super::autofill;
 use super::consent;
-use super::reversibility as rev;
+use super::error::MetaError;
+use super::field_role::FieldRole;
 use super::instrumentation;
+use super::label_match;
+use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
+use super::reversibility as rev;
 use super::session::SharedSession;
 
 /// JS to pre-scan all form fields and their labels.
@@ -100,9 +100,18 @@ const JS_FIND_SUBMIT_BUTTONS: &str = r#"
 
 /// Default submit label patterns to search for.
 pub(super) const DEFAULT_SUBMIT_LABELS: &[&str] = &[
-    "Submit", "Sign Up", "Sign In", "Continue", "Next",
-    "Save", "Create", "Confirm", "Apply", "Log In",
-    "Register", "Create Account",
+    "Submit",
+    "Sign Up",
+    "Sign In",
+    "Continue",
+    "Next",
+    "Save",
+    "Create",
+    "Confirm",
+    "Apply",
+    "Log In",
+    "Register",
+    "Create Account",
 ];
 
 /// Per-field fill result with method tracking.
@@ -130,15 +139,26 @@ pub async fn handle(
         Some(f) => f.clone(),
         None => {
             return MetaToolResult::failure(
-                vec![], MetaError::other("fields is required (object mapping label→value)"), 0,
-            ).to_value();
+                vec![],
+                MetaError::other("fields is required (object mapping label→value)"),
+                0,
+            )
+            .to_value();
         }
     };
 
-    let auto_submit = args.get("auto_submit").and_then(|v| v.as_bool()).unwrap_or(false);
-    let submit_label = args.get("submit_label")
+    let auto_submit = args
+        .get("auto_submit")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let submit_label = args
+        .get("submit_label")
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>());
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        });
 
     let ctx = json!({
         "field_count": fields.len(),
@@ -154,43 +174,66 @@ pub async fn handle(
 
     if !browser_active {
         let elapsed = start.elapsed().as_millis() as u64;
-        return MetaToolResult::failure(
-            vec![], MetaError::no_browser(), elapsed,
-        ).to_value();
+        return MetaToolResult::failure(vec![], MetaError::no_browser(), elapsed).to_value();
     }
 
     let scan_result = browser_mcp::tools::handle_tool(
-        browser, "evaluate", json!({"expression": JS_FORM_PRESCAN}),
-    ).await;
+        browser,
+        "evaluate",
+        json!({"expression": JS_FORM_PRESCAN}),
+    )
+    .await;
     let (scan_ok, scan_val) = super::browser_result_to_value(scan_result);
     let scan_ms = scan_start.elapsed().as_millis() as u64;
 
     if !scan_ok {
-        rungs_tried.push(RungAttempt::failed("form_prescan", scan_ms, "Pre-scan failed"));
+        rungs_tried.push(RungAttempt::failed(
+            "form_prescan",
+            scan_ms,
+            "Pre-scan failed",
+        ));
         let elapsed = start.elapsed().as_millis() as u64;
         return MetaToolResult::failure(
-            rungs_tried, MetaError::other("Form pre-scan failed"), elapsed,
-        ).to_value();
+            rungs_tried,
+            MetaError::other("Form pre-scan failed"),
+            elapsed,
+        )
+        .to_value();
     }
 
     // Parse scanned fields
-    let form_fields = scan_val.as_array()
+    let form_fields = scan_val
+        .as_array()
         .or_else(|| scan_val.get("result").and_then(|v| v.as_array()))
         .cloned()
         .unwrap_or_default();
 
     let initial_field_count = form_fields.len();
     rungs_tried.push(RungAttempt::ok("form_prescan", scan_ms));
-    instrumentation::log_rung_attempt("hands_fill_form", &call_id, "form_prescan", true, scan_ms, None, &ctx);
+    instrumentation::log_rung_attempt(
+        "hands_fill_form",
+        &call_id,
+        "form_prescan",
+        true,
+        scan_ms,
+        None,
+        &ctx,
+    );
 
     // Build label candidates for matching
     let label_candidates: Vec<label_match::LabelCandidate> = form_fields
         .iter()
         .enumerate()
         .map(|(i, f)| label_match::LabelCandidate {
-            text: f.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            text: f
+                .get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             role: f.get("role").and_then(|v| v.as_str()).map(String::from),
-            selector: f.get("id").and_then(|v| v.as_str())
+            selector: f
+                .get("id")
+                .and_then(|v| v.as_str())
                 .filter(|id| !id.is_empty())
                 .map(|id| format!("#{}", id)),
             index: i,
@@ -232,7 +275,10 @@ pub async fn handle(
         let field_y = field_data.get("y").and_then(|v| v.as_i64()).unwrap_or(0);
 
         // Check if field is disabled
-        let disabled = field_data.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let disabled = field_data
+            .get("disabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if disabled {
             failed.push(json!({
                 "label": label,
@@ -248,14 +294,23 @@ pub async fn handle(
         }
 
         // ── Autofill detection: check if browser has already filled this field ──
-        let field_selector = field_data.get("id").and_then(|v| v.as_str())
+        let field_selector = field_data
+            .get("id")
+            .and_then(|v| v.as_str())
             .filter(|id| !id.is_empty())
             .map(|id| format!("#{}", id));
         if let Some(ref sel) = field_selector {
-            let autofill_js = format!("({})('{}')", autofill::JS_CHECK_AUTOFILL, sel.replace('\'', "\\'"));
+            let autofill_js = format!(
+                "({})('{}')",
+                autofill::JS_CHECK_AUTOFILL,
+                sel.replace('\'', "\\'")
+            );
             let af_result = browser_mcp::tools::handle_tool(
-                browser, "evaluate", json!({"expression": autofill_js}),
-            ).await;
+                browser,
+                "evaluate",
+                json!({"expression": autofill_js}),
+            )
+            .await;
             let (af_ok, af_val) = super::browser_result_to_value(af_result);
             if af_ok {
                 let af_data = af_val.get("result").unwrap_or(&af_val);
@@ -267,7 +322,10 @@ pub async fn handle(
                         label: label.clone(),
                         success: true,
                         method: "autofill".into(),
-                        reason: Some(format!("Browser autofilled: {}", af_state.value.as_deref().unwrap_or("(value)"))),
+                        reason: Some(format!(
+                            "Browser autofilled: {}",
+                            af_state.value.as_deref().unwrap_or("(value)")
+                        )),
                     });
                     last_fill_coords = Some((field_x, field_y));
                     continue;
@@ -293,7 +351,8 @@ pub async fn handle(
             }
             FieldRole::Checkbox | FieldRole::Radio => {
                 // State-aware: only click if current state doesn't match desired
-                let current_checked = field_data.get("checked")
+                let current_checked = field_data
+                    .get("checked")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 let desired = value_str == "true" || value_str == "1" || value_str == "checked";
@@ -301,8 +360,11 @@ pub async fn handle(
                 if current_checked != desired {
                     // Click to toggle
                     let click_result = browser_mcp::tools::handle_tool(
-                        browser, "click", json!({"x": field_x, "y": field_y}),
-                    ).await;
+                        browser,
+                        "click",
+                        json!({"x": field_x, "y": field_y}),
+                    )
+                    .await;
                     let (ok, _) = super::browser_result_to_value(click_result);
                     (ok, "toggled")
                 } else {
@@ -311,30 +373,43 @@ pub async fn handle(
             }
             FieldRole::Select => {
                 // Click to open dropdown, then select option
-                let selector = matched_field.selector.as_deref()
-                    .or_else(|| field_data.get("id").and_then(|v| v.as_str()).filter(|id| !id.is_empty()).map(|id| id));
+                let selector = matched_field.selector.as_deref().or_else(|| {
+                    field_data
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .filter(|id| !id.is_empty())
+                        .map(|id| id)
+                });
 
                 if let Some(sel_id) = selector {
                     let select_result = browser_mcp::tools::handle_tool(
-                        browser, "select",
+                        browser,
+                        "select",
                         json!({"selector": format!("#{}", sel_id), "value": value_str}),
-                    ).await;
+                    )
+                    .await;
                     let (ok, _) = super::browser_result_to_value(select_result);
                     (ok, "selected")
                 } else {
                     // Fallback: click field, then type value
                     let _ = browser_mcp::tools::handle_tool(
-                        browser, "click", json!({"x": field_x, "y": field_y}),
-                    ).await;
+                        browser,
+                        "click",
+                        json!({"x": field_x, "y": field_y}),
+                    )
+                    .await;
                     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
                     // Type option text to filter/select
                     let _ = browser_mcp::tools::handle_tool(
-                        browser, "type_text", json!({"text": value_str}),
-                    ).await;
-                    let _ = browser_mcp::tools::handle_tool(
-                        browser, "press", json!({"key": "Enter"}),
-                    ).await;
+                        browser,
+                        "type_text",
+                        json!({"text": value_str}),
+                    )
+                    .await;
+                    let _ =
+                        browser_mcp::tools::handle_tool(browser, "press", json!({"key": "Enter"}))
+                            .await;
                     (true, "selected")
                 }
             }
@@ -348,10 +423,15 @@ pub async fn handle(
                         "verify_focus": true,
                         "fast_set": !field_role.is_sensitive(),
                     }),
-                    browser, session,
-                ).await;
+                    browser,
+                    session,
+                )
+                .await;
 
-                let ok = type_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                let ok = type_result
+                    .get("success")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 (ok, "typed")
             }
         };
@@ -385,10 +465,14 @@ pub async fn handle(
         // (dynamic forms that reveal fields after earlier fields are filled)
         if filled.len() > 0 && filled.len() % 3 == 0 {
             let rescan = browser_mcp::tools::handle_tool(
-                browser, "evaluate", json!({"expression": JS_FORM_PRESCAN}),
-            ).await;
+                browser,
+                "evaluate",
+                json!({"expression": JS_FORM_PRESCAN}),
+            )
+            .await;
             let (_, rescan_val) = super::browser_result_to_value(rescan);
-            let new_count = rescan_val.as_array()
+            let new_count = rescan_val
+                .as_array()
                 .or_else(|| rescan_val.get("result").and_then(|v| v.as_array()))
                 .map(|a| a.len())
                 .unwrap_or(0);
@@ -411,16 +495,21 @@ pub async fn handle(
     let mut submit_confidence = 0.0f32;
 
     if auto_submit || args.get("submit_label").is_some() {
-        let submit_labels = submit_label.as_ref()
+        let submit_labels = submit_label
+            .as_ref()
             .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<_>>())
             .unwrap_or_else(|| DEFAULT_SUBMIT_LABELS.to_vec());
 
         // Find submit buttons
         let btn_result = browser_mcp::tools::handle_tool(
-            browser, "evaluate", json!({"expression": JS_FIND_SUBMIT_BUTTONS}),
-        ).await;
+            browser,
+            "evaluate",
+            json!({"expression": JS_FIND_SUBMIT_BUTTONS}),
+        )
+        .await;
         let (_, btn_val) = super::browser_result_to_value(btn_result);
-        let buttons = btn_val.as_array()
+        let buttons = btn_val
+            .as_array()
             .or_else(|| btn_val.get("result").and_then(|v| v.as_array()))
             .cloned()
             .unwrap_or_default();
@@ -431,9 +520,9 @@ pub async fn handle(
         for (i, btn) in buttons.iter().enumerate() {
             let btn_text = btn.get("text").and_then(|v| v.as_str()).unwrap_or("");
 
-            let label_match = submit_labels.iter().any(|sl| {
-                btn_text.to_lowercase().contains(&sl.to_lowercase())
-            });
+            let label_match = submit_labels
+                .iter()
+                .any(|sl| btn_text.to_lowercase().contains(&sl.to_lowercase()));
 
             if label_match || btn.get("type").and_then(|v| v.as_str()) == Some("submit") {
                 // Spatial proximity tiebreaker
@@ -474,7 +563,9 @@ pub async fn handle(
                     let s = session.read().unwrap_or_else(|e| e.into_inner());
                     s.auto_accept_low_risk
                 };
-                if !auto_submit || !consent::should_auto_accept(&consent_classification, session_auto_accept) {
+                if !auto_submit
+                    || !consent::should_auto_accept(&consent_classification, session_auto_accept)
+                {
                     submit_result = json!({
                         "submitted": false,
                         "reason": format!("Consent classified as {:?}: {}", consent_classification.risk, consent_classification.reasoning),
@@ -524,8 +615,11 @@ pub async fn handle(
             } else {
                 // Click submit
                 let click_result = browser_mcp::tools::handle_tool(
-                    browser, "click", json!({"x": btn_x, "y": btn_y}),
-                ).await;
+                    browser,
+                    "click",
+                    json!({"x": btn_x, "y": btn_y}),
+                )
+                .await;
                 let (ok, _) = super::browser_result_to_value(click_result);
                 submit_method = format!("click:{}", btn_text);
                 submit_confidence = 0.9;
@@ -536,9 +630,8 @@ pub async fn handle(
             }
         } else if auto_submit {
             // Fallback: press Enter on last field
-            let _ = browser_mcp::tools::handle_tool(
-                browser, "press", json!({"key": "Enter"}),
-            ).await;
+            let _ =
+                browser_mcp::tools::handle_tool(browser, "press", json!({"key": "Enter"})).await;
             submit_method = "enter_key_fallback".into();
             submit_confidence = 0.5;
             submit_result = json!({
@@ -578,10 +671,12 @@ pub async fn handle(
     result = result.with_confidence(Confidence::method_only(fill_rate));
 
     // Reversibility depends on whether we submitted
-    if submit_result.get("submitted").and_then(|v| v.as_bool()).unwrap_or(false) {
-        result = result.with_reversibility(
-            rev::classify_submit_action(auto_submit)
-        );
+    if submit_result
+        .get("submitted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        result = result.with_reversibility(rev::classify_submit_action(auto_submit));
     } else {
         result = result.with_reversibility(Reversibility::Reversible);
     }
@@ -591,8 +686,14 @@ pub async fn handle(
     }
 
     instrumentation::log_aggregate(
-        "hands_fill_form", &call_id, true, "form_fill",
-        result.rungs_tried.len(), elapsed, Some(fill_rate), None,
+        "hands_fill_form",
+        &call_id,
+        true,
+        "form_fill",
+        result.rungs_tried.len(),
+        elapsed,
+        Some(fill_rate),
+        None,
     );
 
     result.to_value()

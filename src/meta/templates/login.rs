@@ -32,7 +32,10 @@ pub fn build_login_script(args: &Value) -> Value {
     let username = args.get("username").and_then(|v| v.as_str());
     let password = args.get("password").and_then(|v| v.as_str());
     let totp_name = args.get("totp_name").and_then(|v| v.as_str());
-    let auto_remember = args.get("auto_remember").and_then(|v| v.as_bool()).unwrap_or(true);
+    let auto_remember = args
+        .get("auto_remember")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     let success_text = args.get("success_text").and_then(|v| v.as_str());
     let success_url_contains = args.get("success_url_contains").and_then(|v| v.as_str());
 
@@ -94,11 +97,14 @@ pub fn build_login_script(args: &Value) -> Value {
     // Allow caller to override field selectors and button text via template_args
     let template_args = args.get("template_args");
     let custom_username_selector = template_args
-        .and_then(|t| t.get("username_selector")).and_then(|v| v.as_str());
+        .and_then(|t| t.get("username_selector"))
+        .and_then(|v| v.as_str());
     let custom_password_selector = template_args
-        .and_then(|t| t.get("password_selector")).and_then(|v| v.as_str());
+        .and_then(|t| t.get("password_selector"))
+        .and_then(|v| v.as_str());
     let custom_submit_text = template_args
-        .and_then(|t| t.get("submit_text")).and_then(|v| v.as_str());
+        .and_then(|t| t.get("submit_text"))
+        .and_then(|v| v.as_str());
 
     // Detect login form — use broad attribute selectors that match real sites
     steps.push(json!({
@@ -136,9 +142,7 @@ pub fn build_login_script(args: &Value) -> Value {
     }
 
     if password.is_some() || credential_name.is_some() {
-        let password_target = custom_password_selector.unwrap_or(
-            "input[type=password]"
-        );
+        let password_target = custom_password_selector.unwrap_or("input[type=password]");
         steps.push(json!({
             "tool": "hands_type",
             "args": {
@@ -170,9 +174,7 @@ pub fn build_login_script(args: &Value) -> Value {
 
     // Submit the login form — try multiple button text variations (case-insensitive)
     // Phase C fix2: "Sign In" was hardcoded but real sites use Login, Submit, Continue, etc.
-    let submit_target = custom_submit_text.unwrap_or(
-        "button[type=submit], input[type=submit]"
-    );
+    let submit_target = custom_submit_text.unwrap_or("button[type=submit], input[type=submit]");
     // First try: CSS selector for submit button (most reliable)
     steps.push(json!({
         "tool": "hands_click",
@@ -367,7 +369,10 @@ mod tests {
         let result = build_login_script(&args);
 
         assert!(result.get("steps").unwrap().as_array().unwrap().len() >= 5);
-        assert_eq!(result["variables"]["login_url"], "https://example.com/login");
+        assert_eq!(
+            result["variables"]["login_url"],
+            "https://example.com/login"
+        );
         assert_eq!(result["stop_on_error"], false);
     }
 
@@ -385,12 +390,14 @@ mod tests {
         // Phase C fix2: credentials are now filled via hands_type (attribute selectors)
         // instead of hands_fill_form (label matching)
         let has_username = steps.iter().any(|s| {
-            s.get("label").and_then(|l| l.as_str())
+            s.get("label")
+                .and_then(|l| l.as_str())
                 .map(|l| l.contains("fill_username"))
                 .unwrap_or(false)
         });
         let has_password = steps.iter().any(|s| {
-            s.get("label").and_then(|l| l.as_str())
+            s.get("label")
+                .and_then(|l| l.as_str())
                 .map(|l| l.contains("fill_password"))
                 .unwrap_or(false)
         });
@@ -399,7 +406,8 @@ mod tests {
 
         // Submit should use CSS selector for button[type=submit] as primary
         let has_css_submit = steps.iter().any(|s| {
-            s.get("label").and_then(|l| l.as_str())
+            s.get("label")
+                .and_then(|l| l.as_str())
                 .map(|l| l.contains("submit_login_css"))
                 .unwrap_or(false)
         });
@@ -424,10 +432,15 @@ mod tests {
 
         let steps = result["steps"].as_array().unwrap();
         // Username step should use custom selector
-        let username_step = steps.iter().find(|s| {
-            s.get("label").and_then(|l| l.as_str())
-                .map(|l| l.contains("fill_username")).unwrap_or(false)
-        }).unwrap();
+        let username_step = steps
+            .iter()
+            .find(|s| {
+                s.get("label")
+                    .and_then(|l| l.as_str())
+                    .map(|l| l.contains("fill_username"))
+                    .unwrap_or(false)
+            })
+            .unwrap();
         assert_eq!(
             username_step["args"]["target"], "input#my-email",
             "Should use custom username selector from template_args"
@@ -470,7 +483,10 @@ mod tests {
                 .map(|l| l.contains("remember_me"))
                 .unwrap_or(false)
         });
-        assert!(!has_remember, "Should not have remember_me steps when auto_remember=false");
+        assert!(
+            !has_remember,
+            "Should not have remember_me steps when auto_remember=false"
+        );
     }
 
     #[test]

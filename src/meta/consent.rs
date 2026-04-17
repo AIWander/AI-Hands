@@ -65,11 +65,27 @@ pub fn classify_consent(
 
     // ── High risk text patterns ──
     let high_risk_text = [
-        "payment", "charge", "subscription", "billing", "arbitration",
-        "delete my account", "permanent", "cannot be undone", "irreversible",
-        "financial", "credit card", "debit card",
-        "total due", "order total", "amount", "bank account", "wire transfer",
-        "non-refundable", "auto-renew", "recurring charge", "final sale",
+        "payment",
+        "charge",
+        "subscription",
+        "billing",
+        "arbitration",
+        "delete my account",
+        "permanent",
+        "cannot be undone",
+        "irreversible",
+        "financial",
+        "credit card",
+        "debit card",
+        "total due",
+        "order total",
+        "amount",
+        "bank account",
+        "wire transfer",
+        "non-refundable",
+        "auto-renew",
+        "recurring charge",
+        "final sale",
     ];
     for pattern in &high_risk_text {
         if lower_text.contains(pattern) {
@@ -83,10 +99,17 @@ pub fn classify_consent(
 
     // ── Medium risk text patterns ──
     let medium_risk_text = [
-        "create account", "sign up", "register",
-        "data sharing", "third party", "subscribe",
-        "marketing emails", "share data with partners", "opt-in",
-        "mailing list", "free trial",
+        "create account",
+        "sign up",
+        "register",
+        "data sharing",
+        "third party",
+        "subscribe",
+        "marketing emails",
+        "share data with partners",
+        "opt-in",
+        "mailing list",
+        "free trial",
     ];
     for pattern in &medium_risk_text {
         if lower_text.contains(pattern) {
@@ -100,8 +123,11 @@ pub fn classify_consent(
 
     // ── Low risk text patterns ──
     let low_risk_text = [
-        "terms of service", "privacy policy", "content preferences",
-        "notification settings", "location sharing",
+        "terms of service",
+        "privacy policy",
+        "content preferences",
+        "notification settings",
+        "location sharing",
     ];
     for pattern in &low_risk_text {
         if lower_text.contains(pattern) {
@@ -115,10 +141,18 @@ pub fn classify_consent(
 
     // ── No risk text patterns (cookie banners, GDPR) ──
     let no_risk_text = [
-        "we value your privacy", "this site uses cookies",
-        "accept all cookies", "only necessary cookies", "manage preferences",
-        "cookie", "gdpr", "we use cookies",
-        "continue to site", "age verification", "newsletter", "dismiss",
+        "we value your privacy",
+        "this site uses cookies",
+        "accept all cookies",
+        "only necessary cookies",
+        "manage preferences",
+        "cookie",
+        "gdpr",
+        "we use cookies",
+        "continue to site",
+        "age verification",
+        "newsletter",
+        "dismiss",
     ];
     for pattern in &no_risk_text {
         if lower_text.contains(pattern) {
@@ -132,8 +166,14 @@ pub fn classify_consent(
 
     // ── High risk button patterns ──
     let high_risk_buttons = [
-        "pay now", "delete", "confirm payment", "purchase",
-        "place order", "confirm purchase", "submit payment", "agree and pay",
+        "pay now",
+        "delete",
+        "confirm payment",
+        "purchase",
+        "place order",
+        "confirm purchase",
+        "submit payment",
+        "agree and pay",
     ];
     for btn in &lower_buttons {
         for pattern in &high_risk_buttons {
@@ -148,9 +188,7 @@ pub fn classify_consent(
     }
 
     // ── Medium risk button patterns ──
-    let medium_risk_buttons = [
-        "create account", "sign up", "register", "start trial",
-    ];
+    let medium_risk_buttons = ["create account", "sign up", "register", "start trial"];
     for btn in &lower_buttons {
         for pattern in &medium_risk_buttons {
             if btn.contains(pattern) {
@@ -179,7 +217,12 @@ pub fn classify_consent(
 
     // ── No risk button patterns ──
     let no_risk_buttons = [
-        "accept cookies", "got it", "ok", "dismiss", "close", "allow all",
+        "accept cookies",
+        "got it",
+        "ok",
+        "dismiss",
+        "close",
+        "allow all",
     ];
     for btn in &lower_buttons {
         for pattern in &no_risk_buttons {
@@ -203,7 +246,13 @@ pub fn classify_consent(
     }
 
     // ── URL context ──
-    let high_risk_urls = ["/checkout", "/payment", "/billing", "/purchase", "/subscribe"];
+    let high_risk_urls = [
+        "/checkout",
+        "/payment",
+        "/billing",
+        "/purchase",
+        "/subscribe",
+    ];
     for pattern in &high_risk_urls {
         if lower_url.contains(pattern) {
             signals.push(ConsentSignal {
@@ -214,7 +263,12 @@ pub fn classify_consent(
         }
     }
 
-    let medium_risk_urls = ["/register", "/signup", "/create-account", "/settings/privacy"];
+    let medium_risk_urls = [
+        "/register",
+        "/signup",
+        "/create-account",
+        "/settings/privacy",
+    ];
     for pattern in &medium_risk_urls {
         if lower_url.contains(pattern) {
             signals.push(ConsentSignal {
@@ -230,8 +284,15 @@ pub fn classify_consent(
         let ctx_str = ctx.to_string().to_lowercase();
 
         // Payment fields nearby → bump to HighRisk
-        let payment_indicators = ["credit card", "cvv", "expiration", "card number",
-            "cvc", "billing address", "payment method"];
+        let payment_indicators = [
+            "credit card",
+            "cvv",
+            "expiration",
+            "card number",
+            "cvc",
+            "billing address",
+            "payment method",
+        ];
         let has_payment = payment_indicators.iter().any(|p| ctx_str.contains(p));
         if has_payment {
             signals.push(ConsentSignal {
@@ -242,8 +303,7 @@ pub fn classify_consent(
         }
 
         // Account creation fields nearby → bump to MediumRisk
-        let account_indicators = ["password", "confirm password", "create account",
-            "username"];
+        let account_indicators = ["password", "confirm password", "create account", "username"];
         let has_account = account_indicators.iter().any(|p| ctx_str.contains(p));
         if has_account && !has_payment {
             signals.push(ConsentSignal {
@@ -272,7 +332,9 @@ pub fn classify_consent(
         RiskLevel::NoRisk => "Standard cookie/privacy consent — no risk to user".into(),
         RiskLevel::LowRisk => "Standard browsing terms — low risk".into(),
         RiskLevel::MediumRisk => "Account creation or data sharing — requires user review".into(),
-        RiskLevel::HighRisk => "Financial commitment or irreversible action — always surface to user".into(),
+        RiskLevel::HighRisk => {
+            "Financial commitment or irreversible action — always surface to user".into()
+        }
     };
 
     ConsentClassification {
@@ -284,7 +346,10 @@ pub fn classify_consent(
 }
 
 /// Check if the session should auto-accept this dialog.
-pub fn should_auto_accept(classification: &ConsentClassification, session_auto_accept: bool) -> bool {
+pub fn should_auto_accept(
+    classification: &ConsentClassification,
+    session_auto_accept: bool,
+) -> bool {
     if !session_auto_accept {
         return false;
     }
@@ -296,10 +361,26 @@ pub fn should_auto_accept(classification: &ConsentClassification, session_auto_a
 pub fn looks_like_consent_button(text: &str) -> bool {
     let lower = text.to_lowercase();
     let consent_patterns = [
-        "accept", "agree", "allow", "consent", "cookie", "got it",
-        "ok", "dismiss", "i understand", "i accept", "continue",
-        "confirm", "submit", "place order", "pay now", "purchase",
-        "sign up", "register", "create account", "start trial",
+        "accept",
+        "agree",
+        "allow",
+        "consent",
+        "cookie",
+        "got it",
+        "ok",
+        "dismiss",
+        "i understand",
+        "i accept",
+        "continue",
+        "confirm",
+        "submit",
+        "place order",
+        "pay now",
+        "purchase",
+        "sign up",
+        "register",
+        "create account",
+        "start trial",
     ];
     consent_patterns.iter().any(|p| lower.contains(p))
 }
@@ -347,7 +428,10 @@ mod tests {
             Some("https://news.example.com/"),
             None,
         );
-        assert!(matches!(classification.risk, RiskLevel::NoRisk | RiskLevel::LowRisk));
+        assert!(matches!(
+            classification.risk,
+            RiskLevel::NoRisk | RiskLevel::LowRisk
+        ));
         assert!(classification.auto_acceptable);
         assert!(should_auto_accept(&classification, true));
     }
@@ -374,7 +458,10 @@ mod tests {
             Some("https://example.com/articles"),
             None,
         );
-        assert!(matches!(classification.risk, RiskLevel::LowRisk | RiskLevel::NoRisk));
+        assert!(matches!(
+            classification.risk,
+            RiskLevel::LowRisk | RiskLevel::NoRisk
+        ));
         assert!(classification.auto_acceptable);
         assert!(should_auto_accept(&classification, true));
     }
@@ -388,7 +475,10 @@ mod tests {
             None,
         );
         // "free trial" + "charged" → medium to high
-        assert!(matches!(classification.risk, RiskLevel::MediumRisk | RiskLevel::HighRisk));
+        assert!(matches!(
+            classification.risk,
+            RiskLevel::MediumRisk | RiskLevel::HighRisk
+        ));
         assert!(!classification.auto_acceptable);
     }
 
@@ -405,12 +495,7 @@ mod tests {
 
     #[test]
     fn test_no_risk_with_session_flag_off() {
-        let classification = classify_consent(
-            "We use cookies for analytics.",
-            &["OK"],
-            None,
-            None,
-        );
+        let classification = classify_consent("We use cookies for analytics.", &["OK"], None, None);
         assert!(classification.auto_acceptable);
         assert!(!should_auto_accept(&classification, false));
     }

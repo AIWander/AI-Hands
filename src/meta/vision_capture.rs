@@ -36,14 +36,9 @@ pub enum CaptureMode {
     /// Full screen, pre-downscaled to analysis resolution.
     FullScreen,
     /// Tiled: split into grid for precision analysis.
-    Tiled {
-        cols: u32,
-        rows: u32,
-    },
+    Tiled { cols: u32, rows: u32 },
     /// Specific window by title.
-    Window {
-        title: String,
-    },
+    Window { title: String },
 }
 
 /// Capture result from vision_capture.
@@ -131,8 +126,12 @@ pub fn downscale_dimensions(width: u32, height: u32) -> (u32, u32) {
 
 /// Compute crop region with padding, clamped to screen bounds.
 pub fn compute_crop_region(
-    x: i32, y: i32, width: u32, height: u32,
-    screen_width: u32, screen_height: u32,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    screen_width: u32,
+    screen_height: u32,
 ) -> (i32, i32, u32, u32) {
     let pad = CROP_PADDING as i32;
     let x1 = (x - pad).max(0);
@@ -144,8 +143,10 @@ pub fn compute_crop_region(
 
 /// Compute tile grid for a screen resolution.
 pub fn compute_tile_grid(
-    screen_width: u32, screen_height: u32,
-    cols: u32, rows: u32,
+    screen_width: u32,
+    screen_height: u32,
+    cols: u32,
+    rows: u32,
 ) -> Vec<(i32, i32, u32, u32)> {
     let tile_w = screen_width / cols;
     let tile_h = screen_height / rows;
@@ -155,8 +156,16 @@ pub fn compute_tile_grid(
             let x = col * tile_w;
             let y = row * tile_h;
             // Last column/row absorbs remainder pixels
-            let w = if col == cols - 1 { screen_width - x } else { tile_w };
-            let h = if row == rows - 1 { screen_height - y } else { tile_h };
+            let w = if col == cols - 1 {
+                screen_width - x
+            } else {
+                tile_w
+            };
+            let h = if row == rows - 1 {
+                screen_height - y
+            } else {
+                tile_h
+            };
             tiles.push((x as i32, y as i32, w, h));
         }
     }
@@ -166,8 +175,13 @@ pub fn compute_tile_grid(
 /// Generate a cache key for a capture mode.
 pub fn mode_cache_key(mode: &CaptureMode) -> String {
     match mode {
-        CaptureMode::Cropped { x, y, width, height } => {
-            format!("crop_{}_{}_{}_{}",x, y, width, height)
+        CaptureMode::Cropped {
+            x,
+            y,
+            width,
+            height,
+        } => {
+            format!("crop_{}_{}_{}_{}", x, y, width, height)
         }
         CaptureMode::FullScreen => "fullscreen".to_string(),
         CaptureMode::Tiled { cols, rows } => format!("tiled_{}x{}", cols, rows),

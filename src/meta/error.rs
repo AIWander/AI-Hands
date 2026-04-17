@@ -135,7 +135,9 @@ impl MetaError {
 
     /// Convenience: other/generic error.
     pub fn other(msg: impl Into<String>) -> Self {
-        Self::Other { message: msg.into() }
+        Self::Other {
+            message: msg.into(),
+        }
     }
 
     /// Convenience: browser not running.
@@ -164,9 +166,7 @@ impl MetaError {
             | Self::RoleMismatch { .. }
             | Self::NotInteractable { .. } => "targeting",
 
-            Self::StaleRef { .. }
-            | Self::FocusLost { .. }
-            | Self::DynamicContentChanged => "state",
+            Self::StaleRef { .. } | Self::FocusLost { .. } | Self::DynamicContentChanged => "state",
 
             Self::BrowserNotRunning
             | Self::SubsystemUnavailable { .. }
@@ -177,8 +177,7 @@ impl MetaError {
             | Self::RequiresConfirmation { .. }
             | Self::InsufficientContent { .. } => "content",
 
-            Self::MultipleWindows { .. }
-            | Self::DialogBlocking { .. } => "windows",
+            Self::MultipleWindows { .. } | Self::DialogBlocking { .. } => "windows",
 
             Self::ScriptStepFailed { .. } => "script",
 
@@ -196,10 +195,19 @@ impl std::fmt::Display for MetaError {
                 write!(f, "Element '{}' not found in {}", target, scope)
             }
             Self::MultipleMatches { target, candidates } => {
-                write!(f, "Multiple matches for '{}': {} candidates", target, candidates.len())
+                write!(
+                    f,
+                    "Multiple matches for '{}': {} candidates",
+                    target,
+                    candidates.len()
+                )
             }
             Self::RoleMismatch { expected, found } => {
-                write!(f, "Role mismatch: expected '{}', found '{}'", expected, found)
+                write!(
+                    f,
+                    "Role mismatch: expected '{}', found '{}'",
+                    expected, found
+                )
             }
             Self::NotInteractable { reason } => {
                 write!(f, "Element not interactable: {}", reason)
@@ -216,11 +224,21 @@ impl std::fmt::Display for MetaError {
                 write!(f, "Subsystem '{}' unavailable: {}", subsystem, reason)
             }
             Self::NoPage => write!(f, "No page loaded in browser"),
-            Self::Timeout { operation, elapsed_ms } => {
+            Self::Timeout {
+                operation,
+                elapsed_ms,
+            } => {
                 write!(f, "Timeout on '{}' after {}ms", operation, elapsed_ms)
             }
-            Self::VerificationFailed { evidence, confidence } => {
-                write!(f, "Verification failed (confidence {}): {}", confidence, evidence)
+            Self::VerificationFailed {
+                evidence,
+                confidence,
+            } => {
+                write!(
+                    f,
+                    "Verification failed (confidence {}): {}",
+                    confidence, evidence
+                )
             }
             Self::RequiresConfirmation { action, reason } => {
                 write!(f, "Requires confirmation for '{}': {}", action, reason)
@@ -229,13 +247,24 @@ impl std::fmt::Display for MetaError {
                 write!(f, "Insufficient content ({} chars): {}", chars, reason)
             }
             Self::MultipleWindows { app, candidates } => {
-                write!(f, "Multiple windows for '{}': {} found", app, candidates.len())
+                write!(
+                    f,
+                    "Multiple windows for '{}': {} found",
+                    app,
+                    candidates.len()
+                )
             }
             Self::DialogBlocking { dialog_title, .. } => {
                 write!(f, "Dialog blocking: '{}'", dialog_title)
             }
-            Self::ScriptStepFailed { step_index, step_label, inner } => {
-                write!(f, "Script step {} ({}) failed: {}",
+            Self::ScriptStepFailed {
+                step_index,
+                step_label,
+                inner,
+            } => {
+                write!(
+                    f,
+                    "Script step {} ({}) failed: {}",
                     step_index,
                     step_label.as_deref().unwrap_or("unnamed"),
                     inner

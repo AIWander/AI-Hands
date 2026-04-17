@@ -69,8 +69,13 @@ pub enum Reversibility {
 #[serde(tag = "level", rename_all = "snake_case")]
 pub enum Certainty {
     Certain,
-    Likely { reasoning: String },
-    Unclear { options: Vec<String>, reasoning: String },
+    Likely {
+        reasoning: String,
+    },
+    Unclear {
+        options: Vec<String>,
+        reasoning: String,
+    },
 }
 
 impl MetaToolResult {
@@ -176,15 +181,24 @@ impl RungAttempt {
 
 impl Confidence {
     pub fn method_only(score: f32) -> Self {
-        Self { method: Some(score), location: None }
+        Self {
+            method: Some(score),
+            location: None,
+        }
     }
 
     pub fn location_only(score: f32) -> Self {
-        Self { method: None, location: Some(score) }
+        Self {
+            method: None,
+            location: Some(score),
+        }
     }
 
     pub fn dual(method: f32, location: f32) -> Self {
-        Self { method: Some(method), location: Some(location) }
+        Self {
+            method: Some(method),
+            location: Some(location),
+        }
     }
 }
 

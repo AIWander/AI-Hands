@@ -32,45 +32,45 @@
 //!   - `hands_login_recovery` — 5-stage login pipeline (template + script)
 
 // ── Shared infrastructure ──
-pub mod response;
-pub mod error;
-pub mod session;
 pub mod cache;
-pub mod targeting;
-pub mod vision_capture;
+pub mod consent;
+pub mod error;
 pub mod health;
 pub mod instrumentation;
-pub mod consent;
+pub mod response;
+pub mod session;
+pub mod targeting;
+pub mod vision_capture;
 
 // ── Phase B shared helpers ──
+pub mod autofill;
 pub mod field_role;
 pub mod label_match;
 pub mod reversibility;
-pub mod autofill;
 
 // ── Meta-tool implementations (Phase A) ──
-pub mod read_page;
+pub mod capture;
 pub mod click;
 pub mod navigate;
-pub mod capture;
+pub mod read_page;
 
 // ── Meta-tool implementations (Phase B) ──
+pub mod fill_form;
 pub mod find;
 pub mod type_text;
-pub mod fill_form;
 
 // ── Phase C shared helpers ──
 pub mod nl_parser;
+pub mod save_dialog;
 pub mod verify_templates;
 pub mod window_match;
-pub mod save_dialog;
 
 // ── Meta-tool implementations (Phase C) ──
-pub mod verify;
-pub mod qr_scan;
 pub mod app_action;
+pub mod qr_scan;
 pub mod script;
 pub mod templates;
+pub mod verify;
 
 // ── Tests ──
 #[cfg(test)]
@@ -183,27 +183,57 @@ async fn dispatch_meta_tool(
 ) -> Option<Value> {
     // Global timeout for any meta-tool call
     let timeout = std::time::Duration::from_millis(
-        args.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(META_TOOL_TIMEOUT_MS)
+        args.get("timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(META_TOOL_TIMEOUT_MS),
     );
 
     let result = match name {
         // Phase A
-        "hands_read_page" => Some(tokio::time::timeout(timeout, read_page::handle(args, browser, session)).await),
-        "hands_click" => Some(tokio::time::timeout(timeout, click::handle(args, browser, session)).await),
-        "hands_navigate" => Some(tokio::time::timeout(timeout, navigate::handle(args, browser, session)).await),
-        "hands_capture" => Some(tokio::time::timeout(timeout, capture::handle(args, browser, session)).await),
+        "hands_read_page" => {
+            Some(tokio::time::timeout(timeout, read_page::handle(args, browser, session)).await)
+        }
+        "hands_click" => {
+            Some(tokio::time::timeout(timeout, click::handle(args, browser, session)).await)
+        }
+        "hands_navigate" => {
+            Some(tokio::time::timeout(timeout, navigate::handle(args, browser, session)).await)
+        }
+        "hands_capture" => {
+            Some(tokio::time::timeout(timeout, capture::handle(args, browser, session)).await)
+        }
         // Phase B
-        "hands_find" => Some(tokio::time::timeout(timeout, find::handle(args, browser, session)).await),
-        "hands_type" => Some(tokio::time::timeout(timeout, type_text::handle(args, browser, session)).await),
-        "hands_fill_form" => Some(tokio::time::timeout(timeout, fill_form::handle(args, browser, session)).await),
+        "hands_find" => {
+            Some(tokio::time::timeout(timeout, find::handle(args, browser, session)).await)
+        }
+        "hands_type" => {
+            Some(tokio::time::timeout(timeout, type_text::handle(args, browser, session)).await)
+        }
+        "hands_fill_form" => {
+            Some(tokio::time::timeout(timeout, fill_form::handle(args, browser, session)).await)
+        }
         // Phase C
-        "hands_verify" => Some(tokio::time::timeout(timeout, verify::handle(args, browser, session)).await),
-        "hands_scan_qr" => Some(tokio::time::timeout(timeout, qr_scan::handle(args, browser, session)).await),
-        "hands_app_action" => Some(tokio::time::timeout(timeout, app_action::handle(args, browser, session)).await),
-        "hands_script" => Some(tokio::time::timeout(timeout, Box::pin(script::handle(args, browser, session))).await),
+        "hands_verify" => {
+            Some(tokio::time::timeout(timeout, verify::handle(args, browser, session)).await)
+        }
+        "hands_scan_qr" => {
+            Some(tokio::time::timeout(timeout, qr_scan::handle(args, browser, session)).await)
+        }
+        "hands_app_action" => {
+            Some(tokio::time::timeout(timeout, app_action::handle(args, browser, session)).await)
+        }
+        "hands_script" => Some(
+            tokio::time::timeout(timeout, Box::pin(script::handle(args, browser, session))).await,
+        ),
         "hands_login_recovery" => {
             let script_payload = templates::login::build_login_script(args);
-            Some(tokio::time::timeout(timeout, Box::pin(script::handle(&script_payload, browser, session))).await)
+            Some(
+                tokio::time::timeout(
+                    timeout,
+                    Box::pin(script::handle(&script_payload, browser, session)),
+                )
+                .await,
+            )
         }
         _ => None,
     };
@@ -211,7 +241,11 @@ async fn dispatch_meta_tool(
     match result {
         Some(Ok(value)) => Some(value),
         Some(Err(_elapsed)) => {
-            eprintln!("[hands] META-TOOL TIMEOUT: '{}' exceeded {}ms", name, timeout.as_millis());
+            eprintln!(
+                "[hands] META-TOOL TIMEOUT: '{}' exceeded {}ms",
+                name,
+                timeout.as_millis()
+            );
             Some(json!({
                 "success": false,
                 "error": format!("Meta-tool '{}' timed out after {}ms", name, timeout.as_millis()),

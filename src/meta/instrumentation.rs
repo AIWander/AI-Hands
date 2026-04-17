@@ -74,11 +74,7 @@ fn write_line(line: &Value) {
     let _ = fs::create_dir_all(log_dir());
     let path = log_path();
 
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
         let serialized = serde_json::to_string(line).unwrap_or_default();
         let _ = writeln!(file, "{}", serialized);
     }
@@ -125,8 +121,15 @@ pub fn log_aggregate(
 ) {
     let error_value = error.map(|e| Value::String(e.to_string()));
     let line = build_aggregate_line(
-        tool, call_id, success, method, rungs_tried, total_elapsed_ms,
-        confidence, error_value, None,
+        tool,
+        call_id,
+        success,
+        method,
+        rungs_tried,
+        total_elapsed_ms,
+        confidence,
+        error_value,
+        None,
     );
 
     write_line(&line);
@@ -145,8 +148,15 @@ pub fn log_aggregate_with_context(
     context: Option<&Value>,
 ) {
     let line = build_aggregate_line(
-        tool, call_id, success, method, rungs_tried, total_elapsed_ms,
-        confidence, error.cloned(), context,
+        tool,
+        call_id,
+        success,
+        method,
+        rungs_tried,
+        total_elapsed_ms,
+        confidence,
+        error.cloned(),
+        context,
     );
 
     write_line(&line);
@@ -276,7 +286,10 @@ fn cleanup_old_logs() {
                 if let Some(date_str) = date_part {
                     if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
                         let dt = date.and_hms_opt(0, 0, 0).unwrap();
-                        let dt_utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc);
+                        let dt_utc = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                            dt,
+                            chrono::Utc,
+                        );
                         if dt_utc < cutoff {
                             let _ = fs::remove_file(entry.path());
                         }
@@ -303,7 +316,11 @@ mod tests {
         std::fs::write(dir.path().join("hands_meta.jsonl"), "").unwrap();
 
         let result = _resolve_hands_log_dir(dir.path()).unwrap();
-        assert_eq!(result, dir.path(), "legacy dir with hands_meta.jsonl should be returned");
+        assert_eq!(
+            result,
+            dir.path(),
+            "legacy dir with hands_meta.jsonl should be returned"
+        );
     }
 
     #[test]
@@ -322,7 +339,10 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("hands_meta_2026-04-14.jsonl"), "").unwrap();
-        assert!(has_hands_log_data(dir.path()), "rotated hands_meta_{{date}}.jsonl should be detected");
+        assert!(
+            has_hands_log_data(dir.path()),
+            "rotated hands_meta_{{date}}.jsonl should be detected"
+        );
     }
 
     #[test]
@@ -371,7 +391,15 @@ mod tests {
         });
 
         let line = build_aggregate_line(
-            "hands_click", "call_test", false, "", 0, 3, None, Some(err), Some(&ctx),
+            "hands_click",
+            "call_test",
+            false,
+            "",
+            0,
+            3,
+            None,
+            Some(err),
+            Some(&ctx),
         );
 
         assert_eq!(line["aggregate"], true);

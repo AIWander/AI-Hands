@@ -4,9 +4,9 @@
 //! 2. Mutation observer: JS injected on navigate sets dirty flag on DOM mutations
 //! 3. Content hash backstop: cheap fingerprint of a11y tree; mismatch = invalidate
 
+use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use serde_json::Value;
 
 /// Events that invalidate the a11y cache.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -162,7 +162,10 @@ mod tests {
         let mut cache = A11yMetaCache::new();
         assert!(cache.get().is_none());
 
-        cache.store(json!({"role": "button", "name": "Submit"}), "https://example.com");
+        cache.store(
+            json!({"role": "button", "name": "Submit"}),
+            "https://example.com",
+        );
         assert!(cache.get().is_some());
     }
 

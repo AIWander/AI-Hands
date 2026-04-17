@@ -53,21 +53,47 @@ pub struct WindowMatchResult {
 pub fn parse_window_match(args: &Value) -> Option<WindowMatch> {
     // Prefer nested window_match object
     if let Some(wm) = args.get("window_match") {
-        let title = wm.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let process = wm.get("process").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let automation_id = wm.get("automation_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let title = wm
+            .get("title")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let process = wm
+            .get("process")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let automation_id = wm
+            .get("automation_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         if title.is_some() || process.is_some() || automation_id.is_some() {
-            return Some(WindowMatch { title, process, automation_id });
+            return Some(WindowMatch {
+                title,
+                process,
+                automation_id,
+            });
         }
     }
 
     // Fall back to top-level fields
-    let title = args.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let process = args.get("process").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let automation_id = args.get("automation_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let title = args
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let process = args
+        .get("process")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let automation_id = args
+        .get("automation_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     if title.is_some() || process.is_some() || automation_id.is_some() {
-        Some(WindowMatch { title, process, automation_id })
+        Some(WindowMatch {
+            title,
+            process,
+            automation_id,
+        })
     } else {
         None
     }
@@ -122,11 +148,15 @@ pub fn parse_monitor(args: &Value) -> Option<Monitor> {
 fn window_matches(window: &Value, wm: &WindowMatch) -> bool {
     // Title: case-insensitive contains
     if let Some(ref title_query) = wm.title {
-        let win_title = window.get("title")
+        let win_title = window
+            .get("title")
             .or_else(|| window.get("name"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        if !win_title.to_lowercase().contains(&title_query.to_lowercase()) {
+        if !win_title
+            .to_lowercase()
+            .contains(&title_query.to_lowercase())
+        {
             return false;
         }
     }
@@ -135,7 +165,8 @@ fn window_matches(window: &Value, wm: &WindowMatch) -> bool {
     // Phase C fix3: handles mismatches like query="notepad.exe" vs UIA="Notepad",
     // or query="notepad" vs UIA="notepad.exe".
     if let Some(ref proc_query) = wm.process {
-        let win_proc = window.get("process_name")
+        let win_proc = window
+            .get("process_name")
             .or_else(|| window.get("process"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
@@ -150,7 +181,8 @@ fn window_matches(window: &Value, wm: &WindowMatch) -> bool {
 
     // Automation ID: exact match
     if let Some(ref aid_query) = wm.automation_id {
-        let win_aid = window.get("automation_id")
+        let win_aid = window
+            .get("automation_id")
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if win_aid != aid_query {
@@ -163,32 +195,43 @@ fn window_matches(window: &Value, wm: &WindowMatch) -> bool {
 
 /// Extract a WindowMatchResult from a UIA window JSON value.
 fn extract_result(window: &Value) -> WindowMatchResult {
-    let title = window.get("title")
+    let title = window
+        .get("title")
         .or_else(|| window.get("name"))
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
 
-    let process_name = window.get("process_name")
+    let process_name = window
+        .get("process_name")
         .or_else(|| window.get("process"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let hwnd = window.get("hwnd")
+    let hwnd = window
+        .get("hwnd")
         .or_else(|| window.get("handle"))
         .and_then(|v| {
-            v.as_str().map(|s| s.to_string())
+            v.as_str()
+                .map(|s| s.to_string())
                 .or_else(|| v.as_u64().map(|n| n.to_string()))
         });
 
     let bounds = extract_bounds(window);
 
-    let monitor_index = window.get("monitor_index")
+    let monitor_index = window
+        .get("monitor_index")
         .or_else(|| window.get("monitor"))
         .and_then(|v| v.as_i64())
         .map(|n| n as i32);
 
-    WindowMatchResult { title, process_name, hwnd, bounds, monitor_index }
+    WindowMatchResult {
+        title,
+        process_name,
+        hwnd,
+        bounds,
+        monitor_index,
+    }
 }
 
 /// Extract window bounds as (x, y, w, h) from various JSON layouts.
@@ -197,8 +240,16 @@ fn extract_bounds(window: &Value) -> Option<(i32, i32, i32, i32)> {
     if let Some(b) = window.get("bounds").or_else(|| window.get("rect")) {
         let x = b.get("x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
         let y = b.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let w = b.get("width").or_else(|| b.get("w")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let h = b.get("height").or_else(|| b.get("h")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let w = b
+            .get("width")
+            .or_else(|| b.get("w"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
+        let h = b
+            .get("height")
+            .or_else(|| b.get("h"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
         return Some((x, y, w, h));
     }
 
@@ -235,7 +286,9 @@ pub fn find_matching_windows(
         .collect();
 
     if matches.is_empty() {
-        let target = window_match.title.clone()
+        let target = window_match
+            .title
+            .clone()
             .or_else(|| window_match.process.clone())
             .or_else(|| window_match.automation_id.clone())
             .unwrap_or_else(|| "<unspecified>".to_string());
@@ -254,14 +307,19 @@ pub fn find_matching_windows(
 
         MatchMode::RequireUnique => {
             if matches.len() > 1 {
-                let app = window_match.title.clone()
+                let app = window_match
+                    .title
+                    .clone()
                     .or_else(|| window_match.process.clone())
                     .unwrap_or_else(|| "<app>".to_string());
-                let candidates = matches.iter().map(|m| WindowInfo {
-                    title: m.title.clone(),
-                    process: m.process_name.clone(),
-                    hwnd: m.hwnd.as_ref().and_then(|h| h.parse::<u64>().ok()),
-                }).collect();
+                let candidates = matches
+                    .iter()
+                    .map(|m| WindowInfo {
+                        title: m.title.clone(),
+                        process: m.process_name.clone(),
+                        hwnd: m.hwnd.as_ref().and_then(|h| h.parse::<u64>().ok()),
+                    })
+                    .collect();
                 return Err(MetaError::MultipleWindows { app, candidates });
             }
             Ok(matches)

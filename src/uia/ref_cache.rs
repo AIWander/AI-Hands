@@ -34,7 +34,11 @@ thread_local! {
     static REF_CACHE: RefCell<Option<SnapshotCache>> = const { RefCell::new(None) };
 }
 
-pub fn store_snapshot(window_title: String, hwnd_label: String, refs: HashMap<String, CachedElement>) {
+pub fn store_snapshot(
+    window_title: String,
+    hwnd_label: String,
+    refs: HashMap<String, CachedElement>,
+) {
     REF_CACHE.with(|cache| {
         *cache.borrow_mut() = Some(SnapshotCache {
             window_title,

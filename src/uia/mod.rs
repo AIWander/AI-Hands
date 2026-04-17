@@ -13,27 +13,22 @@ mod ref_cache;
 use ref_cache::{CachedElement, CachedElementMeta};
 
 #[cfg(windows)]
-use windows::{
-    Win32::{
-        Foundation::HWND,
-        System::Com::{
-            CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+use windows::Win32::{
+    Foundation::HWND,
+    System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED},
+    UI::{
+        Accessibility::{
+            CUIAutomation, IUIAutomation, IUIAutomationElement, TreeScope_Children,
+            UIA_ButtonControlTypeId, UIA_CheckBoxControlTypeId, UIA_ComboBoxControlTypeId,
+            UIA_DataGridControlTypeId, UIA_DataItemControlTypeId, UIA_DocumentControlTypeId,
+            UIA_EditControlTypeId, UIA_HyperlinkControlTypeId, UIA_ListControlTypeId,
+            UIA_ListItemControlTypeId, UIA_MenuBarControlTypeId, UIA_MenuControlTypeId,
+            UIA_MenuItemControlTypeId, UIA_RadioButtonControlTypeId, UIA_ScrollBarControlTypeId,
+            UIA_SliderControlTypeId, UIA_SpinnerControlTypeId, UIA_TabControlTypeId,
+            UIA_TabItemControlTypeId, UIA_TextControlTypeId, UIA_TreeControlTypeId,
+            UIA_TreeItemControlTypeId, UIA_CONTROLTYPE_ID,
         },
-        UI::{
-            Accessibility::{
-                CUIAutomation, IUIAutomation, IUIAutomationElement, TreeScope_Children,
-                UIA_CONTROLTYPE_ID, UIA_ButtonControlTypeId, UIA_CheckBoxControlTypeId,
-                UIA_ComboBoxControlTypeId, UIA_DataGridControlTypeId,
-                UIA_DataItemControlTypeId, UIA_DocumentControlTypeId, UIA_EditControlTypeId,
-                UIA_HyperlinkControlTypeId, UIA_ListControlTypeId, UIA_ListItemControlTypeId,
-                UIA_MenuBarControlTypeId, UIA_MenuControlTypeId, UIA_MenuItemControlTypeId,
-                UIA_RadioButtonControlTypeId, UIA_ScrollBarControlTypeId,
-                UIA_SliderControlTypeId, UIA_SpinnerControlTypeId, UIA_TabControlTypeId,
-                UIA_TabItemControlTypeId, UIA_TextControlTypeId, UIA_TreeControlTypeId,
-                UIA_TreeItemControlTypeId,
-            },
-            WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW},
-        },
+        WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW},
     },
 };
 
@@ -119,7 +114,10 @@ pub fn augment_tool_definition(tool: &mut Value) {
                     }),
                 );
             }
-            if let Some(schema) = tool.get_mut("inputSchema").and_then(|value| value.as_object_mut()) {
+            if let Some(schema) = tool
+                .get_mut("inputSchema")
+                .and_then(|value| value.as_object_mut())
+            {
                 schema.remove("required");
             }
         }

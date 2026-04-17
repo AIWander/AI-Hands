@@ -19,12 +19,12 @@
 use serde_json::{json, Value};
 use std::time::Instant;
 
-use super::response::{MetaToolResult, RungAttempt, Confidence, Reversibility};
-use super::error::MetaError;
-use super::targeting::classify_reversibility;
 use super::consent;
+use super::error::MetaError;
 use super::instrumentation;
+use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
 use super::session::SharedSession;
+use super::targeting::classify_reversibility;
 
 pub async fn handle(
     args: &Value,
@@ -41,23 +41,45 @@ pub async fn handle(
         Some(t) => t.to_string(),
         None => {
             instrumentation::log_aggregate(
-                "hands_click", &call_id, false, "", 0, 0, None, Some("target is required"),
+                "hands_click",
+                &call_id,
+                false,
+                "",
+                0,
+                0,
+                None,
+                Some("target is required"),
             );
-            return MetaToolResult::failure(
-                vec![], MetaError::other("target is required"), 0,
-            ).to_value();
+            return MetaToolResult::failure(vec![], MetaError::other("target is required"), 0)
+                .to_value();
         }
     };
 
-    let page_context = args.get("page_context").and_then(|v| v.as_str()).unwrap_or("auto");
-    let double_click = args.get("double_click").and_then(|v| v.as_bool()).unwrap_or(false);
-    let button = if args.get("right_click").and_then(|v| v.as_bool()).unwrap_or(false) {
+    let page_context = args
+        .get("page_context")
+        .and_then(|v| v.as_str())
+        .unwrap_or("auto");
+    let double_click = args
+        .get("double_click")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let button = if args
+        .get("right_click")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         "right"
     } else {
         "left"
     };
-    let strict = args.get("strict").and_then(|v| v.as_bool()).unwrap_or(false);
-    let allow_destructive = args.get("allow_destructive").and_then(|v| v.as_bool()).unwrap_or(false);
+    let strict = args
+        .get("strict")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let allow_destructive = args
+        .get("allow_destructive")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     // Pre-click reversibility check
     let reversibility = classify_reversibility(&target);
@@ -86,12 +108,20 @@ pub async fn handle(
         });
         let elapsed = start.elapsed().as_millis() as u64;
         instrumentation::log_aggregate_with_context(
-            "hands_click", &call_id, false, "", 0, elapsed, None, Some(&error_value), Some(&ctx),
+            "hands_click",
+            &call_id,
+            false,
+            "",
+            0,
+            elapsed,
+            None,
+            Some(&error_value),
+            Some(&ctx),
         );
 
-        return MetaToolResult::failure(
-            vec![], error, elapsed,
-        ).with_reversibility(Reversibility::Destructive).to_value();
+        return MetaToolResult::failure(vec![], error, elapsed)
+            .with_reversibility(Reversibility::Destructive)
+            .to_value();
     }
 
     // ── Consent risk check ──
@@ -122,7 +152,13 @@ pub async fn handle(
                         ),
                     );
                     instrumentation::log_aggregate(
-                        "hands_click", &call_id, false, "", 0, elapsed, None,
+                        "hands_click",
+                        &call_id,
+                        false,
+                        "",
+                        0,
+                        elapsed,
+                        None,
                         Some(&format!("Consent gate: {:?}", classification.risk)),
                     );
                     return MetaToolResult::failure(vec![], error, elapsed)
@@ -164,16 +200,32 @@ pub async fn handle(
                         let rung_ms = rung_start.elapsed().as_millis() as u64;
 
                         if ok {
-                            let confidence = if looks_like_a11y_ref(&target) { 1.0 } else { 0.8 };
+                            let confidence = if looks_like_a11y_ref(&target) {
+                                1.0
+                            } else {
+                                0.8
+                            };
                             let attempt = RungAttempt::ok("a11y_cache", rung_ms);
-                            instrumentation::log_rung_attempt("hands_click", &call_id, "a11y_cache", true, rung_ms, Some(confidence), &ctx);
+                            instrumentation::log_rung_attempt(
+                                "hands_click",
+                                &call_id,
+                                "a11y_cache",
+                                true,
+                                rung_ms,
+                                Some(confidence),
+                                &ctx,
+                            );
                             rungs_tried.push(attempt);
 
                             let elapsed = start.elapsed().as_millis() as u64;
                             let result = make_success(
-                                "a11y_cache", rungs_tried, confidence, reversibility,
+                                "a11y_cache",
+                                rungs_tried,
+                                confidence,
+                                reversibility,
                                 json!({"ref_id": ref_id, "selector": selector, "target": target, "detail": val}),
-                                elapsed, &call_id,
+                                elapsed,
+                                &call_id,
                             );
                             return result.to_value();
                         }
@@ -183,64 +235,124 @@ pub async fn handle(
             }
 
             let rung_ms = rung_start.elapsed().as_millis() as u64;
-            rungs_tried.push(RungAttempt::failed("a11y_cache", rung_ms, "No match or click failed"));
-            instrumentation::log_rung_attempt("hands_click", &call_id, "a11y_cache", false, rung_ms, None, &ctx);
+            rungs_tried.push(RungAttempt::failed(
+                "a11y_cache",
+                rung_ms,
+                "No match or click failed",
+            ));
+            instrumentation::log_rung_attempt(
+                "hands_click",
+                &call_id,
+                "a11y_cache",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
 
         // Rung 2: Fuzzy text match
         {
             let rung_start = Instant::now();
             let click_result = browser_mcp::tools::handle_tool(
-                browser, "click",
+                browser,
+                "click",
                 json!({"match_text": &target, "button": button, "double_click": double_click}),
-            ).await;
+            )
+            .await;
             let (ok, val) = super::browser_result_to_value(click_result);
             let rung_ms = rung_start.elapsed().as_millis() as u64;
 
             if ok {
                 let attempt = RungAttempt::ok("match_text", rung_ms);
-                instrumentation::log_rung_attempt("hands_click", &call_id, "match_text", true, rung_ms, Some(0.9), &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_click",
+                    &call_id,
+                    "match_text",
+                    true,
+                    rung_ms,
+                    Some(0.9),
+                    &ctx,
+                );
                 rungs_tried.push(attempt);
 
                 let elapsed = start.elapsed().as_millis() as u64;
                 let result = make_success(
-                    "match_text", rungs_tried, 0.9, reversibility,
+                    "match_text",
+                    rungs_tried,
+                    0.9,
+                    reversibility,
                     json!({"target": target, "detail": val}),
-                    elapsed, &call_id,
+                    elapsed,
+                    &call_id,
                 );
                 return result.to_value();
             }
 
             rungs_tried.push(RungAttempt::failed("match_text", rung_ms, "No text match"));
-            instrumentation::log_rung_attempt("hands_click", &call_id, "match_text", false, rung_ms, None, &ctx);
+            instrumentation::log_rung_attempt(
+                "hands_click",
+                &call_id,
+                "match_text",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
 
         // Rung 3: CSS selector (only if target looks like one)
         if looks_like_selector(&target) {
             let rung_start = Instant::now();
             let click_result = browser_mcp::tools::handle_tool(
-                browser, "click",
+                browser,
+                "click",
                 json!({"selector": &target, "button": button, "double_click": double_click}),
-            ).await;
+            )
+            .await;
             let (ok, val) = super::browser_result_to_value(click_result);
             let rung_ms = rung_start.elapsed().as_millis() as u64;
 
             if ok {
                 let attempt = RungAttempt::ok("css_selector", rung_ms);
-                instrumentation::log_rung_attempt("hands_click", &call_id, "css_selector", true, rung_ms, Some(0.95), &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_click",
+                    &call_id,
+                    "css_selector",
+                    true,
+                    rung_ms,
+                    Some(0.95),
+                    &ctx,
+                );
                 rungs_tried.push(attempt);
 
                 let elapsed = start.elapsed().as_millis() as u64;
                 let result = make_success(
-                    "css_selector", rungs_tried, 0.95, reversibility,
+                    "css_selector",
+                    rungs_tried,
+                    0.95,
+                    reversibility,
                     json!({"target": target, "detail": val}),
-                    elapsed, &call_id,
+                    elapsed,
+                    &call_id,
                 );
                 return result.to_value();
             }
 
-            rungs_tried.push(RungAttempt::failed("css_selector", rung_ms, "Selector not found"));
-            instrumentation::log_rung_attempt("hands_click", &call_id, "css_selector", false, rung_ms, None, &ctx);
+            rungs_tried.push(RungAttempt::failed(
+                "css_selector",
+                rung_ms,
+                "Selector not found",
+            ));
+            instrumentation::log_rung_attempt(
+                "hands_click",
+                &call_id,
+                "css_selector",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
 
         // Rung 4: A11y snapshot refresh → retry
@@ -265,14 +377,26 @@ pub async fn handle(
 
                     if ok {
                         let attempt = RungAttempt::ok("a11y_refresh", rung_ms);
-                        instrumentation::log_rung_attempt("hands_click", &call_id, "a11y_refresh", true, rung_ms, Some(0.8), &ctx);
+                        instrumentation::log_rung_attempt(
+                            "hands_click",
+                            &call_id,
+                            "a11y_refresh",
+                            true,
+                            rung_ms,
+                            Some(0.8),
+                            &ctx,
+                        );
                         rungs_tried.push(attempt);
 
                         let elapsed = start.elapsed().as_millis() as u64;
                         let result = make_success(
-                            "a11y_refresh", rungs_tried, 0.8, reversibility,
+                            "a11y_refresh",
+                            rungs_tried,
+                            0.8,
+                            reversibility,
                             json!({"ref_id": ref_id, "selector": selector, "target": target, "detail": val}),
-                            elapsed, &call_id,
+                            elapsed,
+                            &call_id,
                         );
                         return result.to_value();
                     }
@@ -280,37 +404,62 @@ pub async fn handle(
             }
 
             let rung_ms = rung_start.elapsed().as_millis() as u64;
-            rungs_tried.push(RungAttempt::failed("a11y_refresh", rung_ms, "Refresh didn't help"));
-            instrumentation::log_rung_attempt("hands_click", &call_id, "a11y_refresh", false, rung_ms, None, &ctx);
+            rungs_tried.push(RungAttempt::failed(
+                "a11y_refresh",
+                rung_ms,
+                "Refresh didn't help",
+            ));
+            instrumentation::log_rung_attempt(
+                "hands_click",
+                &call_id,
+                "a11y_refresh",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
 
         // Rung 5: get_clickables → best score → coords click
         {
             let rung_start = Instant::now();
-            let clickables_result = browser_mcp::tools::handle_tool(
-                browser, "get_clickables", json!({}),
-            ).await;
+            let clickables_result =
+                browser_mcp::tools::handle_tool(browser, "get_clickables", json!({})).await;
             let (ok, val) = super::browser_result_to_value(clickables_result);
 
             if ok {
                 if let Some((x, y)) = find_best_clickable_coords(&val, &target) {
                     let click_result = browser_mcp::tools::handle_tool(
-                        browser, "click",
+                        browser,
+                        "click",
                         json!({"x": x, "y": y, "button": button, "double_click": double_click}),
-                    ).await;
+                    )
+                    .await;
                     let (click_ok, click_val) = super::browser_result_to_value(click_result);
                     let rung_ms = rung_start.elapsed().as_millis() as u64;
 
                     if click_ok {
                         let attempt = RungAttempt::ok("clickables_coords", rung_ms);
-                        instrumentation::log_rung_attempt("hands_click", &call_id, "clickables_coords", true, rung_ms, Some(0.6), &ctx);
+                        instrumentation::log_rung_attempt(
+                            "hands_click",
+                            &call_id,
+                            "clickables_coords",
+                            true,
+                            rung_ms,
+                            Some(0.6),
+                            &ctx,
+                        );
                         rungs_tried.push(attempt);
 
                         let elapsed = start.elapsed().as_millis() as u64;
                         let result = make_success(
-                            "clickables_coords", rungs_tried, 0.6, reversibility,
+                            "clickables_coords",
+                            rungs_tried,
+                            0.6,
+                            reversibility,
                             json!({"x": x, "y": y, "target": target, "detail": click_val}),
-                            elapsed, &call_id,
+                            elapsed,
+                            &call_id,
                         );
                         return result.to_value();
                     }
@@ -318,8 +467,20 @@ pub async fn handle(
             }
 
             let rung_ms = rung_start.elapsed().as_millis() as u64;
-            rungs_tried.push(RungAttempt::failed("clickables_coords", rung_ms, "No matching clickable"));
-            instrumentation::log_rung_attempt("hands_click", &call_id, "clickables_coords", false, rung_ms, None, &ctx);
+            rungs_tried.push(RungAttempt::failed(
+                "clickables_coords",
+                rung_ms,
+                "No matching clickable",
+            ));
+            instrumentation::log_rung_attempt(
+                "hands_click",
+                &call_id,
+                "clickables_coords",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
     }
 
@@ -329,33 +490,55 @@ pub async fn handle(
         {
             let rung_start = Instant::now();
             let find_result = uia_lib::handle_tool_call(
-                "uia_find_element", &json!({"name": &target, "max_depth": 8}),
+                "uia_find_element",
+                &json!({"name": &target, "max_depth": 8}),
             );
 
             if let Some(elements) = find_result.get("elements").and_then(|v| v.as_array()) {
                 if let Some(first) = elements.first() {
                     if let (Some(cx), Some(cy)) = (
-                        first.get("center").and_then(|c| c.get("x")).and_then(|v| v.as_i64()),
-                        first.get("center").and_then(|c| c.get("y")).and_then(|v| v.as_i64()),
+                        first
+                            .get("center")
+                            .and_then(|c| c.get("x"))
+                            .and_then(|v| v.as_i64()),
+                        first
+                            .get("center")
+                            .and_then(|c| c.get("y"))
+                            .and_then(|v| v.as_i64()),
                     ) {
                         let click_result = uia_lib::handle_tool_call(
                             "uia_click",
                             &json!({"x": cx, "y": cy, "button": button, "double_click": double_click}),
                         );
-                        let success = click_result.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+                        let success = click_result
+                            .get("success")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
                         let rung_ms = rung_start.elapsed().as_millis() as u64;
 
                         if success {
                             let confidence = 0.9; // UIA name match
                             let attempt = RungAttempt::ok("uia_find_click", rung_ms);
-                            instrumentation::log_rung_attempt("hands_click", &call_id, "uia_find_click", true, rung_ms, Some(confidence), &ctx);
+                            instrumentation::log_rung_attempt(
+                                "hands_click",
+                                &call_id,
+                                "uia_find_click",
+                                true,
+                                rung_ms,
+                                Some(confidence),
+                                &ctx,
+                            );
                             rungs_tried.push(attempt);
 
                             let elapsed = start.elapsed().as_millis() as u64;
                             let result = make_success(
-                                "uia_find_click", rungs_tried, confidence, reversibility,
+                                "uia_find_click",
+                                rungs_tried,
+                                confidence,
+                                reversibility,
                                 json!({"x": cx, "y": cy, "element": first, "target": target}),
-                                elapsed, &call_id,
+                                elapsed,
+                                &call_id,
                             );
                             return result.to_value();
                         }
@@ -364,40 +547,71 @@ pub async fn handle(
             }
 
             let rung_ms = rung_start.elapsed().as_millis() as u64;
-            rungs_tried.push(RungAttempt::failed("uia_find_click", rung_ms, "UIA element not found"));
-            instrumentation::log_rung_attempt("hands_click", &call_id, "uia_find_click", false, rung_ms, None, &ctx);
+            rungs_tried.push(RungAttempt::failed(
+                "uia_find_click",
+                rung_ms,
+                "UIA element not found",
+            ));
+            instrumentation::log_rung_attempt(
+                "hands_click",
+                &call_id,
+                "uia_find_click",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
 
         // Rung 7: OCR → coords click
         {
             let rung_start = Instant::now();
             let ocr_result = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
-            let ocr_text = ocr_result.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let ocr_text = ocr_result
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
 
             if ocr_text.to_lowercase().contains(&target.to_lowercase()) {
                 let screenshot_path = vision_core::take_screenshot(None, 0, 80).unwrap_or_default();
                 if !screenshot_path.is_empty() {
-                    if let Ok(words) = vision_core::ocr_image_with_positions(&screenshot_path).await {
+                    if let Ok(words) = vision_core::ocr_image_with_positions(&screenshot_path).await
+                    {
                         let _ = std::fs::remove_file(&screenshot_path);
                         if let Some((x, y)) = find_text_in_ocr_words(&words, &target) {
                             let click_result = uia_lib::handle_tool_call(
                                 "uia_click",
                                 &json!({"x": x, "y": y, "button": button, "double_click": double_click}),
                             );
-                            let success = click_result.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+                            let success = click_result
+                                .get("success")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(true);
                             let rung_ms = rung_start.elapsed().as_millis() as u64;
 
                             if success {
                                 let confidence = 0.5; // OCR match
                                 let attempt = RungAttempt::ok("ocr_coords", rung_ms);
-                                instrumentation::log_rung_attempt("hands_click", &call_id, "ocr_coords", true, rung_ms, Some(confidence), &ctx);
+                                instrumentation::log_rung_attempt(
+                                    "hands_click",
+                                    &call_id,
+                                    "ocr_coords",
+                                    true,
+                                    rung_ms,
+                                    Some(confidence),
+                                    &ctx,
+                                );
                                 rungs_tried.push(attempt);
 
                                 let elapsed = start.elapsed().as_millis() as u64;
                                 let result = make_success(
-                                    "ocr_coords", rungs_tried, confidence, reversibility,
+                                    "ocr_coords",
+                                    rungs_tried,
+                                    confidence,
+                                    reversibility,
                                     json!({"x": x, "y": y, "target": target}),
-                                    elapsed, &call_id,
+                                    elapsed,
+                                    &call_id,
                                 );
                                 return result.to_value();
                             }
@@ -407,15 +621,30 @@ pub async fn handle(
             }
 
             let rung_ms = rung_start.elapsed().as_millis() as u64;
-            rungs_tried.push(RungAttempt::failed("ocr_coords", rung_ms, "OCR text not found or click failed"));
-            instrumentation::log_rung_attempt("hands_click", &call_id, "ocr_coords", false, rung_ms, None, &ctx);
+            rungs_tried.push(RungAttempt::failed(
+                "ocr_coords",
+                rung_ms,
+                "OCR text not found or click failed",
+            ));
+            instrumentation::log_rung_attempt(
+                "hands_click",
+                &call_id,
+                "ocr_coords",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
     }
 
     // All rungs failed
     let elapsed = start.elapsed().as_millis() as u64;
     let error_msg = if strict {
-        format!("Could not click '{}' via any strategy (strict mode)", target)
+        format!(
+            "Could not click '{}' via any strategy (strict mode)",
+            target
+        )
     } else {
         format!("Could not click '{}' via any strategy", target)
     };
@@ -427,8 +656,14 @@ pub async fn handle(
     );
 
     instrumentation::log_aggregate(
-        "hands_click", &call_id, false, "", rungs_tried.len(),
-        elapsed, None, Some(&error_msg),
+        "hands_click",
+        &call_id,
+        false,
+        "",
+        rungs_tried.len(),
+        elapsed,
+        None,
+        Some(&error_msg),
     );
 
     result.to_value()
@@ -446,8 +681,14 @@ fn make_success(
     call_id: &str,
 ) -> MetaToolResult {
     instrumentation::log_aggregate(
-        "hands_click", call_id, true, method, rungs_tried.len(),
-        elapsed, Some(confidence), None,
+        "hands_click",
+        call_id,
+        true,
+        method,
+        rungs_tried.len(),
+        elapsed,
+        Some(confidence),
+        None,
     );
 
     MetaToolResult::success(method, rungs_tried, payload, elapsed)
@@ -470,11 +711,13 @@ pub fn looks_like_selector(s: &str) -> bool {
         || (s.starts_with("button") && s.contains('['))
         || (s.starts_with("input") && s.contains('['))
         || s.starts_with("a[")
-        || s.contains("=\"") || s.contains("='")
+        || s.contains("=\"")
+        || s.contains("='")
 }
 
 pub fn find_best_clickable_coords(val: &Value, target: &str) -> Option<(i64, i64)> {
-    let clickables = val.get("clickables")
+    let clickables = val
+        .get("clickables")
         .or_else(|| val.get("elements"))
         .and_then(|v| v.as_array())?;
 
@@ -483,32 +726,65 @@ pub fn find_best_clickable_coords(val: &Value, target: &str) -> Option<(i64, i64
     let mut best_coords: Option<(i64, i64)> = None;
 
     for elem in clickables {
-        let text = elem.get("text").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-        let aria = elem.get("aria_label").or_else(|| elem.get("ariaLabel"))
-            .and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-        let title = elem.get("title").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-        let id = elem.get("id").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+        let text = elem
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let aria = elem
+            .get("aria_label")
+            .or_else(|| elem.get("ariaLabel"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let title = elem
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let id = elem
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
 
-        let score: i64 = if text == target_lower || aria == target_lower { 100 }
-            else if text.starts_with(&target_lower) || aria.starts_with(&target_lower) { 90 }
-            else if text.contains(&target_lower) || aria.contains(&target_lower) { 80 }
-            else if title.contains(&target_lower) { 70 }
-            else if id.contains(&target_lower) { 50 }
-            else { 0 };
+        let score: i64 = if text == target_lower || aria == target_lower {
+            100
+        } else if text.starts_with(&target_lower) || aria.starts_with(&target_lower) {
+            90
+        } else if text.contains(&target_lower) || aria.contains(&target_lower) {
+            80
+        } else if title.contains(&target_lower) {
+            70
+        } else if id.contains(&target_lower) {
+            50
+        } else {
+            0
+        };
 
         if score > best_score {
             best_score = score;
-            let cx = elem.get("x").and_then(|v| v.as_i64())
-                .or_else(|| elem.get("center").and_then(|c| c.get("x")).and_then(|v| v.as_i64()));
-            let cy = elem.get("y").and_then(|v| v.as_i64())
-                .or_else(|| elem.get("center").and_then(|c| c.get("y")).and_then(|v| v.as_i64()));
+            let cx = elem.get("x").and_then(|v| v.as_i64()).or_else(|| {
+                elem.get("center")
+                    .and_then(|c| c.get("x"))
+                    .and_then(|v| v.as_i64())
+            });
+            let cy = elem.get("y").and_then(|v| v.as_i64()).or_else(|| {
+                elem.get("center")
+                    .and_then(|c| c.get("y"))
+                    .and_then(|v| v.as_i64())
+            });
             if let (Some(x), Some(y)) = (cx, cy) {
                 best_coords = Some((x, y));
             }
         }
     }
 
-    if best_score > 0 { best_coords } else { None }
+    if best_score > 0 {
+        best_coords
+    } else {
+        None
+    }
 }
 
 pub fn find_text_in_ocr_words(
@@ -517,7 +793,9 @@ pub fn find_text_in_ocr_words(
 ) -> Option<(i64, i64)> {
     let target_lower = target.to_lowercase();
     let target_words: Vec<&str> = target_lower.split_whitespace().collect();
-    if target_words.is_empty() { return None; }
+    if target_words.is_empty() {
+        return None;
+    }
 
     // Single-word match
     for (word, x, y, w, h) in words {
@@ -529,7 +807,9 @@ pub fn find_text_in_ocr_words(
     // Multi-word span match
     if target_words.len() > 1 && words.len() >= target_words.len() {
         for start in 0..=(words.len() - target_words.len()) {
-            let matched = target_words.iter().enumerate()
+            let matched = target_words
+                .iter()
+                .enumerate()
                 .filter(|(i, tw)| words[start + i].0.to_lowercase().contains(*tw))
                 .count();
             if matched == target_words.len() {

@@ -13,15 +13,15 @@
 //! - Instrumentation logging per rung attempt
 
 use serde_json::{json, Value};
-use std::time::Instant;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::time::Instant;
 
-use super::response::{MetaToolResult, RungAttempt, Confidence};
 use super::error::MetaError;
-use super::targeting::{content_is_sufficient, content_needs_js};
 use super::instrumentation;
+use super::response::{Confidence, MetaToolResult, RungAttempt};
 use super::session::SharedSession;
+use super::targeting::{content_is_sufficient, content_needs_js};
 
 /// Minimum content length to consider a rung successful.
 const MIN_CONTENT_CHARS: usize = 200;
@@ -41,18 +41,28 @@ pub async fn handle(
         Some(u) => u.to_string(),
         None => {
             instrumentation::log_aggregate(
-                "hands_read_page", &call_id, false, "", 0, 0, None, Some("url is required"),
-            );
-            return MetaToolResult::failure(
-                vec![],
-                MetaError::other("url is required"),
+                "hands_read_page",
+                &call_id,
+                false,
+                "",
                 0,
-            ).to_value();
+                0,
+                None,
+                Some("url is required"),
+            );
+            return MetaToolResult::failure(vec![], MetaError::other("url is required"), 0)
+                .to_value();
         }
     };
 
-    let wait_for = args.get("wait_for").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let timeout_ms = args.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(15000);
+    let wait_for = args
+        .get("wait_for")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let timeout_ms = args
+        .get("timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(15000);
     let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
 
     let mut rungs_tried = Vec::new();
@@ -62,9 +72,15 @@ pub async fn handle(
     // If wait_for is set, only Chrome can satisfy — skip to rung 4
     if wait_for.is_some() {
         let result = rung4_chrome(
-            &url, wait_for.as_deref(), browser, &mut rungs_tried,
-            deadline, &call_id, &ctx,
-        ).await;
+            &url,
+            wait_for.as_deref(),
+            browser,
+            &mut rungs_tried,
+            deadline,
+            &call_id,
+            &ctx,
+        )
+        .await;
         let elapsed = start.elapsed().as_millis() as u64;
         log_aggregate(&call_id, &result, &rungs_tried, elapsed);
         return result.to_value();
@@ -73,9 +89,8 @@ pub async fn handle(
     // Rung 1: HTTP scrape (no browser, no JS)
     if Instant::now() < deadline {
         let rung_start = Instant::now();
-        let result = browser_mcp::tools::handle_tool(
-            browser, "http_scrape", json!({"url": &url}),
-        ).await;
+        let result =
+            browser_mcp::tools::handle_tool(browser, "http_scrape", json!({"url": &url})).await;
         let rung_ms = rung_start.elapsed().as_millis() as u64;
         let (ok, val) = super::browser_result_to_value(result);
 
@@ -84,7 +99,15 @@ pub async fn handle(
             let hash = content_hash(&content);
             if content_is_sufficient(&content, MIN_CONTENT_CHARS) {
                 let attempt = RungAttempt::ok("http_scrape", rung_ms);
-                instrumentation::log_rung_attempt("hands_read_page", &call_id, "http_scrape", true, rung_ms, Some(1.0), &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_read_page",
+                    &call_id,
+                    "http_scrape",
+                    true,
+                    rung_ms,
+                    Some(1.0),
+                    &ctx,
+                );
                 rungs_tried.push(attempt);
                 last_content_hash = hash;
 
@@ -100,9 +123,24 @@ pub async fn handle(
             last_content_hash = hash;
         }
 
-        let attempt = RungAttempt::failed("http_scrape", rung_ms,
-            if ok { "Content insufficient or JS-required" } else { "HTTP scrape failed" });
-        instrumentation::log_rung_attempt("hands_read_page", &call_id, "http_scrape", false, rung_ms, None, &ctx);
+        let attempt = RungAttempt::failed(
+            "http_scrape",
+            rung_ms,
+            if ok {
+                "Content insufficient or JS-required"
+            } else {
+                "HTTP scrape failed"
+            },
+        );
+        instrumentation::log_rung_attempt(
+            "hands_read_page",
+            &call_id,
+            "http_scrape",
+            false,
+            rung_ms,
+            None,
+            &ctx,
+        );
         rungs_tried.push(attempt);
     }
 
@@ -110,8 +148,11 @@ pub async fn handle(
     if Instant::now() < deadline {
         let rung_start = Instant::now();
         let result = browser_mcp::tools::handle_tool(
-            browser, "js_extract", json!({"url": &url, "engine": "linkedom"}),
-        ).await;
+            browser,
+            "js_extract",
+            json!({"url": &url, "engine": "linkedom"}),
+        )
+        .await;
         let rung_ms = rung_start.elapsed().as_millis() as u64;
         let (ok, val) = super::browser_result_to_value(result);
 
@@ -121,7 +162,15 @@ pub async fn handle(
             // Skip if same content as previous rung (hash dedup)
             if hash != last_content_hash && content_is_sufficient(&content, MIN_CONTENT_CHARS) {
                 let attempt = RungAttempt::ok("js_extract_linkedom", rung_ms);
-                instrumentation::log_rung_attempt("hands_read_page", &call_id, "js_extract_linkedom", true, rung_ms, Some(0.9), &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_read_page",
+                    &call_id,
+                    "js_extract_linkedom",
+                    true,
+                    rung_ms,
+                    Some(0.9),
+                    &ctx,
+                );
                 rungs_tried.push(attempt);
 
                 let elapsed = start.elapsed().as_millis() as u64;
@@ -136,17 +185,28 @@ pub async fn handle(
             last_content_hash = hash;
         }
 
-        let attempt = RungAttempt::failed("js_extract_linkedom", rung_ms, "Content insufficient or duplicate");
-        instrumentation::log_rung_attempt("hands_read_page", &call_id, "js_extract_linkedom", false, rung_ms, None, &ctx);
+        let attempt = RungAttempt::failed(
+            "js_extract_linkedom",
+            rung_ms,
+            "Content insufficient or duplicate",
+        );
+        instrumentation::log_rung_attempt(
+            "hands_read_page",
+            &call_id,
+            "js_extract_linkedom",
+            false,
+            rung_ms,
+            None,
+            &ctx,
+        );
         rungs_tried.push(attempt);
     }
 
     // Rung 3: smart_browse
     if Instant::now() < deadline {
         let rung_start = Instant::now();
-        let result = browser_mcp::tools::handle_tool(
-            browser, "smart_browse", json!({"url": &url}),
-        ).await;
+        let result =
+            browser_mcp::tools::handle_tool(browser, "smart_browse", json!({"url": &url})).await;
         let rung_ms = rung_start.elapsed().as_millis() as u64;
         let (ok, val) = super::browser_result_to_value(result);
 
@@ -155,7 +215,15 @@ pub async fn handle(
             let hash = content_hash(&content);
             if hash != last_content_hash && content_is_sufficient(&content, MIN_CONTENT_CHARS) {
                 let attempt = RungAttempt::ok("smart_browse", rung_ms);
-                instrumentation::log_rung_attempt("hands_read_page", &call_id, "smart_browse", true, rung_ms, Some(0.85), &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_read_page",
+                    &call_id,
+                    "smart_browse",
+                    true,
+                    rung_ms,
+                    Some(0.85),
+                    &ctx,
+                );
                 rungs_tried.push(attempt);
 
                 let elapsed = start.elapsed().as_millis() as u64;
@@ -170,15 +238,31 @@ pub async fn handle(
             last_content_hash = hash;
         }
 
-        let attempt = RungAttempt::failed("smart_browse", rung_ms, "Content insufficient or duplicate");
-        instrumentation::log_rung_attempt("hands_read_page", &call_id, "smart_browse", false, rung_ms, None, &ctx);
+        let attempt =
+            RungAttempt::failed("smart_browse", rung_ms, "Content insufficient or duplicate");
+        instrumentation::log_rung_attempt(
+            "hands_read_page",
+            &call_id,
+            "smart_browse",
+            false,
+            rung_ms,
+            None,
+            &ctx,
+        );
         rungs_tried.push(attempt);
     }
 
     // Rung 4: Full Chrome
     let result = rung4_chrome(
-        &url, None, browser, &mut rungs_tried, deadline, &call_id, &ctx,
-    ).await;
+        &url,
+        None,
+        browser,
+        &mut rungs_tried,
+        deadline,
+        &call_id,
+        &ctx,
+    )
+    .await;
     let elapsed = start.elapsed().as_millis() as u64;
     log_aggregate(&call_id, &result, &rungs_tried, elapsed);
     result.to_value()
@@ -207,33 +291,50 @@ async fn rung4_chrome(
 
     // Launch headless if browser isn't active
     if !super::browser_is_active(browser).await {
-        let launch_result = browser_mcp::tools::handle_tool(
-            browser, "launch", json!({"headless": true}),
-        ).await;
+        let launch_result =
+            browser_mcp::tools::handle_tool(browser, "launch", json!({"headless": true})).await;
         let (ok, val) = super::browser_result_to_value(launch_result);
         if !ok {
-            let err = val.get("error").and_then(|v| v.as_str()).unwrap_or("launch failed");
+            let err = val
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("launch failed");
             let rung_ms = rung_start.elapsed().as_millis() as u64;
             let attempt = RungAttempt::failed("chrome_headless", rung_ms, err);
-            instrumentation::log_rung_attempt("hands_read_page", call_id, "chrome_headless", false, rung_ms, None, ctx);
-            rungs_tried.push(attempt);
-            return MetaToolResult::failure(
-                rungs_tried.clone(),
-                MetaError::no_browser(),
+            instrumentation::log_rung_attempt(
+                "hands_read_page",
+                call_id,
+                "chrome_headless",
+                false,
                 rung_ms,
+                None,
+                ctx,
             );
+            rungs_tried.push(attempt);
+            return MetaToolResult::failure(rungs_tried.clone(), MetaError::no_browser(), rung_ms);
         }
     }
 
     // Navigate
     let nav_result = browser_mcp::tools::handle_tool(
-        browser, "navigate", json!({"url": url, "wait_until": "domcontentloaded"}),
-    ).await;
+        browser,
+        "navigate",
+        json!({"url": url, "wait_until": "domcontentloaded"}),
+    )
+    .await;
     let (nav_ok, _nav_val) = super::browser_result_to_value(nav_result);
     if !nav_ok {
         let rung_ms = rung_start.elapsed().as_millis() as u64;
         let attempt = RungAttempt::failed("chrome_headless", rung_ms, "Navigate failed");
-        instrumentation::log_rung_attempt("hands_read_page", call_id, "chrome_headless", false, rung_ms, None, ctx);
+        instrumentation::log_rung_attempt(
+            "hands_read_page",
+            call_id,
+            "chrome_headless",
+            false,
+            rung_ms,
+            None,
+            ctx,
+        );
         rungs_tried.push(attempt);
         return MetaToolResult::failure(
             rungs_tried.clone(),
@@ -244,28 +345,38 @@ async fn rung4_chrome(
 
     // Wait for selector if requested
     if let Some(selector) = wait_for {
-        let remaining = deadline.checked_duration_since(Instant::now())
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         if remaining > 0 {
             let _ = browser_mcp::tools::handle_tool(
-                browser, "wait_for",
+                browser,
+                "wait_for",
                 json!({"selector": selector, "timeout_ms": remaining.min(10000)}),
-            ).await;
+            )
+            .await;
         }
     }
 
     // Extract content
-    let extract_result = browser_mcp::tools::handle_tool(
-        browser, "extract_content", json!({}),
-    ).await;
+    let extract_result =
+        browser_mcp::tools::handle_tool(browser, "extract_content", json!({})).await;
     let (ok, val) = super::browser_result_to_value(extract_result);
     let rung_ms = rung_start.elapsed().as_millis() as u64;
 
     if ok {
         let content = extract_text(&val);
         let attempt = RungAttempt::ok("chrome_headless", rung_ms);
-        instrumentation::log_rung_attempt("hands_read_page", call_id, "chrome_headless", true, rung_ms, Some(0.8), ctx);
+        instrumentation::log_rung_attempt(
+            "hands_read_page",
+            call_id,
+            "chrome_headless",
+            true,
+            rung_ms,
+            Some(0.8),
+            ctx,
+        );
         rungs_tried.push(attempt);
 
         let mut result = MetaToolResult::success(
@@ -281,7 +392,15 @@ async fn rung4_chrome(
         result
     } else {
         let attempt = RungAttempt::failed("chrome_headless", rung_ms, "Extract failed");
-        instrumentation::log_rung_attempt("hands_read_page", call_id, "chrome_headless", false, rung_ms, None, ctx);
+        instrumentation::log_rung_attempt(
+            "hands_read_page",
+            call_id,
+            "chrome_headless",
+            false,
+            rung_ms,
+            None,
+            ctx,
+        );
         rungs_tried.push(attempt);
         MetaToolResult::failure(
             rungs_tried.clone(),
@@ -314,7 +433,13 @@ fn log_aggregate(call_id: &str, result: &MetaToolResult, rungs: &[RungAttempt], 
     let confidence = result.confidence.as_ref().and_then(|c| c.method);
     let error = result.error.as_ref().map(|e| e.to_string());
     instrumentation::log_aggregate(
-        "hands_read_page", call_id, result.success, &result.method,
-        rungs.len(), elapsed, confidence, error.as_deref(),
+        "hands_read_page",
+        call_id,
+        result.success,
+        &result.method,
+        rungs.len(),
+        elapsed,
+        confidence,
+        error.as_deref(),
     );
 }

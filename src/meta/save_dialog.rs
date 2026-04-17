@@ -59,7 +59,15 @@ pub fn parse_save_dialog_action(s: Option<&str>) -> SaveDialogAction {
 const SAVE_BUTTONS: &[&str] = &["Save", "Yes", "&Save", "&Yes"];
 
 /// Known button labels for "discard" actions.
-const DISCARD_BUTTONS: &[&str] = &["Don't Save", "Don't Save", "No", "Discard", "&Don't Save", "&No", "Do&n't Save"];
+const DISCARD_BUTTONS: &[&str] = &[
+    "Don't Save",
+    "Don't Save",
+    "No",
+    "Discard",
+    "&Don't Save",
+    "&No",
+    "Do&n't Save",
+];
 
 /// Known button labels for "cancel" actions.
 const CANCEL_BUTTONS: &[&str] = &["Cancel", "&Cancel"];
@@ -72,14 +80,14 @@ const CANCEL_BUTTONS: &[&str] = &["Cancel", "&Cancel"];
 /// - Title containing "save", "unsaved", or "changes"
 pub fn detect_save_dialog(uia_windows: &[Value]) -> Option<SaveDialogInfo> {
     for window in uia_windows {
-        let class = window.get("class")
+        let class = window
+            .get("class")
             .or_else(|| window.get("class_name"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let role = window.get("role")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let title = window.get("title")
+        let role = window.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        let title = window
+            .get("title")
             .or_else(|| window.get("name"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
@@ -105,7 +113,11 @@ pub fn detect_save_dialog(uia_windows: &[Value]) -> Option<SaveDialogInfo> {
         // Only treat as a save dialog if it has recognizable save/discard buttons
         let has_save_pattern = buttons.iter().any(|b| {
             let bl = b.to_lowercase();
-            bl.contains("save") || bl == "yes" || bl.contains("don't save") || bl == "no" || bl == "discard"
+            bl.contains("save")
+                || bl == "yes"
+                || bl.contains("don't save")
+                || bl == "no"
+                || bl == "discard"
         });
 
         if !has_save_pattern && dialog_text.is_none() {
@@ -153,7 +165,11 @@ fn extract_dialog_text(window: &Value) -> Option<String> {
             let child_class = child.get("class").and_then(|v| v.as_str()).unwrap_or("");
 
             if child_role == "text" || child_role == "static_text" || child_class == "Static" {
-                if let Some(t) = child.get("name").or_else(|| child.get("text")).and_then(|v| v.as_str()) {
+                if let Some(t) = child
+                    .get("name")
+                    .or_else(|| child.get("text"))
+                    .and_then(|v| v.as_str())
+                {
                     if !t.is_empty() {
                         texts.push(t.to_string());
                     }
@@ -178,7 +194,11 @@ fn extract_button_labels(window: &Value) -> Vec<String> {
             let child_class = child.get("class").and_then(|v| v.as_str()).unwrap_or("");
 
             if child_role == "button" || child_class == "Button" {
-                if let Some(label) = child.get("name").or_else(|| child.get("text")).and_then(|v| v.as_str()) {
+                if let Some(label) = child
+                    .get("name")
+                    .or_else(|| child.get("text"))
+                    .and_then(|v| v.as_str())
+                {
                     if !label.is_empty() {
                         buttons.push(label.to_string());
                     }
@@ -193,7 +213,11 @@ fn extract_button_labels(window: &Value) -> Vec<String> {
             for b in btn_array {
                 if let Some(label) = b.as_str() {
                     buttons.push(label.to_string());
-                } else if let Some(label) = b.get("name").or_else(|| b.get("text")).and_then(|v| v.as_str()) {
+                } else if let Some(label) = b
+                    .get("name")
+                    .or_else(|| b.get("text"))
+                    .and_then(|v| v.as_str())
+                {
                     buttons.push(label.to_string());
                 }
             }
@@ -204,15 +228,15 @@ fn extract_button_labels(window: &Value) -> Vec<String> {
 }
 
 fn has_save_button(buttons: &[String]) -> bool {
-    buttons.iter().any(|b| {
-        SAVE_BUTTONS.iter().any(|sb| b.eq_ignore_ascii_case(sb))
-    })
+    buttons
+        .iter()
+        .any(|b| SAVE_BUTTONS.iter().any(|sb| b.eq_ignore_ascii_case(sb)))
 }
 
 fn has_discard_button(buttons: &[String]) -> bool {
-    buttons.iter().any(|b| {
-        DISCARD_BUTTONS.iter().any(|db| b.eq_ignore_ascii_case(db))
-    })
+    buttons
+        .iter()
+        .any(|b| DISCARD_BUTTONS.iter().any(|db| b.eq_ignore_ascii_case(db)))
 }
 
 /// Find the best matching button label from the dialog's available buttons.
@@ -253,8 +277,8 @@ fn is_untitled(dialog_text: Option<&str>, app_name: &str) -> bool {
 
 /// Generate an autosave path for Untitled documents.
 fn autosave_path(app_name: &str, ext: &str) -> String {
-    let user_profile = std::env::var("USERPROFILE")
-        .unwrap_or_else(|_| "C:\\Users\\Default".to_string());
+    let user_profile =
+        std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Default".to_string());
     let dir = format!("{}\\Documents\\hands-autosave", user_profile);
     let _ = std::fs::create_dir_all(&dir);
 
@@ -266,12 +290,19 @@ fn autosave_path(app_name: &str, ext: &str) -> String {
 /// Guess a file extension from the app name.
 fn guess_extension(app_name: &str) -> &'static str {
     let al = app_name.to_lowercase();
-    if al.contains("notepad") || al.contains("text") { "txt" }
-    else if al.contains("word") || al.contains("winword") { "docx" }
-    else if al.contains("excel") { "xlsx" }
-    else if al.contains("powerpoint") { "pptx" }
-    else if al.contains("code") || al.contains("vscode") { "txt" }
-    else { "txt" }
+    if al.contains("notepad") || al.contains("text") {
+        "txt"
+    } else if al.contains("word") || al.contains("winword") {
+        "docx"
+    } else if al.contains("excel") {
+        "xlsx"
+    } else if al.contains("powerpoint") {
+        "pptx"
+    } else if al.contains("code") || al.contains("vscode") {
+        "txt"
+    } else {
+        "txt"
+    }
 }
 
 /// Build the resolution for how to handle the detected save dialog.
@@ -290,23 +321,22 @@ pub fn resolve_dialog_action(
     app_name: &str,
 ) -> Result<DialogResolution, String> {
     match action {
-        SaveDialogAction::Ask => {
-            Ok(DialogResolution {
-                button_text: None,
-                save_path: None,
-                description: format!(
-                    "Save dialog detected (buttons: [{}]). Returning to caller for decision.",
-                    dialog.buttons.join(", ")
-                ),
-            })
-        }
+        SaveDialogAction::Ask => Ok(DialogResolution {
+            button_text: None,
+            save_path: None,
+            description: format!(
+                "Save dialog detected (buttons: [{}]). Returning to caller for decision.",
+                dialog.buttons.join(", ")
+            ),
+        }),
 
         SaveDialogAction::Save => {
-            let btn = find_button(&dialog.buttons, SAVE_BUTTONS)
-                .ok_or_else(|| format!(
+            let btn = find_button(&dialog.buttons, SAVE_BUTTONS).ok_or_else(|| {
+                format!(
                     "No Save button found among: [{}]",
                     dialog.buttons.join(", ")
-                ))?;
+                )
+            })?;
             Ok(DialogResolution {
                 button_text: Some(btn.to_string()),
                 save_path: None,
@@ -315,11 +345,12 @@ pub fn resolve_dialog_action(
         }
 
         SaveDialogAction::Discard => {
-            let btn = find_button(&dialog.buttons, DISCARD_BUTTONS)
-                .ok_or_else(|| format!(
+            let btn = find_button(&dialog.buttons, DISCARD_BUTTONS).ok_or_else(|| {
+                format!(
                     "No Discard/Don't Save button found among: [{}]",
                     dialog.buttons.join(", ")
-                ))?;
+                )
+            })?;
             Ok(DialogResolution {
                 button_text: Some(btn.to_string()),
                 save_path: None,

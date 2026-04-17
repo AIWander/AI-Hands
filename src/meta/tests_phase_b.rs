@@ -84,8 +84,18 @@ fn test_field_role_text_input_classification() {
 #[test]
 fn test_label_match_exact_wins_over_contains() {
     let candidates = vec![
-        label_match::LabelCandidate { text: "Email Address".into(), role: None, selector: None, index: 0 },
-        label_match::LabelCandidate { text: "Email".into(), role: None, selector: None, index: 1 },
+        label_match::LabelCandidate {
+            text: "Email Address".into(),
+            role: None,
+            selector: None,
+            index: 0,
+        },
+        label_match::LabelCandidate {
+            text: "Email".into(),
+            role: None,
+            selector: None,
+            index: 1,
+        },
     ];
     let result = label_match::find_best_match("Email", &candidates).unwrap();
     assert_eq!(result.tier, label_match::MatchTier::Exact);
@@ -95,9 +105,24 @@ fn test_label_match_exact_wins_over_contains() {
 #[test]
 fn test_label_match_multiple_matches_same_tier_returns_error() {
     let candidates = vec![
-        label_match::LabelCandidate { text: "Submit Form".into(), role: None, selector: None, index: 0 },
-        label_match::LabelCandidate { text: "Submit Review".into(), role: None, selector: None, index: 1 },
-        label_match::LabelCandidate { text: "Cancel".into(), role: None, selector: None, index: 2 },
+        label_match::LabelCandidate {
+            text: "Submit Form".into(),
+            role: None,
+            selector: None,
+            index: 0,
+        },
+        label_match::LabelCandidate {
+            text: "Submit Review".into(),
+            role: None,
+            selector: None,
+            index: 1,
+        },
+        label_match::LabelCandidate {
+            text: "Cancel".into(),
+            role: None,
+            selector: None,
+            index: 2,
+        },
     ];
     let result = label_match::find_best_match("Submit", &candidates);
     assert!(result.is_err());
@@ -112,9 +137,12 @@ fn test_label_match_multiple_matches_same_tier_returns_error() {
 
 #[test]
 fn test_label_match_no_match_returns_not_found() {
-    let candidates = vec![
-        label_match::LabelCandidate { text: "Username".into(), role: None, selector: None, index: 0 },
-    ];
+    let candidates = vec![label_match::LabelCandidate {
+        text: "Username".into(),
+        role: None,
+        selector: None,
+        index: 0,
+    }];
     let result = label_match::find_best_match("Phone Number", &candidates);
     assert!(result.is_err());
     if let Err(error::MetaError::ElementNotFound { target, .. }) = result {
@@ -178,21 +206,36 @@ fn test_reversibility_form_control_always_reversible() {
 
 #[test]
 fn test_autofill_accepts_valid_email() {
-    assert!(autofill::validate_autofill_shape("user@example.com", field_role::FieldRole::Email));
+    assert!(autofill::validate_autofill_shape(
+        "user@example.com",
+        field_role::FieldRole::Email
+    ));
 }
 
 #[test]
 fn test_autofill_rejects_empty_value() {
-    assert!(!autofill::validate_autofill_shape("", field_role::FieldRole::Email));
-    assert!(!autofill::validate_autofill_shape("", field_role::FieldRole::Text));
+    assert!(!autofill::validate_autofill_shape(
+        "",
+        field_role::FieldRole::Email
+    ));
+    assert!(!autofill::validate_autofill_shape(
+        "",
+        field_role::FieldRole::Text
+    ));
 }
 
 #[test]
 fn test_autofill_rejects_shape_mismatch() {
     // "not-an-email" doesn't match email shape
-    assert!(!autofill::validate_autofill_shape("not-an-email", field_role::FieldRole::Email));
+    assert!(!autofill::validate_autofill_shape(
+        "not-an-email",
+        field_role::FieldRole::Email
+    ));
     // "abc" doesn't match phone shape (too few digits)
-    assert!(!autofill::validate_autofill_shape("abc", field_role::FieldRole::Phone));
+    assert!(!autofill::validate_autofill_shape(
+        "abc",
+        field_role::FieldRole::Phone
+    ));
 }
 
 #[test]
@@ -217,9 +260,18 @@ fn test_autofill_parse_not_detected() {
 
 #[test]
 fn test_autofill_phone_shape_validation() {
-    assert!(autofill::validate_autofill_shape("+1 (555) 123-4567", field_role::FieldRole::Phone));
-    assert!(autofill::validate_autofill_shape("5551234567", field_role::FieldRole::Phone));
-    assert!(!autofill::validate_autofill_shape("123", field_role::FieldRole::Phone)); // too short
+    assert!(autofill::validate_autofill_shape(
+        "+1 (555) 123-4567",
+        field_role::FieldRole::Phone
+    ));
+    assert!(autofill::validate_autofill_shape(
+        "5551234567",
+        field_role::FieldRole::Phone
+    ));
+    assert!(!autofill::validate_autofill_shape(
+        "123",
+        field_role::FieldRole::Phone
+    )); // too short
 }
 
 // ============ ADAPTIVE TIMEOUT ============
@@ -290,7 +342,11 @@ fn test_chunked_typing_threshold() {
     // Strings ≤100 chars should NOT be chunked
     let short_text = "a".repeat(100);
     let chunks: Vec<&[u8]> = short_text.as_bytes().chunks(50).collect();
-    assert_eq!(chunks.len(), 2, "100 chars fits in 2 chunks but threshold check prevents chunking");
+    assert_eq!(
+        chunks.len(),
+        2,
+        "100 chars fits in 2 chunks but threshold check prevents chunking"
+    );
     // Note: the actual threshold check is `text.len() > CHUNK_THRESHOLD` where CHUNK_THRESHOLD=100
     // So exactly 100 chars is NOT chunked, 101+ is chunked
 }
@@ -302,7 +358,10 @@ fn test_chunked_typing_preserves_full_string() {
     for chunk in input.as_bytes().chunks(50) {
         reconstructed.push_str(&String::from_utf8_lossy(chunk));
     }
-    assert_eq!(input, reconstructed, "Chunked typing must preserve the full string");
+    assert_eq!(
+        input, reconstructed,
+        "Chunked typing must preserve the full string"
+    );
 }
 
 // ============ HANDS_FILL_FORM: DYNAMIC FORM ============
@@ -313,8 +372,10 @@ fn test_fill_form_field_count_change_detection() {
     // After every 3 fields, fill_form re-scans and detects count change.
     let initial_count = 1;
     let post_fill_count = 5;
-    assert_ne!(initial_count, post_fill_count,
-        "Dynamic form should be detected when field count changes");
+    assert_ne!(
+        initial_count, post_fill_count,
+        "Dynamic form should be detected when field count changes"
+    );
 }
 
 // ============ DEFAULT SUBMIT LABELS ============

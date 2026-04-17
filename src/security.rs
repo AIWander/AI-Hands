@@ -67,10 +67,7 @@ fn normalize_url(url: &str) -> String {
 }
 
 fn split_host_and_path(url: &str) -> (&str, &str) {
-    let without_scheme = url
-        .split_once("://")
-        .map(|(_, rest)| rest)
-        .unwrap_or(url);
+    let without_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let without_credentials = without_scheme
         .rsplit_once('@')
         .map(|(_, rest)| rest)

@@ -66,8 +66,10 @@ pub fn record_action(tool: &str, args: &Value, duration_ms: u64) {
     // Redact tool names that look like credential operations.
     let tool_name = {
         let lower = tool.to_ascii_lowercase();
-        if lower.contains("password") || lower.contains("token")
-            || lower.contains("api_key") || lower.contains("secret")
+        if lower.contains("password")
+            || lower.contains("token")
+            || lower.contains("api_key")
+            || lower.contains("secret")
         {
             "[REDACTED]".to_string()
         } else {
@@ -78,7 +80,12 @@ pub fn record_action(tool: &str, args: &Value, duration_ms: u64) {
         if guard.len() >= RING_CAPACITY {
             guard.pop_front();
         }
-        guard.push_back(ActionEntry { tool_name, target, timestamp_utc, duration_ms });
+        guard.push_back(ActionEntry {
+            tool_name,
+            target,
+            timestamp_utc,
+            duration_ms,
+        });
     }
 }
 
@@ -126,7 +133,9 @@ pub fn update_vision_snapshot(screenshot_path: Option<&str>, ocr: bool) {
 
 /// Extract a meaningful target string from tool args (first non-empty known field).
 fn extract_target(args: &Value) -> String {
-    for field in &["target", "selector", "url", "title", "text", "name", "query", "path"] {
+    for field in &[
+        "target", "selector", "url", "title", "text", "name", "query", "path",
+    ] {
         if let Some(v) = args.get(field).and_then(|v| v.as_str()) {
             if !v.is_empty() {
                 return v.chars().take(100).collect();
@@ -161,8 +170,15 @@ pub fn spawn() {
                 }
             };
 
-            let port = server.server_addr().to_ip().map(|a| a.port()).unwrap_or(base_port);
-            eprintln!("[hands/dashboard] Listening on http://127.0.0.1:{}/api/status", port);
+            let port = server
+                .server_addr()
+                .to_ip()
+                .map(|a| a.port())
+                .unwrap_or(base_port);
+            eprintln!(
+                "[hands/dashboard] Listening on http://127.0.0.1:{}/api/status",
+                port
+            );
 
             for request in server.incoming_requests() {
                 handle_request(request);
@@ -184,16 +200,19 @@ fn try_bind(base_port: u16) -> Option<tiny_http::Server> {
 fn cors_headers() -> Vec<tiny_http::Header> {
     vec![
         "Access-Control-Allow-Origin: *".parse().unwrap(),
-        "Access-Control-Allow-Methods: GET, OPTIONS".parse().unwrap(),
-        "Access-Control-Allow-Headers: Content-Type".parse().unwrap(),
+        "Access-Control-Allow-Methods: GET, OPTIONS"
+            .parse()
+            .unwrap(),
+        "Access-Control-Allow-Headers: Content-Type"
+            .parse()
+            .unwrap(),
         "Content-Type: application/json".parse().unwrap(),
     ]
 }
 
 fn respond(request: tiny_http::Request, status: u16, body: Value) {
     let body_str = serde_json::to_string(&body).unwrap_or_default();
-    let mut response = tiny_http::Response::from_string(body_str)
-        .with_status_code(status);
+    let mut response = tiny_http::Response::from_string(body_str).with_status_code(status);
     for h in cors_headers() {
         response = response.with_header(h);
     }
@@ -243,8 +262,14 @@ fn build_browser_status() -> Value {
             } else {
                 // browser_mcp BrowserManager::status() returns:
                 // { active, headless, current_url, tab_count, active_tab }
-                let launched = snap.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
-                let headless = snap.get("headless").and_then(|v| v.as_bool()).unwrap_or(false);
+                let launched = snap
+                    .get("active")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let headless = snap
+                    .get("headless")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let status_str = if !launched {
                     "closed"
                 } else if headless {
@@ -261,13 +286,15 @@ fn build_browser_status() -> Value {
                 })
             }
         })
-        .unwrap_or_else(|| json!({
-            "status": "unknown",
-            "current_url": null,
-            "tab_count": 0,
-            "contexts": [],
-            "routes_active": 0
-        }))
+        .unwrap_or_else(|| {
+            json!({
+                "status": "unknown",
+                "current_url": null,
+                "tab_count": 0,
+                "contexts": [],
+                "routes_active": 0
+            })
+        })
 }
 
 fn build_recent_actions() -> Vec<Value> {
@@ -275,12 +302,17 @@ fn build_recent_actions() -> Vec<Value> {
         .lock()
         .ok()
         .map(|guard| {
-            guard.iter().map(|a| json!({
-                "tool_name": a.tool_name,
-                "target": a.target,
-                "timestamp_utc": a.timestamp_utc,
-                "duration_ms": a.duration_ms
-            })).collect()
+            guard
+                .iter()
+                .map(|a| {
+                    json!({
+                        "tool_name": a.tool_name,
+                        "target": a.target,
+                        "timestamp_utc": a.timestamp_utc,
+                        "duration_ms": a.duration_ms
+                    })
+                })
+                .collect()
         })
         .unwrap_or_default()
 }
@@ -323,10 +355,18 @@ mod tests {
     fn test_ring_buffer_capacity() {
         // Record 15 actions — only last 10 should remain.
         for i in 0..15 {
-            record_action(&format!("tool_{}", i), &json!({"target": format!("sel_{}", i)}), 0);
+            record_action(
+                &format!("tool_{}", i),
+                &json!({"target": format!("sel_{}", i)}),
+                0,
+            );
         }
         let actions = build_recent_actions();
-        assert!(actions.len() <= RING_CAPACITY, "ring buffer must not exceed capacity {}", RING_CAPACITY);
+        assert!(
+            actions.len() <= RING_CAPACITY,
+            "ring buffer must not exceed capacity {}",
+            RING_CAPACITY
+        );
     }
 
     #[test]

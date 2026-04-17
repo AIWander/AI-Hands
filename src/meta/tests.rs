@@ -21,7 +21,10 @@ fn test_cache_event_invalidation_navigate() {
     assert!(cache.get().is_some(), "Cache should be valid after store");
 
     cache.on_event(cache::InvalidationEvent::Navigate);
-    assert!(cache.get().is_none(), "Cache should be invalid after navigate");
+    assert!(
+        cache.get().is_none(),
+        "Cache should be invalid after navigate"
+    );
 }
 
 #[test]
@@ -45,17 +48,26 @@ fn test_cache_event_invalidation_type() {
 #[test]
 fn test_cache_mutation_invalidation() {
     let mut cache = cache::A11yMetaCache::new();
-    cache.store(json!({"role": "document", "children": []}), "https://example.com");
+    cache.store(
+        json!({"role": "document", "children": []}),
+        "https://example.com",
+    );
     assert!(cache.get().is_some());
 
     cache.on_mutation();
-    assert!(cache.get().is_none(), "Mutation observer dirty flag should invalidate cache");
+    assert!(
+        cache.get().is_none(),
+        "Mutation observer dirty flag should invalidate cache"
+    );
 }
 
 #[test]
 fn test_cache_hash_mismatch_invalidation() {
     let mut cache = cache::A11yMetaCache::new();
-    cache.store(json!({"role": "document", "name": "Page 1"}), "https://example.com");
+    cache.store(
+        json!({"role": "document", "name": "Page 1"}),
+        "https://example.com",
+    );
 
     // Same content — hash matches
     assert!(cache.verify_hash(&json!({"role": "document", "name": "Page 1"})));
@@ -90,13 +102,25 @@ fn test_cache_clear_resets_everything() {
 
 #[test]
 fn test_error_categories() {
-    assert_eq!(error::MetaError::not_found("btn", "browser").category(), "targeting");
+    assert_eq!(
+        error::MetaError::not_found("btn", "browser").category(),
+        "targeting"
+    );
     assert_eq!(error::MetaError::no_browser().category(), "infrastructure");
     assert_eq!(error::MetaError::no_page().category(), "infrastructure");
-    assert_eq!(error::MetaError::timeout("click", 5000).category(), "infrastructure");
-    assert_eq!(error::MetaError::subsystem("uia", "COM error").category(), "infrastructure");
+    assert_eq!(
+        error::MetaError::timeout("click", 5000).category(),
+        "infrastructure"
+    );
+    assert_eq!(
+        error::MetaError::subsystem("uia", "COM error").category(),
+        "infrastructure"
+    );
     assert_eq!(error::MetaError::DynamicContentChanged.category(), "state");
-    assert_eq!(error::MetaError::requires_confirmation("Delete", "irreversible").category(), "content");
+    assert_eq!(
+        error::MetaError::requires_confirmation("Delete", "irreversible").category(),
+        "content"
+    );
     assert_eq!(error::MetaError::other("unknown").category(), "other");
 
     // Phase B/C variants
@@ -131,8 +155,18 @@ fn test_error_multiple_matches() {
     let err = error::MetaError::MultipleMatches {
         target: "Submit".into(),
         candidates: vec![
-            error::MatchCandidate { text: "Submit Form".into(), role: Some("button".into()), selector: None, confidence: 0.9 },
-            error::MatchCandidate { text: "Submit Review".into(), role: Some("button".into()), selector: None, confidence: 0.85 },
+            error::MatchCandidate {
+                text: "Submit Form".into(),
+                role: Some("button".into()),
+                selector: None,
+                confidence: 0.9,
+            },
+            error::MatchCandidate {
+                text: "Submit Review".into(),
+                role: Some("button".into()),
+                selector: None,
+                confidence: 0.85,
+            },
         ],
     };
     assert!(err.to_string().contains("2 candidates"));
@@ -142,47 +176,89 @@ fn test_error_multiple_matches() {
 
 #[test]
 fn test_reversibility_destructive_patterns() {
-    use targeting::classify_reversibility;
     use response::Reversibility;
+    use targeting::classify_reversibility;
 
-    assert_eq!(classify_reversibility("Delete Account"), Reversibility::Destructive);
-    assert_eq!(classify_reversibility("Remove Item"), Reversibility::Destructive);
-    assert_eq!(classify_reversibility("Confirm Payment"), Reversibility::Destructive);
-    assert_eq!(classify_reversibility("Pay Now"), Reversibility::Destructive);
-    assert_eq!(classify_reversibility("Publish Article"), Reversibility::Destructive);
+    assert_eq!(
+        classify_reversibility("Delete Account"),
+        Reversibility::Destructive
+    );
+    assert_eq!(
+        classify_reversibility("Remove Item"),
+        Reversibility::Destructive
+    );
+    assert_eq!(
+        classify_reversibility("Confirm Payment"),
+        Reversibility::Destructive
+    );
+    assert_eq!(
+        classify_reversibility("Pay Now"),
+        Reversibility::Destructive
+    );
+    assert_eq!(
+        classify_reversibility("Publish Article"),
+        Reversibility::Destructive
+    );
 }
 
 #[test]
 fn test_reversibility_confirmation_patterns() {
-    use targeting::classify_reversibility;
     use response::Reversibility;
+    use targeting::classify_reversibility;
 
-    assert_eq!(classify_reversibility("Submit Form"), Reversibility::RequiresConfirmation);
-    assert_eq!(classify_reversibility("Sign Up"), Reversibility::RequiresConfirmation);
-    assert_eq!(classify_reversibility("Create Account"), Reversibility::RequiresConfirmation);
-    assert_eq!(classify_reversibility("Save Changes"), Reversibility::RequiresConfirmation);
+    assert_eq!(
+        classify_reversibility("Submit Form"),
+        Reversibility::RequiresConfirmation
+    );
+    assert_eq!(
+        classify_reversibility("Sign Up"),
+        Reversibility::RequiresConfirmation
+    );
+    assert_eq!(
+        classify_reversibility("Create Account"),
+        Reversibility::RequiresConfirmation
+    );
+    assert_eq!(
+        classify_reversibility("Save Changes"),
+        Reversibility::RequiresConfirmation
+    );
 }
 
 #[test]
 fn test_reversibility_safe_patterns() {
-    use targeting::classify_reversibility;
     use response::Reversibility;
+    use targeting::classify_reversibility;
 
     assert_eq!(classify_reversibility("Next"), Reversibility::Reversible);
-    assert_eq!(classify_reversibility("Read More"), Reversibility::Reversible);
-    assert_eq!(classify_reversibility("Open Settings"), Reversibility::Reversible);
-    assert_eq!(classify_reversibility("View Details"), Reversibility::Reversible);
+    assert_eq!(
+        classify_reversibility("Read More"),
+        Reversibility::Reversible
+    );
+    assert_eq!(
+        classify_reversibility("Open Settings"),
+        Reversibility::Reversible
+    );
+    assert_eq!(
+        classify_reversibility("View Details"),
+        Reversibility::Reversible
+    );
     assert_eq!(classify_reversibility("Go Back"), Reversibility::Reversible);
 }
 
 #[test]
 fn test_reversibility_case_insensitive() {
-    use targeting::classify_reversibility;
     use response::Reversibility;
+    use targeting::classify_reversibility;
 
     assert_eq!(classify_reversibility("DELETE"), Reversibility::Destructive);
-    assert_eq!(classify_reversibility("delete all"), Reversibility::Destructive);
-    assert_eq!(classify_reversibility("SUBMIT"), Reversibility::RequiresConfirmation);
+    assert_eq!(
+        classify_reversibility("delete all"),
+        Reversibility::Destructive
+    );
+    assert_eq!(
+        classify_reversibility("SUBMIT"),
+        Reversibility::RequiresConfirmation
+    );
 }
 
 // ============ TARGETING HELPERS ============
@@ -229,7 +305,9 @@ fn test_locale_insensitive_eq() {
 
 #[test]
 fn test_content_needs_js() {
-    assert!(targeting::content_needs_js("Please enable JavaScript to continue"));
+    assert!(targeting::content_needs_js(
+        "Please enable JavaScript to continue"
+    ));
     assert!(targeting::content_needs_js("This site requires javascript"));
     assert!(!targeting::content_needs_js("Welcome to our website"));
 }
@@ -300,19 +378,26 @@ fn test_meta_tool_result_failure() {
 
 #[test]
 fn test_meta_tool_result_serialization() {
-    let result = response::MetaToolResult::success(
-        "test", vec![], json!({}), 0,
-    ).with_confidence(response::Confidence::dual(0.9, 0.7))
-     .with_reversibility(response::Reversibility::Destructive)
-     .with_warning("Test warning");
+    let result = response::MetaToolResult::success("test", vec![], json!({}), 0)
+        .with_confidence(response::Confidence::dual(0.9, 0.7))
+        .with_reversibility(response::Reversibility::Destructive)
+        .with_warning("Test warning");
 
     let val = result.to_value();
     assert_eq!(val["success"], true);
     assert_eq!(val["reversibility"], "destructive");
     let method_conf = val["confidence"]["method"].as_f64().unwrap();
-    assert!((method_conf - 0.9).abs() < 0.01, "method confidence: {}", method_conf);
+    assert!(
+        (method_conf - 0.9).abs() < 0.01,
+        "method confidence: {}",
+        method_conf
+    );
     let loc_conf = val["confidence"]["location"].as_f64().unwrap();
-    assert!((loc_conf - 0.7).abs() < 0.01, "location confidence: {}", loc_conf);
+    assert!(
+        (loc_conf - 0.7).abs() < 0.01,
+        "location confidence: {}",
+        loc_conf
+    );
     assert_eq!(val["warnings"][0], "Test warning");
 }
 
@@ -414,7 +499,10 @@ fn test_consent_cookie_banner_no_risk() {
         Some("https://example.com"),
         None,
     );
-    assert!(matches!(result.risk, consent::RiskLevel::NoRisk | consent::RiskLevel::LowRisk));
+    assert!(matches!(
+        result.risk,
+        consent::RiskLevel::NoRisk | consent::RiskLevel::LowRisk
+    ));
     assert!(result.auto_acceptable);
 }
 

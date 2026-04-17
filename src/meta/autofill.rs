@@ -70,7 +70,10 @@ pub fn validate_autofill_shape(value: &str, role: FieldRole) -> bool {
         }
         FieldRole::Number => {
             // Numeric: parseable as number (possibly with formatting)
-            let cleaned: String = value.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+            let cleaned: String = value
+                .chars()
+                .filter(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
             !cleaned.is_empty() && cleaned.parse::<f64>().is_ok()
         }
         FieldRole::Url => {
@@ -88,10 +91,7 @@ pub fn validate_autofill_shape(value: &str, role: FieldRole) -> bool {
 }
 
 /// Build an AutofillState from raw JS check result.
-pub fn parse_autofill_result(
-    js_result: &serde_json::Value,
-    role: FieldRole,
-) -> AutofillState {
+pub fn parse_autofill_result(js_result: &serde_json::Value, role: FieldRole) -> AutofillState {
     let detected = js_result
         .get("detected")
         .and_then(|v| v.as_bool())
@@ -119,7 +119,10 @@ mod tests {
 
     #[test]
     fn test_email_shape_valid() {
-        assert!(validate_autofill_shape("user@example.com", FieldRole::Email));
+        assert!(validate_autofill_shape(
+            "user@example.com",
+            FieldRole::Email
+        ));
         assert!(validate_autofill_shape("a@b.co", FieldRole::Email));
     }
 
@@ -133,7 +136,10 @@ mod tests {
     #[test]
     fn test_phone_shape_valid() {
         assert!(validate_autofill_shape("555-123-4567", FieldRole::Phone));
-        assert!(validate_autofill_shape("+1 (555) 123-4567", FieldRole::Phone));
+        assert!(validate_autofill_shape(
+            "+1 (555) 123-4567",
+            FieldRole::Phone
+        ));
         assert!(validate_autofill_shape("5551234567", FieldRole::Phone));
     }
 

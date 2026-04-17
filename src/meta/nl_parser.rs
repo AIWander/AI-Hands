@@ -29,9 +29,7 @@ pub enum CheckType {
 fn strip_quotes(s: &str) -> &str {
     let s = s.trim();
     if s.len() >= 2 {
-        if (s.starts_with('"') && s.ends_with('"'))
-            || (s.starts_with('\'') && s.ends_with('\''))
-        {
+        if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
             return &s[1..s.len() - 1];
         }
     }

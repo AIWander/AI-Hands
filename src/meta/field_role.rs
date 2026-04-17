@@ -64,7 +64,8 @@ impl FieldRole {
         }
 
         // Password
-        if input_type == "password" || autocomplete == "current-password"
+        if input_type == "password"
+            || autocomplete == "current-password"
             || autocomplete == "new-password"
         {
             return Self::Password;
@@ -91,22 +92,28 @@ impl FieldRole {
         }
 
         // Number — includes credit card fields detected by autocomplete
-        if input_type == "number" || inputmode == "numeric" || inputmode == "decimal"
+        if input_type == "number"
+            || inputmode == "numeric"
+            || inputmode == "decimal"
             || autocomplete.starts_with("cc-")
         {
             return Self::Number;
         }
 
         // Date variants
-        if input_type == "date" || input_type == "datetime-local"
-            || input_type == "month" || input_type == "week" || input_type == "time"
+        if input_type == "date"
+            || input_type == "datetime-local"
+            || input_type == "month"
+            || input_type == "week"
+            || input_type == "time"
             || autocomplete == "bday"
         {
             return Self::Date;
         }
 
         // Text (explicit or default for input/textarea)
-        if input_type == "text" || input_type.is_empty()
+        if input_type == "text"
+            || input_type.is_empty()
             || tag.eq_ignore_ascii_case("textarea")
             || role == "textbox"
         {
@@ -120,7 +127,10 @@ impl FieldRole {
     /// Sensitive fields: refuse fast_set, always use per-keystroke simulation,
     /// never log values in instrumentation.
     pub fn is_sensitive(&self) -> bool {
-        matches!(self, Self::Password | Self::Email | Self::Phone | Self::Number)
+        matches!(
+            self,
+            Self::Password | Self::Email | Self::Phone | Self::Number
+        )
     }
 
     /// Whether this field type requires keystroke simulation (no JS direct-set).
@@ -133,8 +143,14 @@ impl FieldRole {
     pub fn is_text_input(&self) -> bool {
         matches!(
             self,
-            Self::Text | Self::Password | Self::Email | Self::Phone
-                | Self::Url | Self::Search | Self::Number | Self::Date
+            Self::Text
+                | Self::Password
+                | Self::Email
+                | Self::Phone
+                | Self::Url
+                | Self::Search
+                | Self::Number
+                | Self::Date
         )
     }
 }
@@ -220,10 +236,7 @@ mod tests {
 
     #[test]
     fn test_default_text() {
-        assert_eq!(
-            FieldRole::detect(&json!({"type": "text"})),
-            FieldRole::Text
-        );
+        assert_eq!(FieldRole::detect(&json!({"type": "text"})), FieldRole::Text);
         assert_eq!(
             FieldRole::detect(&json!({"tag": "textarea"})),
             FieldRole::Text

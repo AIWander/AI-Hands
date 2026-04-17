@@ -14,10 +14,10 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Instant;
 
-use super::session::SharedSession;
-use super::response::{MetaToolResult, RungAttempt};
 use super::error::MetaError;
 use super::instrumentation;
+use super::response::{MetaToolResult, RungAttempt};
+use super::session::SharedSession;
 
 /// Per-step error handling policy.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,28 +75,39 @@ pub async fn handle(
         Some(arr) => arr.clone(),
         None => {
             instrumentation::log_aggregate(
-                "hands_script", &call_id, false, "", 0, 0, None,
+                "hands_script",
+                &call_id,
+                false,
+                "",
+                0,
+                0,
+                None,
                 Some("steps array is required"),
             );
-            return MetaToolResult::failure(
-                vec![], MetaError::other("steps array is required"), 0,
-            ).to_value();
+            return MetaToolResult::failure(vec![], MetaError::other("steps array is required"), 0)
+                .to_value();
         }
     };
 
     if steps_raw.is_empty() {
         return MetaToolResult::failure(
-            vec![], MetaError::other("steps array must not be empty"), 0,
-        ).to_value();
+            vec![],
+            MetaError::other("steps array must not be empty"),
+            0,
+        )
+        .to_value();
     }
 
-    let stop_on_error = args.get("stop_on_error")
+    let stop_on_error = args
+        .get("stop_on_error")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    let verbose = args.get("verbose")
+    let verbose = args
+        .get("verbose")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let overall_timeout_ms = args.get("timeout_ms")
+    let overall_timeout_ms = args
+        .get("timeout_ms")
         .and_then(|v| v.as_u64())
         .unwrap_or(60_000);
 
@@ -109,18 +120,29 @@ pub async fn handle(
     }
 
     // ── Parse step definitions ──
-    let steps: Vec<StepDef> = steps_raw.iter().map(|s| {
-        StepDef {
-            tool: s.get("tool").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+    let steps: Vec<StepDef> = steps_raw
+        .iter()
+        .map(|s| StepDef {
+            tool: s
+                .get("tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
             args: s.get("args").cloned().unwrap_or(json!({})),
-            label: s.get("label").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            output_var: s.get("output_var").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            label: s
+                .get("label")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            output_var: s
+                .get("output_var")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             on_error: OnError::from_str(
                 s.get("on_error").and_then(|v| v.as_str()).unwrap_or("stop"),
             ),
             timeout_ms: s.get("timeout_ms").and_then(|v| v.as_u64()),
-        }
-    }).collect();
+        })
+        .collect();
 
     // ── Execute steps ──
     let mut step_results: Vec<StepResult> = Vec::new();
@@ -135,15 +157,24 @@ pub async fn handle(
         if elapsed_total > overall_timeout_ms {
             let timeout_err = MetaError::timeout("hands_script overall", elapsed_total);
             let result = build_script_result(
-                idx, steps_succeeded, steps_failed, &failed_step,
-                &variables, &step_results, verbose, elapsed_total, &rungs_tried,
+                idx,
+                steps_succeeded,
+                steps_failed,
+                &failed_step,
+                &variables,
+                &step_results,
+                verbose,
+                elapsed_total,
+                &rungs_tried,
             );
             // Add timeout warning
             if let Some(obj) = result.as_object() {
                 let mut r = obj.clone();
                 r.insert("timeout".to_string(), json!(true));
-                r.insert("timeout_error".to_string(),
-                    serde_json::to_value(&timeout_err).unwrap_or(json!("timeout")));
+                r.insert(
+                    "timeout_error".to_string(),
+                    serde_json::to_value(&timeout_err).unwrap_or(json!("timeout")),
+                );
                 return json!(r);
             }
             return result;
@@ -175,7 +206,11 @@ pub async fn handle(
         }
 
         // Execute (with optional retry)
-        let max_attempts = if step.on_error == OnError::Retry { 2 } else { 1 };
+        let max_attempts = if step.on_error == OnError::Retry {
+            2
+        } else {
+            1
+        };
         let mut attempt_result: Option<StepResult> = None;
 
         for attempt in 0..max_attempts {
@@ -187,8 +222,13 @@ pub async fn handle(
 
             // Execute the meta-tool
             let step_result = execute_step(
-                &step.tool, &resolved_args, browser, session, step.timeout_ms,
-            ).await;
+                &step.tool,
+                &resolved_args,
+                browser,
+                session,
+                step.timeout_ms,
+            )
+            .await;
 
             let step_elapsed = step_start.elapsed().as_millis() as u64;
 
@@ -199,9 +239,7 @@ pub async fn handle(
                         variables.insert(var_name.clone(), result_value.clone());
                     }
 
-                    let rung = RungAttempt::ok(
-                        format!("step_{}/{}", idx, step.tool), step_elapsed,
-                    );
+                    let rung = RungAttempt::ok(format!("step_{}/{}", idx, step.tool), step_elapsed);
                     rungs_tried.push(rung);
 
                     attempt_result = Some(StepResult {
@@ -249,9 +287,8 @@ pub async fn handle(
                 }
                 StepOutcome::NotAMetaTool => {
                     let err_msg = format!("'{}' is not a recognized meta-tool", step.tool);
-                    let rung = RungAttempt::failed(
-                        format!("step_{}/{}", idx, step.tool), 0, &err_msg,
-                    );
+                    let rung =
+                        RungAttempt::failed(format!("step_{}/{}", idx, step.tool), 0, &err_msg);
                     rungs_tried.push(rung);
 
                     attempt_result = Some(StepResult {
@@ -295,16 +332,30 @@ pub async fn handle(
     let elapsed = start.elapsed().as_millis() as u64;
 
     instrumentation::log_aggregate(
-        "hands_script", &call_id, steps_failed == 0,
+        "hands_script",
+        &call_id,
+        steps_failed == 0,
         &format!("{}/{} steps", steps_succeeded, step_results.len()),
-        rungs_tried.len(), elapsed,
+        rungs_tried.len(),
+        elapsed,
         None,
-        if steps_failed > 0 { Some("script had failures") } else { None },
+        if steps_failed > 0 {
+            Some("script had failures")
+        } else {
+            None
+        },
     );
 
     build_script_result(
-        step_results.len(), steps_succeeded, steps_failed,
-        &failed_step, &variables, &step_results, verbose, elapsed, &rungs_tried,
+        step_results.len(),
+        steps_succeeded,
+        steps_failed,
+        &failed_step,
+        &variables,
+        &step_results,
+        verbose,
+        elapsed,
+        &rungs_tried,
     )
 }
 
@@ -333,20 +384,65 @@ async fn execute_step(
     //   3. The generic timeout error that masks the real result
     // The script's own per-step timeout is the single timeout layer.
     let direct_result: Option<Result<Value, _>> = match tool {
-        "hands_read_page" => Some(tokio::time::timeout(timeout_dur, super::read_page::handle(args, browser, session)).await),
-        "hands_click" => Some(tokio::time::timeout(timeout_dur, super::click::handle(args, browser, session)).await),
-        "hands_navigate" => Some(tokio::time::timeout(timeout_dur, super::navigate::handle(args, browser, session)).await),
-        "hands_capture" => Some(tokio::time::timeout(timeout_dur, super::capture::handle(args, browser, session)).await),
-        "hands_find" => Some(tokio::time::timeout(timeout_dur, super::find::handle(args, browser, session)).await),
-        "hands_type" => Some(tokio::time::timeout(timeout_dur, super::type_text::handle(args, browser, session)).await),
-        "hands_fill_form" => Some(tokio::time::timeout(timeout_dur, super::fill_form::handle(args, browser, session)).await),
-        "hands_verify" => Some(tokio::time::timeout(timeout_dur, super::verify::handle(args, browser, session)).await),
-        "hands_scan_qr" => Some(tokio::time::timeout(timeout_dur, super::qr_scan::handle(args, browser, session)).await),
-        "hands_app_action" => Some(tokio::time::timeout(timeout_dur, super::app_action::handle(args, browser, session)).await),
-        "hands_script" => Some(tokio::time::timeout(timeout_dur, Box::pin(handle(args, browser, session))).await),
+        "hands_read_page" => Some(
+            tokio::time::timeout(
+                timeout_dur,
+                super::read_page::handle(args, browser, session),
+            )
+            .await,
+        ),
+        "hands_click" => Some(
+            tokio::time::timeout(timeout_dur, super::click::handle(args, browser, session)).await,
+        ),
+        "hands_navigate" => Some(
+            tokio::time::timeout(timeout_dur, super::navigate::handle(args, browser, session))
+                .await,
+        ),
+        "hands_capture" => Some(
+            tokio::time::timeout(timeout_dur, super::capture::handle(args, browser, session)).await,
+        ),
+        "hands_find" => Some(
+            tokio::time::timeout(timeout_dur, super::find::handle(args, browser, session)).await,
+        ),
+        "hands_type" => Some(
+            tokio::time::timeout(
+                timeout_dur,
+                super::type_text::handle(args, browser, session),
+            )
+            .await,
+        ),
+        "hands_fill_form" => Some(
+            tokio::time::timeout(
+                timeout_dur,
+                super::fill_form::handle(args, browser, session),
+            )
+            .await,
+        ),
+        "hands_verify" => Some(
+            tokio::time::timeout(timeout_dur, super::verify::handle(args, browser, session)).await,
+        ),
+        "hands_scan_qr" => Some(
+            tokio::time::timeout(timeout_dur, super::qr_scan::handle(args, browser, session)).await,
+        ),
+        "hands_app_action" => Some(
+            tokio::time::timeout(
+                timeout_dur,
+                super::app_action::handle(args, browser, session),
+            )
+            .await,
+        ),
+        "hands_script" => {
+            Some(tokio::time::timeout(timeout_dur, Box::pin(handle(args, browser, session))).await)
+        }
         "hands_login_recovery" => {
             let script_payload = super::templates::login::build_login_script(args);
-            Some(tokio::time::timeout(timeout_dur, Box::pin(handle(&script_payload, browser, session))).await)
+            Some(
+                tokio::time::timeout(
+                    timeout_dur,
+                    Box::pin(handle(&script_payload, browser, session)),
+                )
+                .await,
+            )
         }
         _ => None,
     };
@@ -363,11 +459,17 @@ async fn execute_step(
     }
 
     // Not a known meta-tool — try underlying tool layers as fallthrough
-    eprintln!("[hands_script] '{}' not a meta-tool, trying underlying dispatch", tool);
+    eprintln!(
+        "[hands_script] '{}' not a meta-tool, trying underlying dispatch",
+        tool
+    );
     let fallthrough = Box::pin(dispatch_underlying_tool(tool, args, browser));
     match tokio::time::timeout(timeout_dur, fallthrough).await {
         Ok(Some(value)) => {
-            eprintln!("[hands_script] fallthrough resolved '{}' via underlying layer", tool);
+            eprintln!(
+                "[hands_script] fallthrough resolved '{}' via underlying layer",
+                tool
+            );
             classify_step_result(value)
         }
         Ok(None) => {
@@ -376,30 +478,33 @@ async fn execute_step(
             for variant in &variants {
                 let under_fut = Box::pin(dispatch_underlying_tool(&variant, args, browser));
                 if let Ok(Some(value)) = tokio::time::timeout(timeout_dur, under_fut).await {
-                    eprintln!("[hands_script] name resolver: '{}' resolved as underlying '{}'", tool, variant);
+                    eprintln!(
+                        "[hands_script] name resolver: '{}' resolved as underlying '{}'",
+                        tool, variant
+                    );
                     return classify_step_result(value);
                 }
             }
             StepOutcome::NotAMetaTool
         }
-        Err(_) => {
-            StepOutcome::Failed(
-                format!("Step timed out after {}ms", effective_timeout),
-                json!({"timeout": true, "timeout_ms": effective_timeout}),
-            )
-        }
+        Err(_) => StepOutcome::Failed(
+            format!("Step timed out after {}ms", effective_timeout),
+            json!({"timeout": true, "timeout_ms": effective_timeout}),
+        ),
     }
 }
 
 /// Classify a tool result value into Success or Failed.
 fn classify_step_result(value: Value) -> StepOutcome {
-    let success = value.get("success")
+    let success = value
+        .get("success")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     if success {
         StepOutcome::Success(value)
     } else {
-        let err = value.get("error")
+        let err = value
+            .get("error")
             .map(|e| {
                 if let Some(msg) = e.as_str() {
                     msg.to_string()
@@ -422,7 +527,12 @@ async fn dispatch_underlying_tool(
     if tool.starts_with("uia_") {
         let result = uia_lib::handle_tool_call(tool, args);
         // Check if uia_lib recognized the tool (vs returning "Unknown tool")
-        if result.get("error").and_then(|e| e.as_str()).map(|e| e.starts_with("Unknown tool")).unwrap_or(false) {
+        if result
+            .get("error")
+            .and_then(|e| e.as_str())
+            .map(|e| e.starts_with("Unknown tool"))
+            .unwrap_or(false)
+        {
             return None;
         }
         return Some(result);
@@ -497,30 +607,35 @@ fn build_script_result(
     }
 
     // Convert variables to JSON object
-    let vars_obj: serde_json::Map<String, Value> = variables.iter()
+    let vars_obj: serde_json::Map<String, Value> = variables
+        .iter()
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     response["variables_final"] = Value::Object(vars_obj);
 
     if verbose {
-        let per_step: Vec<Value> = step_results.iter().map(|sr| {
-            json!({
-                "index": sr.index,
-                "label": sr.label,
-                "tool": sr.tool,
-                "success": sr.success,
-                "elapsed_ms": sr.elapsed_ms,
-                "result": sr.result,
-                "error": sr.error,
-                "retried": sr.retried,
+        let per_step: Vec<Value> = step_results
+            .iter()
+            .map(|sr| {
+                json!({
+                    "index": sr.index,
+                    "label": sr.label,
+                    "tool": sr.tool,
+                    "success": sr.success,
+                    "elapsed_ms": sr.elapsed_ms,
+                    "result": sr.result,
+                    "error": sr.error,
+                    "retried": sr.retried,
+                })
             })
-        }).collect();
+            .collect();
         response["per_step"] = json!(per_step);
     }
 
     // Attach rungs_tried for MetaToolResult compatibility
     if verbose {
-        let rungs: Vec<Value> = rungs_tried.iter()
+        let rungs: Vec<Value> = rungs_tried
+            .iter()
             .map(|r| serde_json::to_value(r).unwrap_or(Value::Null))
             .collect();
         response["rungs_tried"] = json!(rungs);
@@ -660,12 +775,15 @@ mod tests {
     #[test]
     fn test_substitute_dotted_path() {
         let mut vars = HashMap::new();
-        vars.insert("result".to_string(), json!({
-            "data": {
-                "id": 123,
-                "name": "test"
-            }
-        }));
+        vars.insert(
+            "result".to_string(),
+            json!({
+                "data": {
+                    "id": 123,
+                    "name": "test"
+                }
+            }),
+        );
 
         let input = json!({"id": "{{result.data.id}}", "name": "{{result.data.name}}"});
         let result = substitute_variables(&input, &vars);
@@ -707,7 +825,10 @@ mod tests {
     #[test]
     fn test_substitute_preserves_object() {
         let mut vars = HashMap::new();
-        vars.insert("config".to_string(), json!({"key": "value", "nested": true}));
+        vars.insert(
+            "config".to_string(),
+            json!({"key": "value", "nested": true}),
+        );
 
         // Entire string is a single reference — raw value preserved
         let input = json!("{{config}}");

@@ -19,7 +19,7 @@ pub struct RefCache {
     pub refs: HashMap<String, String>, // ref_id → CSS selector
     pub snapshot_url: String,          // URL when snapshot was taken
     #[allow(dead_code)]
-    pub timestamp: u64,                // epoch ms when cached (for future staleness checks)
+    pub timestamp: u64, // epoch ms when cached (for future staleness checks)
 }
 
 /// Store a new ref cache (called after each a11y snapshot)
@@ -41,15 +41,13 @@ pub fn resolve_ref(ref_id: &str) -> Result<String, String> {
     let guard = REF_CACHE.lock().unwrap();
     match &*guard {
         None => Err("No a11y snapshot cached. Call browser_a11y_snapshot first.".into()),
-        Some(cache) => {
-            match cache.refs.get(ref_id) {
-                Some(selector) => Ok(selector.clone()),
-                None => Err(format!(
-                    "Ref '{}' not found in cached snapshot ({}). Take a fresh browser_a11y_snapshot.",
-                    ref_id, cache.snapshot_url
-                )),
-            }
-        }
+        Some(cache) => match cache.refs.get(ref_id) {
+            Some(selector) => Ok(selector.clone()),
+            None => Err(format!(
+                "Ref '{}' not found in cached snapshot ({}). Take a fresh browser_a11y_snapshot.",
+                ref_id, cache.snapshot_url
+            )),
+        },
     }
 }
 
@@ -104,8 +102,16 @@ fn assign_refs_recursive(
         None => return,
     };
 
-    let role = obj.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let role = obj
+        .get("role")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let name = obj
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
 
     // Build a CSS selector for this node based on role + name
     let selector = build_selector(&role, &name, parent_selector, *counter);
@@ -168,18 +174,26 @@ fn build_selector(role: &str, name: &str, _parent: &str, index: u32) -> String {
     // The actual resolution uses JS `document.querySelectorAll` + text matching
     if !name.is_empty() && !tag_part.is_empty() {
         // We'll use a JS-resolvable format: role + name + index as fallback
-        format!("__a11y_ref__:{}:{}:{}", role, escape_selector_value(name), index)
+        format!(
+            "__a11y_ref__:{}:{}:{}",
+            role,
+            escape_selector_value(name),
+            index
+        )
     } else if !tag_part.is_empty() {
         format!("__a11y_ref__:{}::{}", role, index)
     } else {
-        format!("__a11y_ref__:{}::{}", if role.is_empty() { "generic" } else { role }, index)
+        format!(
+            "__a11y_ref__:{}::{}",
+            if role.is_empty() { "generic" } else { role },
+            index
+        )
     }
 }
 
 fn escape_selector_value(s: &str) -> String {
     // Escape characters that would break our delimiter format
-    s.replace(':', "\\:")
-     .replace('\\', "\\\\")
+    s.replace(':', "\\:").replace('\\', "\\\\")
 }
 
 /// Generate JavaScript that resolves an a11y ref to a DOM element.
@@ -191,7 +205,11 @@ pub fn ref_resolution_js(ref_id: &str) -> Result<String, String> {
     if let Some(rest) = selector.strip_prefix("__a11y_ref__:") {
         let parts: Vec<&str> = rest.splitn(3, ':').collect();
         let role = parts.first().unwrap_or(&"");
-        let name = parts.get(1).unwrap_or(&"").replace("\\:", ":").replace("\\\\", "\\");
+        let name = parts
+            .get(1)
+            .unwrap_or(&"")
+            .replace("\\:", ":")
+            .replace("\\\\", "\\");
         let _index = parts.get(2).unwrap_or(&"0");
 
         // Build JS that finds element by role + accessible name
@@ -295,7 +313,10 @@ pub fn ref_resolution_js(ref_id: &str) -> Result<String, String> {
         Ok(js)
     } else {
         // Plain CSS selector (shouldn't happen with our format, but handle it)
-        Ok(format!("document.querySelector('{}')", selector.replace('\'', "\\'")))
+        Ok(format!(
+            "document.querySelector('{}')",
+            selector.replace('\'', "\\'")
+        ))
     }
 }
 

@@ -77,7 +77,10 @@ fn probe_ntp_drift() -> Option<i64> {
 /// Run a real browser health probe using browser_mcp status check.
 /// Called lazily on first meta-tool use if browser status is still Unknown.
 pub fn probe_browser_live(browser_status_result: &serde_json::Value) -> SubsystemStatus {
-    if let Some(active) = browser_status_result.get("active").and_then(|v| v.as_bool()) {
+    if let Some(active) = browser_status_result
+        .get("active")
+        .and_then(|v| v.as_bool())
+    {
         if active {
             SubsystemStatus::Available
         } else {
@@ -187,12 +190,10 @@ pub fn hands_health() -> serde_json::Value {
 /// Check if NTP drift is concerning (>15s off — TOTP codes fail silently).
 pub fn ntp_drift_warning(drift_ms: Option<i64>) -> Option<String> {
     match drift_ms {
-        Some(ms) if ms.abs() > 15_000 => {
-            Some(format!(
-                "System clock drift {}ms from NTP — TOTP codes may fail. Run 'w32tm /resync'.",
-                ms
-            ))
-        }
+        Some(ms) if ms.abs() > 15_000 => Some(format!(
+            "System clock drift {}ms from NTP — TOTP codes may fail. Run 'w32tm /resync'.",
+            ms
+        )),
         _ => None,
     }
 }

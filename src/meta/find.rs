@@ -14,16 +14,18 @@
 use serde_json::{json, Value};
 use std::time::Instant;
 
-use super::click::{looks_like_selector, find_best_clickable_coords, find_text_in_ocr_words};
-use super::response::{MetaToolResult, RungAttempt, Confidence, Reversibility, adaptive_timeout_multiplier};
+use super::click::{find_best_clickable_coords, find_text_in_ocr_words, looks_like_selector};
 use super::error::MetaError;
 use super::instrumentation;
+use super::response::{
+    adaptive_timeout_multiplier, Confidence, MetaToolResult, Reversibility, RungAttempt,
+};
 use super::session::SharedSession;
 
 /// The result payload shape for hands_find.
 /// Contains the found element info and how it was located.
 fn make_find_result(
-    found_type: &str,  // "ref", "coords", "text"
+    found_type: &str, // "ref", "coords", "text"
     ref_id: Option<&str>,
     selector: Option<&str>,
     coords: Option<(i64, i64)>,
@@ -66,15 +68,20 @@ pub async fn handle(
     let target = match args.get("target").and_then(|v| v.as_str()) {
         Some(t) => t.to_string(),
         None => {
-            return MetaToolResult::failure(
-                vec![], MetaError::other("target is required"), 0,
-            ).to_value();
+            return MetaToolResult::failure(vec![], MetaError::other("target is required"), 0)
+                .to_value();
         }
     };
 
     let scope = args.get("scope").and_then(|v| v.as_str()).unwrap_or("auto");
-    let return_type = args.get("return_type").and_then(|v| v.as_str()).unwrap_or("any");
-    let timeout_ms = args.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(10_000);
+    let return_type = args
+        .get("return_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("any");
+    let timeout_ms = args
+        .get("timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10_000);
     let ctx = json!({
         "target": &target,
         "scope": scope,
@@ -103,18 +110,49 @@ pub async fn handle(
             // Try to resolve ref to selector for richer result
             let selector = crate::resolve_a11y_ref(&ref_id, "find", browser).await.ok();
             let attempt = RungAttempt::ok("a11y_text_match", rung_ms);
-            instrumentation::log_rung_attempt("hands_find", &call_id, "a11y_text_match", true, rung_ms, Some(1.0), &ctx);
+            instrumentation::log_rung_attempt(
+                "hands_find",
+                &call_id,
+                "a11y_text_match",
+                true,
+                rung_ms,
+                Some(1.0),
+                &ctx,
+            );
             rungs_tried.push(attempt);
 
             let elapsed = start.elapsed().as_millis() as u64;
             return make_success(
-                "a11y_text_match", rungs_tried, 1.0,
-                make_find_result("ref", Some(&ref_id), selector.as_deref(), None, Some(&target), None),
-                elapsed, &call_id,
-            ).to_value();
+                "a11y_text_match",
+                rungs_tried,
+                1.0,
+                make_find_result(
+                    "ref",
+                    Some(&ref_id),
+                    selector.as_deref(),
+                    None,
+                    Some(&target),
+                    None,
+                ),
+                elapsed,
+                &call_id,
+            )
+            .to_value();
         } else {
-            rungs_tried.push(RungAttempt::failed("a11y_text_match", rung_ms, "No text match in a11y cache"));
-            instrumentation::log_rung_attempt("hands_find", &call_id, "a11y_text_match", false, rung_ms, None, &ctx);
+            rungs_tried.push(RungAttempt::failed(
+                "a11y_text_match",
+                rung_ms,
+                "No text match in a11y cache",
+            ));
+            instrumentation::log_rung_attempt(
+                "hands_find",
+                &call_id,
+                "a11y_text_match",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
     }
 
@@ -130,40 +168,74 @@ pub async fn handle(
         if let Some(ref_id) = ref_id_opt {
             let selector = crate::resolve_a11y_ref(&ref_id, "find", browser).await.ok();
             let attempt = RungAttempt::ok("a11y_role_name", rung_ms);
-            instrumentation::log_rung_attempt("hands_find", &call_id, "a11y_role_name", true, rung_ms, Some(0.8), &ctx);
+            instrumentation::log_rung_attempt(
+                "hands_find",
+                &call_id,
+                "a11y_role_name",
+                true,
+                rung_ms,
+                Some(0.8),
+                &ctx,
+            );
             rungs_tried.push(attempt);
 
             let elapsed = start.elapsed().as_millis() as u64;
             return make_success(
-                "a11y_role_name", rungs_tried, 0.8,
-                make_find_result("ref", Some(&ref_id), selector.as_deref(), None, Some(&target), None),
-                elapsed, &call_id,
-            ).to_value();
+                "a11y_role_name",
+                rungs_tried,
+                0.8,
+                make_find_result(
+                    "ref",
+                    Some(&ref_id),
+                    selector.as_deref(),
+                    None,
+                    Some(&target),
+                    None,
+                ),
+                elapsed,
+                &call_id,
+            )
+            .to_value();
         }
 
-        rungs_tried.push(RungAttempt::failed("a11y_role_name", rung_ms, "No match after refresh"));
-        instrumentation::log_rung_attempt("hands_find", &call_id, "a11y_role_name", false, rung_ms, None, &ctx);
+        rungs_tried.push(RungAttempt::failed(
+            "a11y_role_name",
+            rung_ms,
+            "No match after refresh",
+        ));
+        instrumentation::log_rung_attempt(
+            "hands_find",
+            &call_id,
+            "a11y_role_name",
+            false,
+            rung_ms,
+            None,
+            &ctx,
+        );
     }
 
     // ── RUNG 3: Clickables (viewport visible elements) ──
     if use_browser {
         let rung_start = Instant::now();
 
-        let clickables_result = browser_mcp::tools::handle_tool(
-            browser, "get_clickables", json!({}),
-        ).await;
+        let clickables_result =
+            browser_mcp::tools::handle_tool(browser, "get_clickables", json!({})).await;
         let (ok, val) = super::browser_result_to_value(clickables_result);
         let rung_ms = rung_start.elapsed().as_millis() as u64;
 
         if ok {
             if let Some((x, y)) = find_best_clickable_coords(&val, &target) {
                 // Clickables can return text match — confidence depends on match quality
-                let confidence = if val.get("clickables")
+                let confidence = if val
+                    .get("clickables")
                     .and_then(|v| v.as_array())
-                    .and_then(|arr| arr.iter().find(|e| {
-                        e.get("text").and_then(|t| t.as_str())
-                            .map_or(false, |t| t.to_lowercase() == target.to_lowercase())
-                    }))
+                    .and_then(|arr| {
+                        arr.iter().find(|e| {
+                            e.get("text")
+                                .and_then(|t| t.as_str())
+                                .map_or(false, |t| t.to_lowercase() == target.to_lowercase())
+                        })
+                    })
                     .is_some()
                 {
                     0.9 // exact text match in clickables
@@ -172,20 +244,44 @@ pub async fn handle(
                 };
 
                 let attempt = RungAttempt::ok("clickables", rung_ms);
-                instrumentation::log_rung_attempt("hands_find", &call_id, "clickables", true, rung_ms, Some(confidence), &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_find",
+                    &call_id,
+                    "clickables",
+                    true,
+                    rung_ms,
+                    Some(confidence),
+                    &ctx,
+                );
                 rungs_tried.push(attempt);
 
                 let elapsed = start.elapsed().as_millis() as u64;
                 return make_success(
-                    "clickables", rungs_tried, confidence,
+                    "clickables",
+                    rungs_tried,
+                    confidence,
                     make_find_result("coords", None, None, Some((x, y)), Some(&target), None),
-                    elapsed, &call_id,
-                ).to_value();
+                    elapsed,
+                    &call_id,
+                )
+                .to_value();
             }
         }
 
-        rungs_tried.push(RungAttempt::failed("clickables", rung_ms, "No matching clickable"));
-        instrumentation::log_rung_attempt("hands_find", &call_id, "clickables", false, rung_ms, None, &ctx);
+        rungs_tried.push(RungAttempt::failed(
+            "clickables",
+            rung_ms,
+            "No matching clickable",
+        ));
+        instrumentation::log_rung_attempt(
+            "hands_find",
+            &call_id,
+            "clickables",
+            false,
+            rung_ms,
+            None,
+            &ctx,
+        );
     }
 
     // ── SHORT-CIRCUIT: return_type="ref" stops here ──
@@ -195,7 +291,16 @@ pub async fn handle(
             target: target.clone(),
             scope: format!("browser (ref-only, rungs 1-3 exhausted)"),
         };
-        instrumentation::log_aggregate("hands_find", &call_id, false, "", rungs_tried.len(), elapsed, None, Some("No ref available — OCR/UIA/template can't produce refs"));
+        instrumentation::log_aggregate(
+            "hands_find",
+            &call_id,
+            false,
+            "",
+            rungs_tried.len(),
+            elapsed,
+            None,
+            Some("No ref available — OCR/UIA/template can't produce refs"),
+        );
         let mut result = MetaToolResult::failure(rungs_tried, error, elapsed);
         result.warnings.push("return_type=ref requested but no ref-capable rung succeeded. Available types: coords, text.".into());
         return result.to_value();
@@ -205,39 +310,71 @@ pub async fn handle(
     if use_desktop {
         let rung_start = Instant::now();
         let find_result = uia_lib::handle_tool_call(
-            "uia_find_element", &json!({"name": &target, "max_depth": 8}),
+            "uia_find_element",
+            &json!({"name": &target, "max_depth": 8}),
         );
 
         if let Some(elements) = find_result.get("elements").and_then(|v| v.as_array()) {
             if let Some(first) = elements.first() {
                 if let (Some(cx), Some(cy)) = (
-                    first.get("center").and_then(|c| c.get("x")).and_then(|v| v.as_i64()),
-                    first.get("center").and_then(|c| c.get("y")).and_then(|v| v.as_i64()),
+                    first
+                        .get("center")
+                        .and_then(|c| c.get("x"))
+                        .and_then(|v| v.as_i64()),
+                    first
+                        .get("center")
+                        .and_then(|c| c.get("y"))
+                        .and_then(|v| v.as_i64()),
                 ) {
                     let rung_ms = rung_start.elapsed().as_millis() as u64;
                     // Determine confidence: AutomationId > name
-                    let has_automation_id = first.get("automation_id")
+                    let has_automation_id = first
+                        .get("automation_id")
                         .and_then(|v| v.as_str())
                         .map_or(false, |id| !id.is_empty());
                     let confidence = if has_automation_id { 1.0 } else { 0.9 };
 
                     let attempt = RungAttempt::ok("uia_find", rung_ms);
-                    instrumentation::log_rung_attempt("hands_find", &call_id, "uia_find", true, rung_ms, Some(confidence), &ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_find",
+                        &call_id,
+                        "uia_find",
+                        true,
+                        rung_ms,
+                        Some(confidence),
+                        &ctx,
+                    );
                     rungs_tried.push(attempt);
 
                     let elapsed = start.elapsed().as_millis() as u64;
                     return make_success(
-                        "uia_find", rungs_tried, confidence,
+                        "uia_find",
+                        rungs_tried,
+                        confidence,
                         make_find_result("coords", None, None, Some((cx, cy)), Some(&target), None),
-                        elapsed, &call_id,
-                    ).to_value();
+                        elapsed,
+                        &call_id,
+                    )
+                    .to_value();
                 }
             }
         }
 
         let rung_ms = rung_start.elapsed().as_millis() as u64;
-        rungs_tried.push(RungAttempt::failed("uia_find", rung_ms, "UIA element not found"));
-        instrumentation::log_rung_attempt("hands_find", &call_id, "uia_find", false, rung_ms, None, &ctx);
+        rungs_tried.push(RungAttempt::failed(
+            "uia_find",
+            rung_ms,
+            "UIA element not found",
+        ));
+        instrumentation::log_rung_attempt(
+            "hands_find",
+            &call_id,
+            "uia_find",
+            false,
+            rung_ms,
+            None,
+            &ctx,
+        );
     }
 
     // ── RUNG 5: OCR (with monitor iteration on scope=screen) ──
@@ -245,7 +382,10 @@ pub async fn handle(
         let rung_start = Instant::now();
 
         let ocr_result = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
-        let ocr_text = ocr_result.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        let ocr_text = ocr_result
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         if ocr_text.to_lowercase().contains(&target.to_lowercase()) {
             // Get word positions for coordinate extraction
@@ -256,22 +396,42 @@ pub async fn handle(
                     if let Some((x, y)) = find_text_in_ocr_words(&words, &target) {
                         let rung_ms = rung_start.elapsed().as_millis() as u64;
                         // OCR confidence based on text match quality
-                        let confidence = if ocr_text.to_lowercase().contains(&target.to_lowercase()) {
+                        let confidence = if ocr_text.to_lowercase().contains(&target.to_lowercase())
+                        {
                             0.6
                         } else {
                             0.5
                         };
 
                         let attempt = RungAttempt::ok("ocr", rung_ms);
-                        instrumentation::log_rung_attempt("hands_find", &call_id, "ocr", true, rung_ms, Some(confidence), &ctx);
+                        instrumentation::log_rung_attempt(
+                            "hands_find",
+                            &call_id,
+                            "ocr",
+                            true,
+                            rung_ms,
+                            Some(confidence),
+                            &ctx,
+                        );
                         rungs_tried.push(attempt);
 
                         let elapsed = start.elapsed().as_millis() as u64;
                         return make_success(
-                            "ocr", rungs_tried, confidence,
-                            make_find_result("coords", None, None, Some((x, y)), Some(&target), Some(0)),
-                            elapsed, &call_id,
-                        ).to_value();
+                            "ocr",
+                            rungs_tried,
+                            confidence,
+                            make_find_result(
+                                "coords",
+                                None,
+                                None,
+                                Some((x, y)),
+                                Some(&target),
+                                Some(0),
+                            ),
+                            elapsed,
+                            &call_id,
+                        )
+                        .to_value();
                     }
                 }
             }
@@ -279,7 +439,15 @@ pub async fn handle(
 
         let rung_ms = rung_start.elapsed().as_millis() as u64;
         rungs_tried.push(RungAttempt::failed("ocr", rung_ms, "OCR text not found"));
-        instrumentation::log_rung_attempt("hands_find", &call_id, "ocr", false, rung_ms, None, &ctx);
+        instrumentation::log_rung_attempt(
+            "hands_find",
+            &call_id,
+            "ocr",
+            false,
+            rung_ms,
+            None,
+            &ctx,
+        );
     }
 
     // ── RUNG 6: Template match (requires template bytes or path) ──
@@ -296,28 +464,62 @@ pub async fn handle(
             let template_result = vision_core::execute("vision_find_template", &find_args).await;
             let rung_ms = rung_start.elapsed().as_millis() as u64;
 
-            let found = template_result.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
+            let found = template_result
+                .get("found")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if found {
-                let tx = template_result.get("x").and_then(|v| v.as_i64()).unwrap_or(0);
-                let ty = template_result.get("y").and_then(|v| v.as_i64()).unwrap_or(0);
-                let confidence = template_result.get("confidence")
+                let tx = template_result
+                    .get("x")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let ty = template_result
+                    .get("y")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let confidence = template_result
+                    .get("confidence")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.7) as f32;
 
                 let attempt = RungAttempt::ok("template_match", rung_ms);
-                instrumentation::log_rung_attempt("hands_find", &call_id, "template_match", true, rung_ms, Some(confidence), &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_find",
+                    &call_id,
+                    "template_match",
+                    true,
+                    rung_ms,
+                    Some(confidence),
+                    &ctx,
+                );
                 rungs_tried.push(attempt);
 
                 let elapsed = start.elapsed().as_millis() as u64;
                 return make_success(
-                    "template_match", rungs_tried, confidence,
+                    "template_match",
+                    rungs_tried,
+                    confidence,
                     make_find_result("coords", None, None, Some((tx, ty)), Some(&target), None),
-                    elapsed, &call_id,
-                ).to_value();
+                    elapsed,
+                    &call_id,
+                )
+                .to_value();
             }
 
-            rungs_tried.push(RungAttempt::failed("template_match", rung_ms, "Template not found on screen"));
-            instrumentation::log_rung_attempt("hands_find", &call_id, "template_match", false, rung_ms, None, &ctx);
+            rungs_tried.push(RungAttempt::failed(
+                "template_match",
+                rung_ms,
+                "Template not found on screen",
+            ));
+            instrumentation::log_rung_attempt(
+                "hands_find",
+                &call_id,
+                "template_match",
+                false,
+                rung_ms,
+                None,
+                &ctx,
+            );
         }
     }
 
@@ -339,26 +541,57 @@ pub async fn handle(
                     if let Some(ref_id) = ref_id_opt {
                         let selector = crate::resolve_a11y_ref(&ref_id, "find", browser).await.ok();
                         let attempt = RungAttempt::ok(&retry_name, rung_ms);
-                        instrumentation::log_rung_attempt("hands_find", &call_id, &retry_name, true, rung_ms, Some(0.8), &ctx);
+                        instrumentation::log_rung_attempt(
+                            "hands_find",
+                            &call_id,
+                            &retry_name,
+                            true,
+                            rung_ms,
+                            Some(0.8),
+                            &ctx,
+                        );
                         rungs_tried.push(attempt);
 
                         let elapsed = start.elapsed().as_millis() as u64;
                         return make_success(
-                            &retry_name, rungs_tried, 0.8,
-                            make_find_result("ref", Some(&ref_id), selector.as_deref(), None, Some(&target), None),
-                            elapsed, &call_id,
-                        ).to_value();
+                            &retry_name,
+                            rungs_tried,
+                            0.8,
+                            make_find_result(
+                                "ref",
+                                Some(&ref_id),
+                                selector.as_deref(),
+                                None,
+                                Some(&target),
+                                None,
+                            ),
+                            elapsed,
+                            &call_id,
+                        )
+                        .to_value();
                     }
                 }
 
                 rungs_tried.push(RungAttempt::failed(&retry_name, rung_ms, "Retry failed"));
-                instrumentation::log_rung_attempt("hands_find", &call_id, &retry_name, false, rung_ms, None, &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_find",
+                    &call_id,
+                    &retry_name,
+                    false,
+                    rung_ms,
+                    None,
+                    &ctx,
+                );
             } else {
                 // For other rungs, log the retry attempt (they don't have tight timeouts currently)
                 instrumentation::log_rung_attempt(
-                    "hands_find", &call_id,
+                    "hands_find",
+                    &call_id,
                     &retry_name,
-                    false, 0, None, &ctx,
+                    false,
+                    0,
+                    None,
+                    &ctx,
                 );
             }
         }
@@ -368,8 +601,14 @@ pub async fn handle(
     let elapsed = start.elapsed().as_millis() as u64;
     let error = MetaError::not_found(&target, scope);
     instrumentation::log_aggregate(
-        "hands_find", &call_id, false, "", rungs_tried.len(),
-        elapsed, None, Some(&format!("Element '{}' not found via any strategy", target)),
+        "hands_find",
+        &call_id,
+        false,
+        "",
+        rungs_tried.len(),
+        elapsed,
+        None,
+        Some(&format!("Element '{}' not found via any strategy", target)),
     );
 
     MetaToolResult::failure(rungs_tried, error, elapsed).to_value()
@@ -384,8 +623,14 @@ fn make_success(
     call_id: &str,
 ) -> MetaToolResult {
     instrumentation::log_aggregate(
-        "hands_find", call_id, true, method, rungs_tried.len(),
-        elapsed, Some(confidence), None,
+        "hands_find",
+        call_id,
+        true,
+        method,
+        rungs_tried.len(),
+        elapsed,
+        Some(confidence),
+        None,
     );
 
     MetaToolResult::success(method, rungs_tried, payload, elapsed)
