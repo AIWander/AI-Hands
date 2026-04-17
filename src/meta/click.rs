@@ -127,7 +127,7 @@ pub async fn handle(
     // ── Consent risk check ──
     // If target text looks like a consent button, classify and gate on risk level.
     if consent::looks_like_consent_button(&target) {
-        let session_auto_accept = {
+        let _session_auto_accept = {
             let s = session.read().unwrap_or_else(|e| e.into_inner());
             s.auto_accept_low_risk
         };

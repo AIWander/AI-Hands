@@ -1,6 +1,5 @@
-// TODO: remove dead/unused code and remove these blanket allows
+// TODO: remove dead code and remove the blanket allow
 #![allow(dead_code)]
-#![allow(unused)]
 //! Hands MCP Server — Unified interaction server
 //! Combines browser automation, UI automation, and vision into one binary.
 //! "The hands Claude uses to interact with everything on screen."
@@ -991,8 +990,8 @@ async fn handle_window_screenshot_behind(
     unsafe {
         let _ = GetClientRect(hwnd, &mut rect);
     }
-    let width = (rect.right - rect.left);
-    let height = (rect.bottom - rect.top);
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
 
     if width <= 0 || height <= 0 {
         return json!({
