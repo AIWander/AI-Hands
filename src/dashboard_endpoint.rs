@@ -30,9 +30,10 @@ const RING_CAPACITY: usize = 10;
 
 #[derive(Clone)]
 struct ActionEntry {
-    tool: String,
+    tool_name: String,
     target: String,
-    ts: String,
+    timestamp_utc: String,
+    duration_ms: u64,
 }
 
 static RECENT_ACTIONS: OnceLock<Mutex<VecDeque<ActionEntry>>> = OnceLock::new();
@@ -59,14 +60,25 @@ fn vision_snapshot() -> &'static Mutex<Value> {
 // ── Public update API (called from MCP dispatch thread) ───────────────────────
 
 /// Record a tool invocation in the ring buffer (capacity 10, oldest dropped).
-pub fn record_action(tool: &str, args: &Value) {
+pub fn record_action(tool: &str, args: &Value, duration_ms: u64) {
     let target = extract_target(args);
-    let ts = chrono::Utc::now().to_rfc3339();
+    let timestamp_utc = chrono::Utc::now().to_rfc3339();
+    // Redact tool names that look like credential operations.
+    let tool_name = {
+        let lower = tool.to_ascii_lowercase();
+        if lower.contains("password") || lower.contains("token")
+            || lower.contains("api_key") || lower.contains("secret")
+        {
+            "[REDACTED]".to_string()
+        } else {
+            tool.to_string()
+        }
+    };
     if let Ok(mut guard) = recent_actions().lock() {
         if guard.len() >= RING_CAPACITY {
             guard.pop_front();
         }
-        guard.push_back(ActionEntry { tool: tool.to_string(), target, ts });
+        guard.push_back(ActionEntry { tool_name, target, timestamp_utc, duration_ms });
     }
 }
 
@@ -204,10 +216,10 @@ fn handle_request(request: tiny_http::Request) {
 fn build_status() -> Value {
     json!({
         "server": "hands",
-        "version": "1.3.0-dev",
+        "version": "1.3.1",
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "browser": build_browser_status(),
-        "recent_actions": build_recent_actions(),
+        "recent_tool_calls": build_recent_actions(),
         "uia": build_uia_status(),
         "vision": build_vision_status(),
     })
@@ -264,9 +276,10 @@ fn build_recent_actions() -> Vec<Value> {
         .ok()
         .map(|guard| {
             guard.iter().map(|a| json!({
-                "tool": a.tool,
+                "tool_name": a.tool_name,
                 "target": a.target,
-                "ts": a.ts
+                "timestamp_utc": a.timestamp_utc,
+                "duration_ms": a.duration_ms
             })).collect()
         })
         .unwrap_or_default()
@@ -298,10 +311,10 @@ mod tests {
     fn test_status_has_required_fields() {
         let status = build_status();
         assert_eq!(status["server"], "hands");
-        assert_eq!(status["version"], "1.3.0-dev");
+        assert_eq!(status["version"], "1.3.1");
         assert!(status["timestamp"].is_string());
         assert!(status["browser"].is_object());
-        assert!(status["recent_actions"].is_array());
+        assert!(status["recent_tool_calls"].is_array());
         assert!(status["browser"]["status"].is_string());
         assert!(status["browser"]["tab_count"].is_number());
     }
@@ -310,7 +323,7 @@ mod tests {
     fn test_ring_buffer_capacity() {
         // Record 15 actions — only last 10 should remain.
         for i in 0..15 {
-            record_action(&format!("tool_{}", i), &json!({"target": format!("sel_{}", i)}));
+            record_action(&format!("tool_{}", i), &json!({"target": format!("sel_{}", i)}), 0);
         }
         let actions = build_recent_actions();
         assert!(actions.len() <= RING_CAPACITY, "ring buffer must not exceed capacity {}", RING_CAPACITY);

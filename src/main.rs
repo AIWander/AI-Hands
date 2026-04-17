@@ -2955,8 +2955,13 @@ fn dispatch_uia_tool(name: &str, args: &Value) -> Value {
 // ============ TOOL DISPATCH ============
 
 pub(crate) async fn handle_tool_call(name: &str, args: &Value, browser: &browser_mcp::browser::SharedBrowser, session: &meta::SessionHandle) -> Value {
-    // Record every tool invocation in the dashboard ring buffer
-    dashboard_endpoint::record_action(name, args);
+    let _dispatch_start = std::time::Instant::now();
+    let _result = handle_tool_call_inner(name, args, browser, session).await;
+    dashboard_endpoint::record_action(name, args, _dispatch_start.elapsed().as_millis() as u64);
+    _result
+}
+
+async fn handle_tool_call_inner(name: &str, args: &Value, browser: &browser_mcp::browser::SharedBrowser, session: &meta::SessionHandle) -> Value {
 
     // Phase A v2 Meta-tools (checked first — highest priority)
     // Phase C fix1: catch_unwind boundary — meta-tool panics must never crash hands.exe
