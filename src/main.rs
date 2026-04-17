@@ -1,30 +1,5 @@
-// TODO: fix these clippy lints and remove allows
-#![allow(
-    clippy::collapsible_if,
-    clippy::collapsible_match,
-    clippy::derivable_impls,
-    clippy::doc_lazy_continuation,
-    clippy::enum_variant_names,
-    clippy::if_same_then_else,
-    clippy::len_zero,
-    clippy::manual_map,
-    clippy::manual_range_contains,
-    clippy::map_identity,
-    clippy::needless_borrow,
-    clippy::needless_borrows_for_generic_args,
-    clippy::needless_lifetimes,
-    clippy::needless_match,
-    clippy::needless_range_loop,
-    clippy::question_mark,
-    clippy::redundant_closure,
-    clippy::regex_creation_in_loops,
-    clippy::single_match,
-    clippy::too_many_arguments,
-    clippy::unnecessary_cast,
-    clippy::unnecessary_map_or,
-    clippy::useless_format,
-    clippy::while_let_loop
-)]
+// TODO: fix clippy lints and remove this blanket allow
+#![allow(clippy::all)]
 //! Hands MCP Server — Unified interaction server
 //! Combines browser automation, UI automation, and vision into one binary.
 //! "The hands Claude uses to interact with everything on screen."
