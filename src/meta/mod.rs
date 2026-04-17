@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)] // browser automation functions require many params
+#![allow(clippy::doc_lazy_continuation)] // numbered lists in module-level doc comments
 //! Meta-tools for the hands MCP server (Phase A v2 + Phase B + Phase C).
 //!
 //! Meta-tools encode best-practice escalation ladders so Claude doesn't need
@@ -167,10 +169,7 @@ pub async fn handle_meta_tool(
     session: &SharedSession,
 ) -> Option<Value> {
     let fut = dispatch_meta_tool(name, args, browser, session);
-    let result_opt = match fut.await {
-        Some(fut_value) => Some(fut_value),
-        None => None,
-    };
+    let result_opt = fut.await;
     result_opt
 }
 

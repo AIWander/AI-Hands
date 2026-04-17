@@ -298,9 +298,8 @@ fn guess_extension(app_name: &str) -> &'static str {
         "xlsx"
     } else if al.contains("powerpoint") {
         "pptx"
-    } else if al.contains("code") || al.contains("vscode") {
-        "txt"
     } else {
+        // covers vscode, code, and unknown apps
         "txt"
     }
 }

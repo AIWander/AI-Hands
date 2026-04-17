@@ -74,7 +74,6 @@ fn split_host_and_path(url: &str) -> (&str, &str) {
         .unwrap_or(without_scheme);
     let (host_port, path) = without_credentials
         .split_once('/')
-        .map(|(host, rest)| (host, rest))
         .unwrap_or((without_credentials, ""));
     let host = host_port
         .split_once(':')

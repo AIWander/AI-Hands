@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Risk classification for dialog auto-accept decisions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names)] // domain naming: NoRisk/LowRisk/etc. is intentional
 pub enum RiskLevel {
     /// Cookie banners, GDPR consent, privacy policy ack, newsletter dismiss
     NoRisk,

@@ -1,4 +1,5 @@
 #![allow(non_upper_case_globals)]
+#![allow(clippy::too_many_arguments)] // UIA automation functions require many params
 
 use std::{collections::HashMap, thread, time::Duration};
 
