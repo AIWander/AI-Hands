@@ -290,11 +290,7 @@ fn parse_verify_input(args: &Value) -> Result<VerifyConfig, String> {
     if let Some(text) = args.get("text").and_then(|v| v.as_str()) {
         return Ok(VerifyConfig {
             target: text.to_string(),
-            check_mode: if negated {
-                VerifyMode::Text
-            } else {
-                VerifyMode::Text
-            },
+            check_mode: VerifyMode::Text,
             negated,
             require_visible,
         });
@@ -1164,7 +1160,7 @@ async fn run_page_ready_check(
         rungs_tried.push(RungAttempt::failed(
             "page_ready",
             rung_ms,
-            &format!("Not ready: {} chars", char_count),
+            format!("Not ready: {} chars", char_count),
         ));
         instrumentation::log_rung_attempt(
             "hands_verify",

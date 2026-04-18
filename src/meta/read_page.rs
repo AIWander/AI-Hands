@@ -109,7 +109,6 @@ pub async fn handle(
                     &ctx,
                 );
                 rungs_tried.push(attempt);
-                last_content_hash = hash;
 
                 let elapsed = start.elapsed().as_millis() as u64;
                 let result = MetaToolResult::success(
@@ -235,7 +234,6 @@ pub async fn handle(
                 log_aggregate(&call_id, &result, &result.rungs_tried, elapsed);
                 return result.to_value();
             }
-            last_content_hash = hash;
         }
 
         let attempt =

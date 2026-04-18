@@ -1,7 +1,4 @@
-// TODO: fix clippy lints, remove dead/unused code, and remove these blanket allows
-#![allow(clippy::all)]
-#![allow(dead_code)]
-#![allow(unused)]
+// All blanket lint allows removed — see per-module targeted allows
 //! Hands MCP Server — Unified interaction server
 //! Combines browser automation, UI automation, and vision into one binary.
 //! "The hands Claude uses to interact with everything on screen."
@@ -607,7 +604,7 @@ async fn handle_find_and_click(args: &Value) -> Value {
             for win in windows {
                 let class = win.get("class_name").and_then(|v| v.as_str()).unwrap_or("");
                 let title_val = win.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                if title_val.is_empty() || skip_classes.iter().any(|&s| class == s) {
+                if title_val.is_empty() || skip_classes.contains(&class) {
                     continue;
                 }
                 // Try focusing this window
@@ -710,12 +707,12 @@ async fn handle_find_and_click(args: &Value) -> Value {
                     let start_x = words[i].1;
                     let start_y = words[i].2;
                     let start_h = words[i].4;
-                    for j in (i + 1)..words.len().min(i + 6) {
+                    for word in &words[(i + 1)..words.len().min(i + 6)] {
                         combined.push(' ');
-                        combined.push_str(&words[j].0);
+                        combined.push_str(&word.0);
                         if combined.to_lowercase().contains(&search_lower) {
                             // Click at center of the span
-                            let end_x = words[j].1 + words[j].3;
+                            let end_x = word.1 + word.3;
                             match_x = Some(((start_x + end_x) / 2.0) as i64 + offset_x);
                             match_y = Some((start_y + start_h / 2.0) as i64 + offset_y);
                             break;
@@ -992,8 +989,8 @@ async fn handle_window_screenshot_behind(
     unsafe {
         let _ = GetClientRect(hwnd, &mut rect);
     }
-    let width = (rect.right - rect.left) as i32;
-    let height = (rect.bottom - rect.top) as i32;
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
 
     if width <= 0 || height <= 0 {
         return json!({
@@ -1024,7 +1021,7 @@ async fn handle_window_screenshot_behind(
                 biHeight: -height, // negative = top-down
                 biPlanes: 1,
                 biBitCount: 32,
-                biCompression: BI_RGB.0 as u32,
+                biCompression: BI_RGB.0,
                 ..Default::default()
             },
             ..std::mem::zeroed()
@@ -2474,10 +2471,10 @@ fn handle_a11y_find(args: &Value) -> Value {
 
             let role_match = role_filter
                 .as_ref()
-                .map_or(true, |f| role.to_lowercase() == *f);
+                .is_none_or(|f| role.to_lowercase() == *f);
             let name_match = name_filter
                 .as_ref()
-                .map_or(true, |f| name.to_lowercase().contains(f.as_str()));
+                .is_none_or(|f| name.to_lowercase().contains(f.as_str()));
 
             if role_match && name_match && !ref_id.is_empty() {
                 results.push(serde_json::json!({
@@ -2534,11 +2531,7 @@ async fn handle_get_all_network(
                 // The response may have entries at top level or nested
                 if let Some(arr) = v.as_array() {
                     Some(arr.clone())
-                } else if let Some(arr) = v.get("entries").and_then(|e| e.as_array()) {
-                    Some(arr.clone())
-                } else {
-                    None
-                }
+                } else { v.get("entries").and_then(|e| e.as_array()).cloned() }
             })
             .unwrap_or_default()
     } else {
@@ -2926,6 +2919,11 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
 
     let filter_re = filter_pattern.and_then(|p| regex::Regex::new(p).ok());
 
+    let re_uuid =
+        regex::Regex::new(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+            .unwrap();
+    let re_numeric_id = regex::Regex::new(r"/\d{2,}/").unwrap();
+
     let mut api_entries: Vec<Value> = Vec::new();
     let mut static_filtered = 0u64;
     let total = entries.len();
@@ -2984,13 +2982,8 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
             .to_string();
 
         // Build URL pattern: replace UUIDs and numeric IDs with {id}
-        let url_pattern =
-            regex::Regex::new(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-                .unwrap()
-                .replace_all(url, "{uuid}")
-                .to_string();
-        let url_pattern = regex::Regex::new(r"/\d{2,}/")
-            .unwrap()
+        let url_pattern = re_uuid.replace_all(url, "{uuid}").to_string();
+        let url_pattern = re_numeric_id
             .replace_all(&url_pattern, "/{id}/")
             .to_string();
         // Remove query params for pattern matching
@@ -3463,15 +3456,14 @@ async fn handle_tool_call_inner(
         let mut wants_stealth = stealth_explicit.unwrap_or(false);
 
         // Default stealth=true when headless=true and stealth wasn't explicitly set
-        if browser_tool == "launch" && stealth_explicit.is_none() {
-            if resolved_args
+        if browser_tool == "launch" && stealth_explicit.is_none()
+            && resolved_args
                 .get("headless")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
             {
                 wants_stealth = true;
             }
-        }
 
         // Strip stealth param before passing to browser-mcp (it doesn't know about it)
         if let Some(obj) = resolved_args.as_object_mut() {

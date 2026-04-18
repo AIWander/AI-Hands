@@ -1,3 +1,4 @@
+#![allow(dead_code)] // scaffolded module, awaiting integration
 //! Session state — thread-safe shared state for meta-tools.
 //! Lives for the session, cleared on Claude restart.
 
@@ -42,6 +43,7 @@ impl Default for SubsystemHealth {
 
 /// Session-level state shared across all meta-tool calls.
 #[derive(Debug)]
+#[derive(Default)]
 pub struct SessionState {
     /// Per-session user opt-in for low-risk auto-accept (Phase C consent).
     pub auto_accept_low_risk: bool,
@@ -65,19 +67,6 @@ pub struct SessionState {
     pub call_counter: u64,
 }
 
-impl Default for SessionState {
-    fn default() -> Self {
-        Self {
-            auto_accept_low_risk: false,
-            window_monitors: HashMap::new(),
-            subsystem_health: SubsystemHealth::default(),
-            a11y_cache_dirty: false,
-            a11y_content_hash: None,
-            active_tool: None,
-            call_counter: 0,
-        }
-    }
-}
 
 impl SessionState {
     /// Check if a subsystem is available.

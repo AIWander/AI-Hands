@@ -187,6 +187,7 @@ impl Confidence {
         }
     }
 
+    #[allow(dead_code)]
     pub fn location_only(score: f32) -> Self {
         Self {
             method: None,

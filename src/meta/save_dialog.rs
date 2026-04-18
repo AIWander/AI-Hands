@@ -39,6 +39,7 @@ pub struct DialogResolution {
     /// Which button to click (None for Ask mode — no action taken).
     pub button_text: Option<String>,
     /// For Auto mode with Untitled files — path to save to.
+    #[allow(dead_code)]
     pub save_path: Option<String>,
     /// Human-readable description of the action taken.
     pub description: String,
@@ -70,6 +71,7 @@ const DISCARD_BUTTONS: &[&str] = &[
 ];
 
 /// Known button labels for "cancel" actions.
+#[allow(dead_code)]
 const CANCEL_BUTTONS: &[&str] = &["Cancel", "&Cancel"];
 
 /// Detect if a save dialog appeared after a close attempt.
@@ -298,9 +300,8 @@ fn guess_extension(app_name: &str) -> &'static str {
         "xlsx"
     } else if al.contains("powerpoint") {
         "pptx"
-    } else if al.contains("code") || al.contains("vscode") {
-        "txt"
     } else {
+        // covers vscode, code, and unknown apps
         "txt"
     }
 }

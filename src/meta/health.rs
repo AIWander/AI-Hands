@@ -1,3 +1,4 @@
+#![allow(dead_code)] // scaffolded module, awaiting integration
 //! Subsystem health probes — run at startup, cached for session.
 //! Browser: attempt headless launch with 5s timeout
 //! UIA: uia_list_window — COM init + call

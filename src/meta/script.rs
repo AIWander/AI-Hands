@@ -476,7 +476,7 @@ async fn execute_step(
             // Try name variants before giving up
             let variants = tool_name_variants(tool);
             for variant in &variants {
-                let under_fut = Box::pin(dispatch_underlying_tool(&variant, args, browser));
+                let under_fut = Box::pin(dispatch_underlying_tool(variant, args, browser));
                 if let Ok(Some(value)) = tokio::time::timeout(timeout_dur, under_fut).await {
                     eprintln!(
                         "[hands_script] name resolver: '{}' resolved as underlying '{}'",
@@ -687,6 +687,7 @@ fn substitute_in_string(s: &str, vars: &HashMap<String, Value>) -> Value {
     let mut result = s.to_string();
     let mut search_from = 0;
 
+    #[allow(clippy::while_let_loop)] // two sequential match-breaks make while-let awkward
     loop {
         let open = match result[search_from..].find("{{") {
             Some(pos) => search_from + pos,

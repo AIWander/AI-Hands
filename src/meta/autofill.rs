@@ -61,12 +61,12 @@ pub fn validate_autofill_shape(value: &str, role: FieldRole) -> bool {
     match role {
         FieldRole::Email => {
             // Basic email shape: contains @ and at least one dot after @
-            value.contains('@') && value.split('@').nth(1).map_or(false, |d| d.contains('.'))
+            value.contains('@') && value.split('@').nth(1).is_some_and(|d| d.contains('.'))
         }
         FieldRole::Phone => {
             // Phone: mostly digits, possibly with +, -, (, ), spaces
             let digit_count = value.chars().filter(|c| c.is_ascii_digit()).count();
-            digit_count >= 7 && digit_count <= 15
+            (7..=15).contains(&digit_count)
         }
         FieldRole::Number => {
             // Numeric: parseable as number (possibly with formatting)

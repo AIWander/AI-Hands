@@ -1,3 +1,4 @@
+#![allow(dead_code)] // scaffolded module, awaiting integration
 //! A11yCache with hybrid invalidation.
 //! Three-layer invalidation catches different failure modes:
 //! 1. Event-based: invalidate on browser interaction (navigate/click/type/press/scroll/eval-with-mutation)
@@ -57,9 +58,7 @@ impl A11yMetaCache {
     /// Get the cached snapshot if still valid.
     /// Re-validates using all three invalidation layers.
     pub fn get(&self) -> Option<&Value> {
-        if self.snapshot.is_none() {
-            return None;
-        }
+        self.snapshot.as_ref()?;
         // Layer 1: event-based invalidation
         if self.event_invalidated {
             return None;

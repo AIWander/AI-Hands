@@ -127,7 +127,7 @@ pub async fn handle(
     // ── Consent risk check ──
     // If target text looks like a consent button, classify and gate on risk level.
     if consent::looks_like_consent_button(&target) {
-        let session_auto_accept = {
+        let _session_auto_accept = {
             let s = session.read().unwrap_or_else(|e| e.into_inner());
             s.auto_accept_low_risk
         };
@@ -146,7 +146,7 @@ pub async fn handle(
                     let elapsed = start.elapsed().as_millis() as u64;
                     let error = MetaError::requires_confirmation(
                         &target,
-                        &format!(
+                        format!(
                             "Consent classified as {:?}: {}. Pass allow_destructive: true to proceed.",
                             classification.risk, classification.reasoning
                         ),
@@ -190,8 +190,7 @@ pub async fn handle(
             };
 
             if let Some(ref_id) = ref_id_opt {
-                match crate::resolve_a11y_ref(&ref_id, "click", browser).await {
-                    Ok(selector) => {
+                if let Ok(selector) = crate::resolve_a11y_ref(&ref_id, "click", browser).await {
                         let click_result = browser_mcp::tools::handle_tool(
                             browser, "click",
                             json!({"selector": selector, "button": button, "double_click": double_click}),
@@ -229,8 +228,6 @@ pub async fn handle(
                             );
                             return result.to_value();
                         }
-                    }
-                    Err(_) => {} // stale or not found
                 }
             }
 

@@ -378,7 +378,6 @@ pub async fn handle(
                         .get("id")
                         .and_then(|v| v.as_str())
                         .filter(|id| !id.is_empty())
-                        .map(|id| id)
                 });
 
                 if let Some(sel_id) = selector {
@@ -463,7 +462,7 @@ pub async fn handle(
 
         // DOM change detection: re-scan if field count may have changed
         // (dynamic forms that reveal fields after earlier fields are filled)
-        if filled.len() > 0 && filled.len() % 3 == 0 {
+        if !filled.is_empty() && filled.len().is_multiple_of(3) {
             let rescan = browser_mcp::tools::handle_tool(
                 browser,
                 "evaluate",

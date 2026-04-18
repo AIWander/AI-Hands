@@ -14,7 +14,7 @@
 use serde_json::{json, Value};
 use std::time::Instant;
 
-use super::click::{find_best_clickable_coords, find_text_in_ocr_words, looks_like_selector};
+use super::click::{find_best_clickable_coords, find_text_in_ocr_words};
 use super::error::MetaError;
 use super::instrumentation;
 use super::response::{
@@ -233,7 +233,7 @@ pub async fn handle(
                         arr.iter().find(|e| {
                             e.get("text")
                                 .and_then(|t| t.as_str())
-                                .map_or(false, |t| t.to_lowercase() == target.to_lowercase())
+                                .is_some_and(|t| t.to_lowercase() == target.to_lowercase())
                         })
                     })
                     .is_some()
@@ -289,7 +289,7 @@ pub async fn handle(
         let elapsed = start.elapsed().as_millis() as u64;
         let error = MetaError::ElementNotFound {
             target: target.clone(),
-            scope: format!("browser (ref-only, rungs 1-3 exhausted)"),
+            scope: "browser (ref-only, rungs 1-3 exhausted)".to_string(),
         };
         instrumentation::log_aggregate(
             "hands_find",
@@ -331,7 +331,7 @@ pub async fn handle(
                     let has_automation_id = first
                         .get("automation_id")
                         .and_then(|v| v.as_str())
-                        .map_or(false, |id| !id.is_empty());
+                        .is_some_and(|id| !id.is_empty());
                     let confidence = if has_automation_id { 1.0 } else { 0.9 };
 
                     let attempt = RungAttempt::ok("uia_find", rung_ms);

@@ -1,3 +1,4 @@
+#![allow(dead_code)] // scaffolded module, awaiting integration
 //! Vision capture helper — all vision rungs go through this.
 //! Enforces image size rules per spec:
 //! - Default to cropped captures with ~200px padding over full-screen
