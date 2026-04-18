@@ -236,11 +236,9 @@ fn redact_sensitive_fields(value: &mut Value) {
                 redact_sensitive_fields(v);
             }
         }
-        Value::String(s) => {
+        Value::String(s) if s.len() == 6 && s.chars().all(|c| c.is_ascii_digit()) => {
             // Redact inline 6-digit codes that look like OTPs
-            if s.len() == 6 && s.chars().all(|c| c.is_ascii_digit()) {
-                *s = "[REDACTED-OTP]".into();
-            }
+            *s = "[REDACTED-OTP]".into();
         }
         _ => {}
     }
