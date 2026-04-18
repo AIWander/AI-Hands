@@ -4,13 +4,19 @@
 
 **Part of [CPC](https://github.com/josephwander-arch) (Cognitive Performance Computing)** — a multi-agent AI orchestration platform. Related repos: [manager](https://github.com/josephwander-arch/manager) · [local](https://github.com/josephwander-arch/local) · [workflow](https://github.com/josephwander-arch/workflow) · [cpc-paths](https://github.com/josephwander-arch/cpc-paths) · [cpc-breadcrumbs](https://github.com/josephwander-arch/cpc-breadcrumbs)
 
-## What's New in v1.3.1
+## What's New in v1.3.2
+
+- **Clippy + dead_code + unused cleanup** -- 3 crate-level allows removed, 60+ targeted allows added with justification, 22 supplemental mechanical fixes in `src/meta/*`
+
+<details>
+<summary>v1.3.1</summary>
 
 - HTTP dashboard endpoint migrated to tiny_http (smaller binary, simpler stack)
 - Duration tracking for tool calls in dashboard status
 - Credential redaction in dashboard output
 - Field name alignment across dashboard JSON responses
 - Metadata cleanup and documentation fixes
+</details>
 
 <details>
 <summary>Previous releases</summary>
