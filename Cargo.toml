@@ -5,6 +5,8 @@ edition = "2021"
 description = "Hands MCP server — browser automation + Windows UIA + vision/OCR."
 license = "Apache-2.0"
 repository = "https://github.com/josephwander-arch/hands"
+keywords = ["cpc", "mcp", "browser", "automation", "windows"]
+categories = ["command-line-utilities", "development-tools", "web-programming"]
 
 [[bin]]
 name = "hands"
