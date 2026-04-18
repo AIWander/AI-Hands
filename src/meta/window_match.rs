@@ -282,7 +282,7 @@ pub fn find_matching_windows(
     let matches: Vec<WindowMatchResult> = windows
         .iter()
         .filter(|w| window_matches(w, window_match))
-        .map(|w| extract_result(w))
+        .map(extract_result)
         .collect();
 
     if matches.is_empty() {

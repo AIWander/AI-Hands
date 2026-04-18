@@ -23,8 +23,8 @@ use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
 use super::save_dialog::{self, parse_save_dialog_action, SaveDialogAction};
 use super::session::SharedSession;
 use super::window_match::{
-    self, find_single_window, parse_match_mode, parse_monitor, parse_window_match, MatchMode,
-    Monitor, WindowMatch, WindowMatchResult,
+    find_single_window, parse_match_mode, parse_monitor, parse_window_match, MatchMode,
+    Monitor, WindowMatch,
 };
 
 // ── App launch helper (avoids routing through uia_lib which doesn't know combo tools) ──
@@ -291,7 +291,7 @@ async fn handle_open(
     launch_spec: &Option<String>,
     window_match: &Option<WindowMatch>,
     monitor: &Option<Monitor>,
-    timeout_ms: u64,
+    _timeout_ms: u64,
     call_id: &str,
     ctx: &Value,
     rungs: &mut Vec<RungAttempt>,
@@ -386,7 +386,7 @@ async fn handle_close(
     call_id: &str,
     ctx: &Value,
     rungs: &mut Vec<RungAttempt>,
-    session: &SharedSession,
+    _session: &SharedSession,
 ) -> Result<Value, MetaError> {
     let wm = window_match.as_ref().ok_or_else(|| {
         MetaError::other("window_match (title, process, or automation_id) is required for close")

@@ -28,11 +28,10 @@ pub enum CheckType {
 /// Strip leading/trailing quotes (single or double) from a string.
 fn strip_quotes(s: &str) -> &str {
     let s = s.trim();
-    if s.len() >= 2 {
-        if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+    if s.len() >= 2
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\''))) {
             return &s[1..s.len() - 1];
         }
-    }
     s
 }
 
@@ -170,7 +169,7 @@ pub fn parse_nl(input: &str) -> Result<VerifyExpectation, String> {
 }
 
 /// Try to strip a negation prefix, returning the remainder length for target extraction.
-fn strip_negation_prefix<'a>(lower: &'a str, prefix: &str) -> Option<usize> {
+fn strip_negation_prefix(lower: &str, prefix: &str) -> Option<usize> {
     if lower.starts_with(prefix) {
         Some(lower.len() - prefix.len())
     } else {
@@ -179,7 +178,7 @@ fn strip_negation_prefix<'a>(lower: &'a str, prefix: &str) -> Option<usize> {
 }
 
 /// Try to strip a positive prefix, returning the remainder length for target extraction.
-fn strip_positive_prefix<'a>(lower: &'a str, prefix: &str) -> Option<usize> {
+fn strip_positive_prefix(lower: &str, prefix: &str) -> Option<usize> {
     if lower.starts_with(prefix) {
         Some(lower.len() - prefix.len())
     } else {
@@ -188,7 +187,7 @@ fn strip_positive_prefix<'a>(lower: &'a str, prefix: &str) -> Option<usize> {
 }
 
 /// Try to strip a suffix pattern, returning the prefix portion length.
-fn strip_suffix_pattern<'a>(lower: &'a str, suffix: &str) -> Option<usize> {
+fn strip_suffix_pattern(lower: &str, suffix: &str) -> Option<usize> {
     if lower.ends_with(suffix) {
         let prefix_len = lower.len() - suffix.len();
         if prefix_len > 0 {

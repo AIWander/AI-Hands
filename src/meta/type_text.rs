@@ -152,7 +152,7 @@ pub async fn handle(
     });
 
     let mut rungs_tried = Vec::new();
-    let mut warnings: Vec<String> = Vec::new();
+    let warnings: Vec<String> = Vec::new();
 
     // ── Step 1: Find the target element using hands_find ──
     let find_start = Instant::now();
@@ -223,7 +223,7 @@ pub async fn handle(
         }
 
         // Use the any-type result
-        let any_type = find_any
+        let _any_type = find_any
             .get("result")
             .and_then(|r| r.get("found_type"))
             .and_then(|v| v.as_str())
@@ -540,8 +540,8 @@ async fn type_via_coords(
     y: Option<i64>,
     text: &str,
     clear_first: bool,
-    verify_focus: bool,
-    fast_set: Option<bool>,
+    _verify_focus: bool,
+    _fast_set: Option<bool>,
     submit: bool,
     target: &str,
     browser: &browser_mcp::browser::SharedBrowser,
@@ -550,7 +550,7 @@ async fn type_via_coords(
     ctx: &Value,
     start: Instant,
     mut rungs_tried: Vec<RungAttempt>,
-    warnings: Vec<String>,
+    _warnings: Vec<String>,
 ) -> Value {
     let (x, y) = match (x, y) {
         (Some(x), Some(y)) => (x, y),
@@ -675,7 +675,7 @@ async fn type_via_desktop(
     ctx: &Value,
     start: Instant,
     mut rungs_tried: Vec<RungAttempt>,
-    mut warnings: Vec<String>,
+    _warnings: Vec<String>,
 ) -> Value {
     let rung_start = Instant::now();
 
@@ -773,7 +773,7 @@ async fn type_via_window_fallback(
     ctx: &Value,
     start: Instant,
     mut rungs_tried: Vec<RungAttempt>,
-    warnings: Vec<String>,
+    _warnings: Vec<String>,
 ) -> Value {
     let rung_start = Instant::now();
 
