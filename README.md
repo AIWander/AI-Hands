@@ -230,4 +230,4 @@ Copyright 2026 Joseph Wander.
 
 Joseph Wander
 - GitHub: [github.com/josephwander-arch](https://github.com/josephwander-arch/)
-- Email: protipsinc@gmail.com
+- Email: josephwander@gmail.com
