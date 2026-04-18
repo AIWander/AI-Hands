@@ -191,43 +191,43 @@ pub async fn handle(
 
             if let Some(ref_id) = ref_id_opt {
                 if let Ok(selector) = crate::resolve_a11y_ref(&ref_id, "click", browser).await {
-                        let click_result = browser_mcp::tools::handle_tool(
+                    let click_result = browser_mcp::tools::handle_tool(
                             browser, "click",
                             json!({"selector": selector, "button": button, "double_click": double_click}),
                         ).await;
-                        let (ok, val) = super::browser_result_to_value(click_result);
-                        let rung_ms = rung_start.elapsed().as_millis() as u64;
+                    let (ok, val) = super::browser_result_to_value(click_result);
+                    let rung_ms = rung_start.elapsed().as_millis() as u64;
 
-                        if ok {
-                            let confidence = if looks_like_a11y_ref(&target) {
-                                1.0
-                            } else {
-                                0.8
-                            };
-                            let attempt = RungAttempt::ok("a11y_cache", rung_ms);
-                            instrumentation::log_rung_attempt(
-                                "hands_click",
-                                &call_id,
-                                "a11y_cache",
-                                true,
-                                rung_ms,
-                                Some(confidence),
-                                &ctx,
-                            );
-                            rungs_tried.push(attempt);
+                    if ok {
+                        let confidence = if looks_like_a11y_ref(&target) {
+                            1.0
+                        } else {
+                            0.8
+                        };
+                        let attempt = RungAttempt::ok("a11y_cache", rung_ms);
+                        instrumentation::log_rung_attempt(
+                            "hands_click",
+                            &call_id,
+                            "a11y_cache",
+                            true,
+                            rung_ms,
+                            Some(confidence),
+                            &ctx,
+                        );
+                        rungs_tried.push(attempt);
 
-                            let elapsed = start.elapsed().as_millis() as u64;
-                            let result = make_success(
-                                "a11y_cache",
-                                rungs_tried,
-                                confidence,
-                                reversibility,
-                                json!({"ref_id": ref_id, "selector": selector, "target": target, "detail": val}),
-                                elapsed,
-                                &call_id,
-                            );
-                            return result.to_value();
-                        }
+                        let elapsed = start.elapsed().as_millis() as u64;
+                        let result = make_success(
+                            "a11y_cache",
+                            rungs_tried,
+                            confidence,
+                            reversibility,
+                            json!({"ref_id": ref_id, "selector": selector, "target": target, "detail": val}),
+                            elapsed,
+                            &call_id,
+                        );
+                        return result.to_value();
+                    }
                 }
             }
 

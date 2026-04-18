@@ -23,8 +23,8 @@ use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
 use super::save_dialog::{self, parse_save_dialog_action, SaveDialogAction};
 use super::session::SharedSession;
 use super::window_match::{
-    find_single_window, parse_match_mode, parse_monitor, parse_window_match, MatchMode,
-    Monitor, WindowMatch,
+    find_single_window, parse_match_mode, parse_monitor, parse_window_match, MatchMode, Monitor,
+    WindowMatch,
 };
 
 // ── App launch helper (avoids routing through uia_lib which doesn't know combo tools) ──

@@ -42,8 +42,7 @@ impl Default for SubsystemHealth {
 }
 
 /// Session-level state shared across all meta-tool calls.
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct SessionState {
     /// Per-session user opt-in for low-risk auto-accept (Phase C consent).
     pub auto_accept_low_risk: bool,
@@ -66,7 +65,6 @@ pub struct SessionState {
     /// Call counter for unique call_id generation.
     pub call_counter: u64,
 }
-
 
 impl SessionState {
     /// Check if a subsystem is available.

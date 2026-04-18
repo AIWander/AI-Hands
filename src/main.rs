@@ -2531,7 +2531,9 @@ async fn handle_get_all_network(
                 // The response may have entries at top level or nested
                 if let Some(arr) = v.as_array() {
                     Some(arr.clone())
-                } else { v.get("entries").and_then(|e| e.as_array()).cloned() }
+                } else {
+                    v.get("entries").and_then(|e| e.as_array()).cloned()
+                }
             })
             .unwrap_or_default()
     } else {
@@ -2920,8 +2922,7 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
     let filter_re = filter_pattern.and_then(|p| regex::Regex::new(p).ok());
 
     let re_uuid =
-        regex::Regex::new(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-            .unwrap();
+        regex::Regex::new(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}").unwrap();
     let re_numeric_id = regex::Regex::new(r"/\d{2,}/").unwrap();
 
     let mut api_entries: Vec<Value> = Vec::new();
@@ -3456,14 +3457,15 @@ async fn handle_tool_call_inner(
         let mut wants_stealth = stealth_explicit.unwrap_or(false);
 
         // Default stealth=true when headless=true and stealth wasn't explicitly set
-        if browser_tool == "launch" && stealth_explicit.is_none()
+        if browser_tool == "launch"
+            && stealth_explicit.is_none()
             && resolved_args
                 .get("headless")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
-            {
-                wants_stealth = true;
-            }
+        {
+            wants_stealth = true;
+        }
 
         // Strip stealth param before passing to browser-mcp (it doesn't know about it)
         if let Some(obj) = resolved_args.as_object_mut() {
