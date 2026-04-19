@@ -684,7 +684,7 @@ survives window moves and resolution changes.
 
 ## Version Notes (v1.1.1)
 
-- ~87 tools across 4 categories (browser, UIA, vision, combo)
+- 116 tools across 5 tiers (browser, UIA, vision, combo, meta)
 - Accessibility snapshot auto-caching on navigate
 - `browser_learn_api` for API discovery from network traffic
 - `browser_a11y_find` for fast cached snapshot search

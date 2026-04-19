@@ -69,9 +69,9 @@ What lives here: active breadcrumb state, Chrome debug profile, logs, per-machin
 
 Breadcrumb *archives* (completed breadcrumbs) DO live in Volumes — they're write-once and safe to sync.
 
-### Legacy paths (existing Joe-style installs)
+### Legacy paths (existing installs)
 
-If you have `C:\CPC\logs\`, `C:\CPC\state\`, etc. from a pre-cpc-paths install, they continue to work. The server detects the legacy location at startup and uses it automatically. No migration required — new installs use the `%LOCALAPPDATA%\CPC\data\` default; existing installs stay put.
+If you have `C:\CPC\logs\`, `C:\CPC\state\`, etc. from a legacy install, they continue to work. The server detects the legacy location at startup and uses it automatically. No migration required — new installs use the `%LOCALAPPDATA%\CPC\data\` default; existing installs stay put.
 
 ### Setting up a second machine
 
