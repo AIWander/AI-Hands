@@ -1,6 +1,6 @@
 ---
 title: "Hands MCP Server — Desktop Automation for AI Agents"
-description: "Getting started guide for the Hands Rust MCP server. Gives Claude and other AI agents browser automation via Playwright CDP, Windows UI Automation, and vision (OCR + template matching) through 105+ tools over the Model Context Protocol."
+description: "Getting started guide for the Hands Rust MCP server. Gives Claude and other AI agents browser automation via Playwright CDP, Windows UI Automation, and vision (OCR + template matching) through 116 tools over the Model Context Protocol."
 keywords:
   - MCP server
   - model context protocol server
@@ -32,7 +32,7 @@ toc_generated_at: 2026-04-14
 
 # Getting Started with Hands
 
-Hands is a Rust MCP server that provides 105+ tools for desktop automation across four tiers: Browser (Playwright CDP), Windows UI Automation (UIA), Vision (OCR + template matching), and Meta-Tools (intelligent multi-step orchestration). It connects to Claude Desktop, Claude Code, or any MCP-compatible client over standard JSON-RPC on stdin/stdout.
+Hands is a Rust MCP server that provides 116 tools for desktop automation across five tiers: Browser (Playwright CDP), Windows UI Automation (UIA), Vision (OCR + template matching), and Meta-Tools (intelligent multi-step orchestration). It connects to Claude Desktop, Claude Code, or any MCP-compatible client over standard JSON-RPC on stdin/stdout.
 
 Unlike Claude computer use, which relies on repeated screenshots and pixel-coordinate guessing, Hands gives AI agents direct access to the DOM, the Windows accessibility tree, and dedicated OCR --- each chosen for the task at hand. For a full comparison, see the [README](../README.md).
 
@@ -56,9 +56,9 @@ The output binary lands at `target/release/hands.exe`. It is a single file with 
 
 ### Pre-built binaries
 
-Download the latest Windows binaries from the [v1.2.1 release](https://github.com/josephwander-arch/hands/releases/tag/v1.2.1):
-- `hands_v1.2.1_x64.exe` — Windows x64
-- `hands_v1.2.1_arm64.exe` — Windows ARM64
+Download the latest Windows binaries from the [latest release](https://github.com/josephwander-arch/hands/releases/latest):
+- `hands-v1.3.2-x64.exe` — Windows x64
+- `hands-v1.3.2-aarch64.exe` — Windows ARM64
 
 ### Configure for Claude Desktop
 
@@ -90,7 +90,7 @@ Add it to `~/.claude/mcp.json` (global) or `.mcp.json` (per-project):
 }
 ```
 
-Restart Claude Desktop or Claude Code after editing. The 105+ tools will appear in your tool list.
+Restart Claude Desktop or Claude Code after editing. The 116 tools will appear in your tool list.
 
 ## Architecture Overview
 
@@ -110,7 +110,7 @@ All three tiers compile into one binary. The MCP server reads JSON-RPC requests 
 
 Every example below shows the raw JSON-RPC call. When using Claude Desktop or Claude Code, the client builds these calls automatically from natural-language requests.
 
-### Browser Tier (68 tools)
+### Browser Tier (66 tools)
 
 The browser tier wraps Playwright over CDP. It handles headless browser sessions, web scraping, form filling, JS evaluation, network interception, multi-tab management, and accessibility snapshots.
 

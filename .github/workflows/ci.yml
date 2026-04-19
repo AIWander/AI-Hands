@@ -264,6 +264,13 @@ jobs:
               r'autonomous:',
           ]
 
+          # Reduced set for root docs — identity patterns (CPC, Joseph) are
+          # legitimate in public-facing README/CHANGELOG/CONTRIBUTING.
+          ROOT_FORBIDDEN = [
+              r'Operating_',
+              r'autonomous:',
+          ]
+
           # Load allowlist if present
           allowlist = set()
           if os.path.isfile('.ci-allowlist.txt'):
@@ -274,40 +281,54 @@ jobs:
                           allowlist.add(line)
 
           scan_dirs = []
-          if os.path.isdir('skills'):
-              scan_dirs.append('skills')
-          if os.path.isdir('docs'):
-              scan_dirs.append('docs')
+          for d in ['skills', 'docs', 'examples', 'hooks']:
+              if os.path.isdir(d):
+                  scan_dirs.append(d)
 
-          if not scan_dirs:
-              print("No skills/ or docs/ directories to scan — skipping")
+          scan_root_files = []
+          for f in ['CHANGELOG.md', 'CONTRIBUTING.md', 'README.md']:
+              if os.path.isfile(f):
+                  scan_root_files.append(f)
+
+          if not scan_dirs and not scan_root_files:
+              print("No scannable paths found — skipping")
               sys.exit(0)
 
+          def scan_file(path, patterns, allowlist):
+              hits = []
+              try:
+                  text = open(path, 'r', encoding='utf-8', errors='replace').read()
+              except (OSError, PermissionError):
+                  return hits
+              for pattern in patterns:
+                  for m in re.finditer(pattern, text):
+                      line_num = text[:m.start()].count('\n') + 1
+                      line_text = text.split('\n')[line_num - 1].strip()
+                      skip = False
+                      for allowed in allowlist:
+                          if allowed in line_text:
+                              skip = True
+                              break
+                      if skip:
+                          continue
+                      hits.append(f"{path}:{line_num}: matched '{pattern}' -> '{m.group()}'")
+              return hits
+
           found = []
+          # Content directories: full pattern set
           for scan_dir in scan_dirs:
               for root, dirs, files in os.walk(scan_dir):
                   for f in files:
                       path = os.path.join(root, f)
-                      # Check allowlist
                       if path in allowlist or f in allowlist:
                           continue
-                      try:
-                          text = open(path, 'r', encoding='utf-8', errors='replace').read()
-                      except (OSError, PermissionError):
-                          continue
-                      for pattern in FORBIDDEN:
-                          for m in re.finditer(pattern, text):
-                              line_num = text[:m.start()].count('\n') + 1
-                              # Skip if the match line is in allowlist
-                              line_text = text.split('\n')[line_num - 1].strip()
-                              skip = False
-                              for allowed in allowlist:
-                                  if allowed in line_text:
-                                      skip = True
-                                      break
-                              if skip:
-                                  continue
-                              found.append(f"{path}:{line_num}: matched '{pattern}' -> '{m.group()}'")
+                      found.extend(scan_file(path, FORBIDDEN, allowlist))
+
+          # Root docs: reduced pattern set (identity patterns are legitimate)
+          for path in scan_root_files:
+              if path in allowlist or os.path.basename(path) in allowlist:
+                  continue
+              found.extend(scan_file(path, ROOT_FORBIDDEN, allowlist))
 
           if found:
               print(f"::error::Found {len(found)} private CPC reference(s) in public files:")

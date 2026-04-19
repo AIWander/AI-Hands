@@ -1,6 +1,6 @@
 ---
 name: hands-getting-started
-description: 'Getting started with Hands -- the 87-tool automation server for browser,
+description: 'Getting started with Hands -- the 116-tool automation server for browser,
 
   Windows desktop, and vision/OCR tasks. Use when: first time using hands,
 

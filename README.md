@@ -113,16 +113,22 @@ Hands takes a different approach: **use the right automation layer for each task
 | Platform | Anthropic-hosted sandbox or managed OS image | Windows (UIA + browser + vision) on your own machine |
 | Setup | Zero (built into Claude) | MCP server binary |
 
-## 71 Tools
+## 116 Tools
 
-### Browser Automation (40 tools)
-Navigate, click, type, screenshot, extract content, fill forms, eval JS, manage tabs/contexts, intercept network, scroll-and-collect, accessibility snapshots, smart browse with auto-retry.
+### Browser Automation (66 tools)
+Navigate, click, type, screenshot, extract content, fill forms, eval JS, manage tabs/contexts, intercept network, scroll-and-collect, accessibility snapshots, smart browse with auto-retry, batch operations, API discovery from traffic.
 
-### Windows UIA (20 tools)
+### Windows UIA (18 tools)
 Find elements by name/type/automation ID, click, type, read values, get state, window management (snap, move, resize), app launch, keyboard shortcuts, batch operations, event watching.
 
-### Vision (11 tools)
-Screenshot (full/window/region), OCR, template matching, image diff, visual analysis, screenshot+OCR combo, wait-for-visual condition.
+### Vision (9 tools)
+Screenshot (full/window/region), OCR, template matching, image diff, visual analysis, screenshot+OCR combo.
+
+### Meta-Tools (12 tools)
+Smart orchestration layer: reads page, clicks, navigates, captures, finds, types, fills forms, verifies, scans QR, launches apps, runs scripts, recovers login flows — picks the right tier automatically.
+
+### Combo & Utility (11 tools)
+Cross-tier tools: find-and-click (OCR→UIA), read screen text, wait for visual, window screenshot, type into window, drag, element drag, retry click, file upload, status, health check.
 
 ## Quick Start
 

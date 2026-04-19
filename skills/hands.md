@@ -12,7 +12,7 @@ description: |
 Hands is a single Rust binary that gives you browser automation (Playwright CDP),
 Windows desktop automation (UI Automation), vision (OCR + template matching), and
 a workflow subsystem (API discovery, flow recording, credential storage) -- all over
-MCP. ~87 tools, zero runtime dependencies, one process.
+MCP. 116 tools, zero runtime dependencies, one process.
 
 This skill teaches you how to use it well, not just what buttons exist.
 
