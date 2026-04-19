@@ -1,4 +1,4 @@
-//! Browser stealth mode — anti-detection measures for headless/automated Chrome.
+//! Browser fingerprint management — anti-detection measures for headless/automated Chrome.
 //! Injected via evaluate() after launch or attach when stealth=true.
 
 /// JavaScript to inject that removes common automation indicators.

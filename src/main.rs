@@ -17,9 +17,9 @@ use std::io::{BufRead, Write};
 
 mod a11y_cache;
 mod dashboard_endpoint;
+mod fingerprint;
 mod meta;
 mod security;
-mod stealth;
 mod uia;
 
 #[cfg(windows)]
@@ -3512,7 +3512,7 @@ async fn handle_tool_call_inner(
                         let stealth_result = browser_mcp::tools::handle_tool(
                             browser,
                             "evaluate",
-                            json!({"expression": stealth::STEALTH_JS}),
+                            json!({"expression": fingerprint::STEALTH_JS}),
                         )
                         .await;
                         if stealth_result.is_error {
@@ -3588,7 +3588,7 @@ async fn handle_tool_call_inner(
             let stealth_result = browser_mcp::tools::handle_tool(
                 browser,
                 "evaluate",
-                json!({"expression": stealth::STEALTH_JS}),
+                json!({"expression": fingerprint::STEALTH_JS}),
             )
             .await;
             if stealth_result.is_error {
