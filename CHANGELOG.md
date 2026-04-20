@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SECURITY.md** — security policy and reporting instructions.
 - **Platform-split install docs** — README install section split into self-contained Windows x64 and ARM64 sub-sections.
 
+## v1.3.3 - 2026-04-19
+
+### Changed
+
+- **Phase D: compile-time ZST AtomicTool dispatch** — Replaced all runtime string-based UIA tool dispatch in meta-tools with zero-sized-type (ZST) `AtomicTool` handles resolved at compile time. 11 UIA tools wrapped (`UiaClick`, `UiaType`, `UiaFindElement`, `UiaFocusWindow`, `UiaKeyPress`, `UiaShortcut`, `UiaReadValue`, `UiaScroll`, `UiaGetState`, `UiaListWindow`, `UiaWatch`). 7 meta-tool files refactored (`app_action`, `capture`, `click`, `find`, `qr_scan`, `type_text`, `verify`). 27 call sites replaced. 245/245 tests pass.
+
+### Added
+
+- **`src/atomic.rs`** — New module defining the `AtomicTool` trait and ZST wrappers for all UIA tools, plus browser-side atom helpers. Provides compile-time guarantees that tool names match canonical MCP tool names.
+- **`src/stealth.rs`** — Stealth/anti-detection module for browser automation.
+
 ## v1.3.2 - 2026-04-17
 
 ### Changed
