@@ -49,9 +49,27 @@ jobs:
           $repo = "${{ github.event.repository.name }}"
           $version = "${{ github.ref_name }}"
           Copy-Item "target/${{ matrix.target }}/release/$repo.exe" "$repo-$version-${{ matrix.suffix }}.exe"
-      - name: Upload binary
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ matrix.suffix }}
+          path: ${{ github.event.repository.name }}-*-${{ matrix.suffix }}.exe
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ github.event.repository.name }}-*-${{ matrix.suffix }}.exe
+          files: dist/*.exe
           draft: true
           prerelease: false
+          fail_on_unmatched_files: true
