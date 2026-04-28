@@ -125,7 +125,7 @@ dependencies = [
 [[package]]
 name = "browser-mcp"
 version = "0.1.1"
-source = "git+https://github.com/josephwander-arch/browser-mcp?tag=v0.1.1#37c34c24f894243f80425423e6e9eae482080a14"
+source = "git+https://github.com/AIWander/browser-mcp?tag=v0.1.1#37c34c24f894243f80425423e6e9eae482080a14"
 dependencies = [
  "base64 0.21.7",
  "chromiumoxide",
@@ -136,7 +136,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "vision-core",
+ "vision-core 0.1.0 (git+https://github.com/josephwander-arch/vision-core?tag=v0.1.0)",
 ]
 
 [[package]]
@@ -337,7 +337,7 @@ dependencies = [
 [[package]]
 name = "cpc-paths"
 version = "0.1.0"
-source = "git+https://github.com/josephwander-arch/cpc-paths?tag=v0.1.0#d78eea9a89a46b2d01aa471f64e13ccd61b126e6"
+source = "git+https://github.com/AIWander/cpc-paths?tag=v0.1.0#d78eea9a89a46b2d01aa471f64e13ccd61b126e6"
 dependencies = [
  "anyhow",
  "chrono",
@@ -972,7 +972,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uia-mcp",
- "vision-core",
+ "vision-core 0.1.0 (git+https://github.com/AIWander/vision-core?tag=v0.1.0)",
  "windows 0.58.0",
 ]
 
@@ -1685,9 +1685,9 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openssl"
-version = "0.10.77"
+version = "0.10.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe4646e360ec77dff7dde40ed3d6c5fee52d156ef4a62f53973d38294dad87f"
+checksum = "f38c4372413cdaaf3cc79dd92d29d7d9f5ab09b51b10dded508fb90bb70b9222"
 dependencies = [
  "bitflags 2.11.1",
  "cfg-if",
@@ -1717,9 +1717,9 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.113"
+version = "0.9.114"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad2f2c0eba47118757e4c6d2bff2838f3e0523380021356e7875e858372ce644"
+checksum = "13ce1245cd07fcc4cfdb438f7507b0c7e4f3849a69fd84d52374c66d83741bb6"
 dependencies = [
  "cc",
  "libc",
@@ -2965,7 +2965,7 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 [[package]]
 name = "uia-mcp"
 version = "1.0.0"
-source = "git+https://github.com/josephwander-arch/uia-mcp?tag=v1.0.0#9662d9e74eecf4b3431ca81c91ff565960d6687e"
+source = "git+https://github.com/AIWander/uia-mcp?tag=v1.0.0#9662d9e74eecf4b3431ca81c91ff565960d6687e"
 dependencies = [
  "serde",
  "serde_json",
@@ -3037,6 +3037,22 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vision-core"
+version = "0.1.0"
+source = "git+https://github.com/AIWander/vision-core?tag=v0.1.0#a6e2547199ec8cbbd8b92632198a509daf595b0e"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "image",
+ "reqwest 0.12.28",
+ "screenshots",
+ "serde",
+ "serde_json",
+ "tokio",
+ "windows 0.58.0",
+]
 
 [[package]]
 name = "vision-core"
