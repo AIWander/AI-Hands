@@ -19,3 +19,6 @@ Thumbs.db
 # Environment
 .env
 .env.*
+
+# Pre-phase backups
+src.pre_phaseD_*/
