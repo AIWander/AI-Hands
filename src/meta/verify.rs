@@ -18,12 +18,12 @@
 use serde_json::{json, Value};
 use std::time::Instant;
 
-use super::nl_parser;
-use super::verify_templates;
-use super::response::{MetaToolResult, RungAttempt, Confidence, Reversibility};
 use super::error::MetaError;
 use super::instrumentation;
+use super::nl_parser;
+use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
 use super::session::SharedSession;
+use super::verify_templates;
 use crate::atomic::{AtomicTool, UiaFindElement};
 
 /// Main entry point for hands_verify.
@@ -46,26 +46,32 @@ pub async fn handle(
         Ok(c) => c,
         Err(e) => {
             instrumentation::log_aggregate(
-                "hands_verify", &call_id, false, "", 0, 0, None, Some(&e),
+                "hands_verify",
+                &call_id,
+                false,
+                "",
+                0,
+                0,
+                None,
+                Some(&e),
             );
-            return MetaToolResult::failure(
-                vec![], MetaError::other(&e), 0,
-            ).to_value();
+            return MetaToolResult::failure(vec![], MetaError::other(&e), 0).to_value();
         }
     };
 
-    let timeout_ms = args.get("timeout_ms")
+    let timeout_ms = args
+        .get("timeout_ms")
         .and_then(|v| v.as_u64())
         .unwrap_or(5000);
-    let must_stabilize_ms = args.get("must_stabilize_ms")
+    let must_stabilize_ms = args
+        .get("must_stabilize_ms")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    let require_visible = args.get("require_visible")
+    let require_visible = args
+        .get("require_visible")
         .and_then(|v| v.as_bool())
         .unwrap_or(verify_config.require_visible);
-    let scope = args.get("scope")
-        .and_then(|v| v.as_str())
-        .unwrap_or("auto");
+    let scope = args.get("scope").and_then(|v| v.as_str()).unwrap_or("auto");
 
     let browser_active = super::browser_is_active(browser).await;
     let use_browser = browser_active && (scope == "auto" || scope == "browser");
@@ -119,7 +125,8 @@ pub async fn handle(
             &mut last_ocr_time,
             &call_id,
             &ctx,
-        ).await;
+        )
+        .await;
 
         if let Some((method, evidence, confidence)) = check_result {
             // Match found
@@ -138,20 +145,32 @@ pub async fn handle(
                         // Stabilized — success
                         let total_elapsed = start.elapsed().as_millis() as u64;
                         return make_verify_success(
-                            &match_method, &match_evidence, match_confidence,
-                            checks_made, total_elapsed, Some(stabilized_for),
-                            rungs_tried, &call_id,
-                        ).to_value();
+                            &match_method,
+                            &match_evidence,
+                            match_confidence,
+                            checks_made,
+                            total_elapsed,
+                            Some(stabilized_for),
+                            rungs_tried,
+                            &call_id,
+                        )
+                        .to_value();
                     }
                 }
             } else {
                 // No stabilization required — immediate success
                 let total_elapsed = start.elapsed().as_millis() as u64;
                 return make_verify_success(
-                    &match_method, &match_evidence, match_confidence,
-                    checks_made, total_elapsed, None,
-                    rungs_tried, &call_id,
-                ).to_value();
+                    &match_method,
+                    &match_evidence,
+                    match_confidence,
+                    checks_made,
+                    total_elapsed,
+                    None,
+                    rungs_tried,
+                    &call_id,
+                )
+                .to_value();
             }
         } else {
             // No match — reset stabilization
@@ -172,14 +191,23 @@ pub async fn handle(
         MetaError::timeout("hands_verify", total_elapsed)
     } else {
         MetaError::VerificationFailed {
-            evidence: format!("Target '{}' not found after {} checks", verify_config.target, checks_made),
+            evidence: format!(
+                "Target '{}' not found after {} checks",
+                verify_config.target, checks_made
+            ),
             confidence: 0.0,
         }
     };
 
     instrumentation::log_aggregate(
-        "hands_verify", &call_id, false, "", rungs_tried.len(),
-        total_elapsed, None, Some(&error.to_string()),
+        "hands_verify",
+        &call_id,
+        false,
+        "",
+        rungs_tried.len(),
+        total_elapsed,
+        None,
+        Some(&error.to_string()),
     );
 
     let mut fail_result = MetaToolResult::failure(rungs_tried, error, total_elapsed);
@@ -220,32 +248,50 @@ fn parse_verify_input(args: &Value) -> Result<VerifyConfig, String> {
     let has_template = args.get("template").and_then(|v| v.as_str()).is_some();
 
     let input_count = [has_text, has_regex, has_element, has_nl, has_template]
-        .iter().filter(|&&x| x).count();
+        .iter()
+        .filter(|&&x| x)
+        .count();
 
     if input_count == 0 {
         return Err("One of text, regex, element, natural_text, or template is required".into());
     }
     if input_count > 1 {
         let mut conflicting = Vec::new();
-        if has_text { conflicting.push("text"); }
-        if has_regex { conflicting.push("regex"); }
-        if has_element { conflicting.push("element"); }
-        if has_nl { conflicting.push("natural_text"); }
-        if has_template { conflicting.push("template"); }
+        if has_text {
+            conflicting.push("text");
+        }
+        if has_regex {
+            conflicting.push("regex");
+        }
+        if has_element {
+            conflicting.push("element");
+        }
+        if has_nl {
+            conflicting.push("natural_text");
+        }
+        if has_template {
+            conflicting.push("template");
+        }
         return Err(format!(
             "Only one of text, regex, element, natural_text, or template may be set (got: {})",
             conflicting.join(", ")
         ));
     }
 
-    let negated = args.get("negated").and_then(|v| v.as_bool()).unwrap_or(false);
-    let require_visible = args.get("require_visible").and_then(|v| v.as_bool()).unwrap_or(false);
+    let negated = args
+        .get("negated")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let require_visible = args
+        .get("require_visible")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     // Structured: text
     if let Some(text) = args.get("text").and_then(|v| v.as_str()) {
         return Ok(VerifyConfig {
             target: text.to_string(),
-            check_mode: if negated { VerifyMode::Text } else { VerifyMode::Text },
+            check_mode: VerifyMode::Text,
             negated,
             require_visible,
         });
@@ -294,11 +340,16 @@ fn parse_verify_input(args: &Value) -> Result<VerifyConfig, String> {
 
     // Template
     if let Some(template_name) = args.get("template").and_then(|v| v.as_str()) {
-        let template_args = args.get("template_args").cloned().unwrap_or_else(|| json!({}));
+        let template_args = args
+            .get("template_args")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
         let expansion = verify_templates::resolve_template(template_name, &template_args)?;
         // For templates, use the first required text_present check as the target,
         // or fall back to the template description
-        let target = expansion.checks.iter()
+        let target = expansion
+            .checks
+            .iter()
             .find(|c| c.check_type == "text_present" && c.target.is_some())
             .and_then(|c| c.target.clone())
             .unwrap_or_default();
@@ -338,15 +389,35 @@ async fn run_verification_ladder(
     // ── Browser rungs ──
     if use_browser {
         // Rung 1: DOM text search via browser_eval
-        if matches!(config.check_mode, VerifyMode::Text | VerifyMode::Regex) && !config.target.is_empty() {
+        if matches!(config.check_mode, VerifyMode::Text | VerifyMode::Regex)
+            && !config.target.is_empty()
+        {
             let rung_start = Instant::now();
-            let result = run_dom_text_search(browser, &config.target, &config.check_mode, config.negated, require_visible).await;
+            let result = run_dom_text_search(
+                browser,
+                &config.target,
+                &config.check_mode,
+                config.negated,
+                require_visible,
+            )
+            .await;
             let rung_ms = rung_start.elapsed().as_millis() as u64;
 
             match result {
-                RungResult::Found { evidence, confidence } => {
+                RungResult::Found {
+                    evidence,
+                    confidence,
+                } => {
                     let attempt = RungAttempt::ok("dom_text_search", rung_ms);
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "dom_text_search", true, rung_ms, Some(confidence), ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "dom_text_search",
+                        true,
+                        rung_ms,
+                        Some(confidence),
+                        ctx,
+                    );
                     rungs_tried.push(attempt);
                     return Some(("dom_text_search".into(), evidence, confidence));
                 }
@@ -354,16 +425,48 @@ async fn run_verification_ladder(
                     // For negated checks, not finding the text means success
                     if config.negated {
                         let attempt = RungAttempt::ok("dom_text_search", rung_ms);
-                        instrumentation::log_rung_attempt("hands_verify", call_id, "dom_text_search", true, rung_ms, Some(0.8), ctx);
+                        instrumentation::log_rung_attempt(
+                            "hands_verify",
+                            call_id,
+                            "dom_text_search",
+                            true,
+                            rung_ms,
+                            Some(0.8),
+                            ctx,
+                        );
                         rungs_tried.push(attempt);
-                        return Some(("dom_text_search".into(), format!("'{}' not found (negated check passed)", config.target), 0.8));
+                        return Some((
+                            "dom_text_search".into(),
+                            format!("'{}' not found (negated check passed)", config.target),
+                            0.8,
+                        ));
                     }
-                    rungs_tried.push(RungAttempt::failed("dom_text_search", rung_ms, "Text not found in DOM"));
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "dom_text_search", false, rung_ms, None, ctx);
+                    rungs_tried.push(RungAttempt::failed(
+                        "dom_text_search",
+                        rung_ms,
+                        "Text not found in DOM",
+                    ));
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "dom_text_search",
+                        false,
+                        rung_ms,
+                        None,
+                        ctx,
+                    );
                 }
                 RungResult::Error(e) => {
                     rungs_tried.push(RungAttempt::failed("dom_text_search", rung_ms, &e));
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "dom_text_search", false, rung_ms, None, ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "dom_text_search",
+                        false,
+                        rung_ms,
+                        None,
+                        ctx,
+                    );
                 }
             }
         }
@@ -377,46 +480,133 @@ async fn run_verification_ladder(
             let found = ref_id.is_some();
             if found && !config.negated {
                 let attempt = RungAttempt::ok("a11y_search", rung_ms);
-                instrumentation::log_rung_attempt("hands_verify", call_id, "a11y_search", true, rung_ms, Some(0.85), ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_verify",
+                    call_id,
+                    "a11y_search",
+                    true,
+                    rung_ms,
+                    Some(0.85),
+                    ctx,
+                );
                 rungs_tried.push(attempt);
-                return Some(("a11y_search".into(), format!("Found '{}' in a11y tree (ref: {})", config.target, ref_id.unwrap()), 0.85));
+                return Some((
+                    "a11y_search".into(),
+                    format!(
+                        "Found '{}' in a11y tree (ref: {})",
+                        config.target,
+                        ref_id.unwrap()
+                    ),
+                    0.85,
+                ));
             } else if !found && config.negated {
                 let attempt = RungAttempt::ok("a11y_search", rung_ms);
-                instrumentation::log_rung_attempt("hands_verify", call_id, "a11y_search", true, rung_ms, Some(0.8), ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_verify",
+                    call_id,
+                    "a11y_search",
+                    true,
+                    rung_ms,
+                    Some(0.8),
+                    ctx,
+                );
                 rungs_tried.push(attempt);
-                return Some(("a11y_search".into(), format!("'{}' absent from a11y tree (negated check passed)", config.target), 0.8));
+                return Some((
+                    "a11y_search".into(),
+                    format!(
+                        "'{}' absent from a11y tree (negated check passed)",
+                        config.target
+                    ),
+                    0.8,
+                ));
             } else {
-                rungs_tried.push(RungAttempt::failed("a11y_search", rung_ms, "Not found in a11y snapshot"));
-                instrumentation::log_rung_attempt("hands_verify", call_id, "a11y_search", false, rung_ms, None, ctx);
+                rungs_tried.push(RungAttempt::failed(
+                    "a11y_search",
+                    rung_ms,
+                    "Not found in a11y snapshot",
+                ));
+                instrumentation::log_rung_attempt(
+                    "hands_verify",
+                    call_id,
+                    "a11y_search",
+                    false,
+                    rung_ms,
+                    None,
+                    ctx,
+                );
             }
         }
 
         // Rung 3: Element query via browser_eval (querySelector)
         if matches!(config.check_mode, VerifyMode::Element) && !config.target.is_empty() {
             let rung_start = Instant::now();
-            let result = run_element_query(browser, &config.target, config.negated, require_visible).await;
+            let result =
+                run_element_query(browser, &config.target, config.negated, require_visible).await;
             let rung_ms = rung_start.elapsed().as_millis() as u64;
 
             match result {
-                RungResult::Found { evidence, confidence } => {
+                RungResult::Found {
+                    evidence,
+                    confidence,
+                } => {
                     let attempt = RungAttempt::ok("element_query", rung_ms);
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "element_query", true, rung_ms, Some(confidence), ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "element_query",
+                        true,
+                        rung_ms,
+                        Some(confidence),
+                        ctx,
+                    );
                     rungs_tried.push(attempt);
                     return Some(("element_query".into(), evidence, confidence));
                 }
                 RungResult::NotFound => {
                     if config.negated {
                         let attempt = RungAttempt::ok("element_query", rung_ms);
-                        instrumentation::log_rung_attempt("hands_verify", call_id, "element_query", true, rung_ms, Some(0.9), ctx);
+                        instrumentation::log_rung_attempt(
+                            "hands_verify",
+                            call_id,
+                            "element_query",
+                            true,
+                            rung_ms,
+                            Some(0.9),
+                            ctx,
+                        );
                         rungs_tried.push(attempt);
-                        return Some(("element_query".into(), format!("Element '{}' absent (negated check passed)", config.target), 0.9));
+                        return Some((
+                            "element_query".into(),
+                            format!("Element '{}' absent (negated check passed)", config.target),
+                            0.9,
+                        ));
                     }
-                    rungs_tried.push(RungAttempt::failed("element_query", rung_ms, "Element not found"));
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "element_query", false, rung_ms, None, ctx);
+                    rungs_tried.push(RungAttempt::failed(
+                        "element_query",
+                        rung_ms,
+                        "Element not found",
+                    ));
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "element_query",
+                        false,
+                        rung_ms,
+                        None,
+                        ctx,
+                    );
                 }
                 RungResult::Error(e) => {
                     rungs_tried.push(RungAttempt::failed("element_query", rung_ms, &e));
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "element_query", false, rung_ms, None, ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "element_query",
+                        false,
+                        rung_ms,
+                        None,
+                        ctx,
+                    );
                 }
             }
         }
@@ -436,25 +626,71 @@ async fn run_verification_ladder(
             let rung_ms = rung_start.elapsed().as_millis() as u64;
 
             match result {
-                RungResult::Found { evidence, confidence } => {
+                RungResult::Found {
+                    evidence,
+                    confidence,
+                } => {
                     let attempt = RungAttempt::ok("ocr_search", rung_ms);
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "ocr_search", true, rung_ms, Some(confidence), ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "ocr_search",
+                        true,
+                        rung_ms,
+                        Some(confidence),
+                        ctx,
+                    );
                     rungs_tried.push(attempt);
                     return Some(("ocr_search".into(), evidence, confidence));
                 }
                 RungResult::NotFound => {
                     if config.negated {
                         let attempt = RungAttempt::ok("ocr_search", rung_ms);
-                        instrumentation::log_rung_attempt("hands_verify", call_id, "ocr_search", true, rung_ms, Some(0.6), ctx);
+                        instrumentation::log_rung_attempt(
+                            "hands_verify",
+                            call_id,
+                            "ocr_search",
+                            true,
+                            rung_ms,
+                            Some(0.6),
+                            ctx,
+                        );
                         rungs_tried.push(attempt);
-                        return Some(("ocr_search".into(), format!("'{}' not found via OCR (negated check passed)", config.target), 0.6));
+                        return Some((
+                            "ocr_search".into(),
+                            format!(
+                                "'{}' not found via OCR (negated check passed)",
+                                config.target
+                            ),
+                            0.6,
+                        ));
                     }
-                    rungs_tried.push(RungAttempt::failed("ocr_search", rung_ms, "Text not found via OCR"));
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "ocr_search", false, rung_ms, None, ctx);
+                    rungs_tried.push(RungAttempt::failed(
+                        "ocr_search",
+                        rung_ms,
+                        "Text not found via OCR",
+                    ));
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "ocr_search",
+                        false,
+                        rung_ms,
+                        None,
+                        ctx,
+                    );
                 }
                 RungResult::Error(e) => {
                     rungs_tried.push(RungAttempt::failed("ocr_search", rung_ms, &e));
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "ocr_search", false, rung_ms, None, ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "ocr_search",
+                        false,
+                        rung_ms,
+                        None,
+                        ctx,
+                    );
                 }
             }
         }
@@ -467,25 +703,71 @@ async fn run_verification_ladder(
         let rung_ms = rung_start.elapsed().as_millis() as u64;
 
         match result {
-            RungResult::Found { evidence, confidence } => {
+            RungResult::Found {
+                evidence,
+                confidence,
+            } => {
                 let attempt = RungAttempt::ok("uia_text_search", rung_ms);
-                instrumentation::log_rung_attempt("hands_verify", call_id, "uia_text_search", true, rung_ms, Some(confidence), ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_verify",
+                    call_id,
+                    "uia_text_search",
+                    true,
+                    rung_ms,
+                    Some(confidence),
+                    ctx,
+                );
                 rungs_tried.push(attempt);
                 return Some(("uia_text_search".into(), evidence, confidence));
             }
             RungResult::NotFound => {
                 if config.negated {
                     let attempt = RungAttempt::ok("uia_text_search", rung_ms);
-                    instrumentation::log_rung_attempt("hands_verify", call_id, "uia_text_search", true, rung_ms, Some(0.7), ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_verify",
+                        call_id,
+                        "uia_text_search",
+                        true,
+                        rung_ms,
+                        Some(0.7),
+                        ctx,
+                    );
                     rungs_tried.push(attempt);
-                    return Some(("uia_text_search".into(), format!("'{}' not found via UIA (negated check passed)", config.target), 0.7));
+                    return Some((
+                        "uia_text_search".into(),
+                        format!(
+                            "'{}' not found via UIA (negated check passed)",
+                            config.target
+                        ),
+                        0.7,
+                    ));
                 }
-                rungs_tried.push(RungAttempt::failed("uia_text_search", rung_ms, "Text not found via UIA"));
-                instrumentation::log_rung_attempt("hands_verify", call_id, "uia_text_search", false, rung_ms, None, ctx);
+                rungs_tried.push(RungAttempt::failed(
+                    "uia_text_search",
+                    rung_ms,
+                    "Text not found via UIA",
+                ));
+                instrumentation::log_rung_attempt(
+                    "hands_verify",
+                    call_id,
+                    "uia_text_search",
+                    false,
+                    rung_ms,
+                    None,
+                    ctx,
+                );
             }
             RungResult::Error(e) => {
                 rungs_tried.push(RungAttempt::failed("uia_text_search", rung_ms, &e));
-                instrumentation::log_rung_attempt("hands_verify", call_id, "uia_text_search", false, rung_ms, None, ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_verify",
+                    call_id,
+                    "uia_text_search",
+                    false,
+                    rung_ms,
+                    None,
+                    ctx,
+                );
             }
         }
     }
@@ -512,7 +794,10 @@ async fn run_dom_text_search(
     negated: bool,
     require_visible: bool,
 ) -> RungResult {
-    let escaped_target = target.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
+    let escaped_target = target
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n");
 
     let script = match mode {
         VerifyMode::Regex => {
@@ -596,9 +881,8 @@ async fn run_dom_text_search(
         }
     };
 
-    let eval_result = browser_mcp::tools::handle_tool(
-        browser, "eval", json!({"script": script}),
-    ).await;
+    let eval_result =
+        browser_mcp::tools::handle_tool(browser, "eval", json!({"script": script})).await;
 
     let (ok, val) = super::browser_result_to_value(eval_result);
     if !ok {
@@ -606,16 +890,23 @@ async fn run_dom_text_search(
     }
 
     // Parse the JSON result from the script
-    let result_str = val.get("result").and_then(|v| v.as_str())
+    let result_str = val
+        .get("result")
+        .and_then(|v| v.as_str())
         .or_else(|| val.as_str())
         .unwrap_or("");
-    let parsed: Value = serde_json::from_str(result_str)
-        .unwrap_or_else(|_| val.clone());
+    let parsed: Value = serde_json::from_str(result_str).unwrap_or_else(|_| val.clone());
 
-    let found = parsed.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
+    let found = parsed
+        .get("found")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     if found && !negated {
-        let location = parsed.get("location").and_then(|v| v.as_str()).unwrap_or("body");
+        let location = parsed
+            .get("location")
+            .and_then(|v| v.as_str())
+            .unwrap_or("body");
         let snippet = parsed.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
         let location_confidence = location_to_confidence(location);
         let method_confidence: f32 = 0.95; // DOM search is very reliable
@@ -670,28 +961,35 @@ async fn run_element_query(
         escaped, visibility_part
     );
 
-    let eval_result = browser_mcp::tools::handle_tool(
-        browser, "eval", json!({"script": script}),
-    ).await;
+    let eval_result =
+        browser_mcp::tools::handle_tool(browser, "eval", json!({"script": script})).await;
 
     let (ok, val) = super::browser_result_to_value(eval_result);
     if !ok {
         return RungResult::Error(format!("browser_eval failed: {}", val));
     }
 
-    let result_str = val.get("result").and_then(|v| v.as_str())
+    let result_str = val
+        .get("result")
+        .and_then(|v| v.as_str())
         .or_else(|| val.as_str())
         .unwrap_or("");
-    let parsed: Value = serde_json::from_str(result_str)
-        .unwrap_or_else(|_| val.clone());
+    let parsed: Value = serde_json::from_str(result_str).unwrap_or_else(|_| val.clone());
 
-    let found = parsed.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
+    let found = parsed
+        .get("found")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     if found && !negated {
         let tag = parsed.get("tag").and_then(|v| v.as_str()).unwrap_or("?");
         let text = parsed.get("text").and_then(|v| v.as_str()).unwrap_or("");
         RungResult::Found {
-            evidence: format!("Element <{}> found: \"{}\"", tag, &text[..text.len().min(80)]),
+            evidence: format!(
+                "Element <{}> found: \"{}\"",
+                tag,
+                &text[..text.len().min(80)]
+            ),
             confidence: 0.9,
         }
     } else if !found && negated {
@@ -707,7 +1005,10 @@ async fn run_element_query(
 /// Rung 4: OCR text search.
 async fn run_ocr_search(target: &str, negated: bool) -> RungResult {
     let ocr_result = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
-    let ocr_text = ocr_result.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let ocr_text = ocr_result
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
     let found = ocr_text.to_lowercase().contains(&target.to_lowercase());
 
@@ -745,10 +1046,16 @@ fn run_uia_text_search(target: &str, negated: bool) -> RungResult {
         .unwrap_or(false);
 
     if found && !negated {
-        let elements = find_result.get("elements").and_then(|v| v.as_array()).unwrap();
+        let elements = find_result
+            .get("elements")
+            .and_then(|v| v.as_array())
+            .unwrap();
         let first = &elements[0];
         let name = first.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let control_type = first.get("control_type").and_then(|v| v.as_str()).unwrap_or("");
+        let control_type = first
+            .get("control_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         RungResult::Found {
             evidence: format!("Found via UIA: '{}' ({})", name, control_type),
@@ -789,35 +1096,81 @@ async fn run_page_ready_check(
         });
     })()"#;
 
-    let eval_result = browser_mcp::tools::handle_tool(
-        browser, "eval", json!({"script": script}),
-    ).await;
+    let eval_result =
+        browser_mcp::tools::handle_tool(browser, "eval", json!({"script": script})).await;
 
     let (ok, val) = super::browser_result_to_value(eval_result);
     let rung_ms = rung_start.elapsed().as_millis() as u64;
 
     if !ok {
-        rungs_tried.push(RungAttempt::failed("page_ready", rung_ms, "browser_eval failed"));
-        instrumentation::log_rung_attempt("hands_verify", call_id, "page_ready", false, rung_ms, None, ctx);
+        rungs_tried.push(RungAttempt::failed(
+            "page_ready",
+            rung_ms,
+            "browser_eval failed",
+        ));
+        instrumentation::log_rung_attempt(
+            "hands_verify",
+            call_id,
+            "page_ready",
+            false,
+            rung_ms,
+            None,
+            ctx,
+        );
         return None;
     }
 
-    let result_str = val.get("result").and_then(|v| v.as_str())
+    let result_str = val
+        .get("result")
+        .and_then(|v| v.as_str())
         .or_else(|| val.as_str())
         .unwrap_or("");
     let parsed: Value = serde_json::from_str(result_str).unwrap_or_else(|_| val.clone());
 
-    let ready = parsed.get("ready").and_then(|v| v.as_bool()).unwrap_or(false);
-    let char_count = parsed.get("charCount").and_then(|v| v.as_u64()).unwrap_or(0);
+    let ready = parsed
+        .get("ready")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let char_count = parsed
+        .get("charCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
 
     if ready {
         let attempt = RungAttempt::ok("page_ready", rung_ms);
-        instrumentation::log_rung_attempt("hands_verify", call_id, "page_ready", true, rung_ms, Some(0.9), ctx);
+        instrumentation::log_rung_attempt(
+            "hands_verify",
+            call_id,
+            "page_ready",
+            true,
+            rung_ms,
+            Some(0.9),
+            ctx,
+        );
         rungs_tried.push(attempt);
-        Some(("page_ready".into(), format!("Page ready: {} chars, readyState=complete, no loading indicators", char_count), 0.9))
+        Some((
+            "page_ready".into(),
+            format!(
+                "Page ready: {} chars, readyState=complete, no loading indicators",
+                char_count
+            ),
+            0.9,
+        ))
     } else {
-        rungs_tried.push(RungAttempt::failed("page_ready", rung_ms, &format!("Not ready: {} chars", char_count)));
-        instrumentation::log_rung_attempt("hands_verify", call_id, "page_ready", false, rung_ms, None, ctx);
+        rungs_tried.push(RungAttempt::failed(
+            "page_ready",
+            rung_ms,
+            format!("Not ready: {} chars", char_count),
+        ));
+        instrumentation::log_rung_attempt(
+            "hands_verify",
+            call_id,
+            "page_ready",
+            false,
+            rung_ms,
+            None,
+            ctx,
+        );
         None
     }
 }
@@ -861,8 +1214,14 @@ fn make_verify_success(
     };
 
     instrumentation::log_aggregate(
-        "hands_verify", call_id, true, method, rungs_tried.len(),
-        elapsed_ms, Some(confidence), None,
+        "hands_verify",
+        call_id,
+        true,
+        method,
+        rungs_tried.len(),
+        elapsed_ms,
+        Some(confidence),
+        None,
     );
 
     let result = json!({

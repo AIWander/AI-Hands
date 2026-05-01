@@ -56,6 +56,7 @@ use serde_json::Value;
 pub trait AtomicTool: Send + Sync {
     /// The canonical tool name — used for logging and diagnostics only.
     /// **Not** used in dispatch; the string is baked into the `call` body.
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
 
     /// Execute the atomic tool and return its JSON result.
@@ -104,37 +105,37 @@ macro_rules! uia_tool {
 // ══════════════════════════════════════════════════════════════
 
 // Focus a window by hwnd or title substring.
-uia_tool!(UiaFocusWindow,  "uia_focus_window");
+uia_tool!(UiaFocusWindow, "uia_focus_window");
 
 // Send keystrokes (e.g. `{"keys": "alt+f4"}`).
-uia_tool!(UiaKeyPress,     "uia_key_press");
+uia_tool!(UiaKeyPress, "uia_key_press");
 
 // Set window state: minimize / maximize / restore.
-uia_tool!(UiaWindowState,  "uia_window_state");
+uia_tool!(UiaWindowState, "uia_window_state");
 
 // Snap a window to a screen edge on a target monitor.
-uia_tool!(UiaWindowSnap,   "uia_window_snap");
+uia_tool!(UiaWindowSnap, "uia_window_snap");
 
 // Find elements by role/name (used for dialog probe in app_action).
-uia_tool!(UiaFind,         "uia_find");
+uia_tool!(UiaFind, "uia_find");
 
 // Find elements by name/automation_id with depth limit (primary desktop search).
-uia_tool!(UiaFindElement,  "uia_find_element");
+uia_tool!(UiaFindElement, "uia_find_element");
 
 // Read UIA global state properties (e.g. foreground_window).
-uia_tool!(UiaGetState,     "uia_get_state");
+uia_tool!(UiaGetState, "uia_get_state");
 
 // Enumerate top-level windows.
-uia_tool!(UiaListWindow,   "uia_list_window");
+uia_tool!(UiaListWindow, "uia_list_window");
 
 // Simulate a mouse click at coordinates or element name.
-uia_tool!(UiaClick,        "uia_click");
+uia_tool!(UiaClick, "uia_click");
 
 // Type text (keystroke simulation, no window-title binding).
-uia_tool!(UiaType,         "uia_type");
+uia_tool!(UiaType, "uia_type");
 
 // Type text with a window-title binding (Start menu search fallback path).
-uia_tool!(UiaTypeText,     "uia_type_text");
+uia_tool!(UiaTypeText, "uia_type_text");
 
 // ══════════════════════════════════════════════════════════════
 // Browser async tool handles
@@ -177,16 +178,16 @@ mod tests {
     #[test]
     fn atomic_tool_names_are_correct() {
         assert_eq!(UiaFocusWindow.name(), "uia_focus_window");
-        assert_eq!(UiaKeyPress.name(),    "uia_key_press");
+        assert_eq!(UiaKeyPress.name(), "uia_key_press");
         assert_eq!(UiaWindowState.name(), "uia_window_state");
-        assert_eq!(UiaWindowSnap.name(),  "uia_window_snap");
-        assert_eq!(UiaFind.name(),        "uia_find");
+        assert_eq!(UiaWindowSnap.name(), "uia_window_snap");
+        assert_eq!(UiaFind.name(), "uia_find");
         assert_eq!(UiaFindElement.name(), "uia_find_element");
-        assert_eq!(UiaGetState.name(),    "uia_get_state");
-        assert_eq!(UiaListWindow.name(),  "uia_list_window");
-        assert_eq!(UiaClick.name(),       "uia_click");
-        assert_eq!(UiaType.name(),        "uia_type");
-        assert_eq!(UiaTypeText.name(),    "uia_type_text");
+        assert_eq!(UiaGetState.name(), "uia_get_state");
+        assert_eq!(UiaListWindow.name(), "uia_list_window");
+        assert_eq!(UiaClick.name(), "uia_click");
+        assert_eq!(UiaType.name(), "uia_type");
+        assert_eq!(UiaTypeText.name(), "uia_type_text");
     }
 
     /// Verify ZST size is zero (no runtime overhead).

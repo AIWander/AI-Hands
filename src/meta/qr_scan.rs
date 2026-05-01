@@ -8,9 +8,9 @@
 use serde_json::{json, Value};
 use std::time::Instant;
 
-use super::response::{MetaToolResult, RungAttempt, Reversibility};
 use super::error::MetaError;
 use super::instrumentation;
+use super::response::{MetaToolResult, Reversibility, RungAttempt};
 use super::session::SharedSession;
 use crate::atomic::browser as browser_atoms;
 
@@ -33,9 +33,7 @@ pub fn decode_qr_from_bytes(image_bytes: &[u8]) -> Result<String, String> {
     let h = h as usize;
     let pixels = gray.into_raw();
 
-    let mut prepared = rqrr::PreparedImage::prepare_from_greyscale(w, h, |x, y| {
-        pixels[y * w + x]
-    });
+    let mut prepared = rqrr::PreparedImage::prepare_from_greyscale(w, h, |x, y| pixels[y * w + x]);
 
     let grids = prepared.detect_grids();
     if grids.is_empty() {
@@ -56,7 +54,8 @@ fn validate_otpauth_uri(uri: &str) -> Result<Value, String> {
     }
 
     let rest = &uri[10..];
-    let (otp_type, rest) = rest.split_once('/')
+    let (otp_type, rest) = rest
+        .split_once('/')
         .ok_or("Malformed otpauth URI: missing type")?;
 
     let label_part = if let Some((label, _query)) = rest.split_once('?') {
@@ -157,7 +156,10 @@ pub async fn handle(
         s.next_call_id()
     };
 
-    let source = args.get("source").and_then(|v| v.as_str()).unwrap_or("screen");
+    let source = args
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("screen");
     let region = args.get("region");
 
     let ctx = json!({"source": source, "region": region});
@@ -174,16 +176,35 @@ pub async fn handle(
 
             if result.is_error {
                 let err_msg = super::extract_browser_text(&result);
-                let err_msg = if err_msg.is_empty() { "Browser screenshot failed".to_string() } else { err_msg };
+                let err_msg = if err_msg.is_empty() {
+                    "Browser screenshot failed".to_string()
+                } else {
+                    err_msg
+                };
                 rungs.push(RungAttempt::failed("browser_screenshot", rung_ms, &err_msg));
-                instrumentation::log_rung_attempt("hands_scan_qr", &call_id, "browser_screenshot", false, rung_ms, None, &ctx);
+                instrumentation::log_rung_attempt(
+                    "hands_scan_qr",
+                    &call_id,
+                    "browser_screenshot",
+                    false,
+                    rung_ms,
+                    None,
+                    &ctx,
+                );
                 let elapsed = start.elapsed().as_millis() as u64;
-                instrumentation::log_aggregate("hands_scan_qr", &call_id, false, "browser_screenshot", rungs.len(), elapsed, None, Some(&err_msg));
-                return MetaToolResult::failure(
-                    rungs,
-                    MetaError::other(err_msg),
+                instrumentation::log_aggregate(
+                    "hands_scan_qr",
+                    &call_id,
+                    false,
+                    "browser_screenshot",
+                    rungs.len(),
                     elapsed,
-                ).with_reversibility(Reversibility::Reversible).to_value();
+                    None,
+                    Some(&err_msg),
+                );
+                return MetaToolResult::failure(rungs, MetaError::other(err_msg), elapsed)
+                    .with_reversibility(Reversibility::Reversible)
+                    .to_value();
             }
 
             // Phase C fix2: Extract image data from ToolResult.
@@ -200,8 +221,11 @@ pub async fn handle(
                         eprintln!("[qr_scan] got Image content: {} base64 chars", data.len());
                         match b64_decode(data) {
                             Ok(bytes) => {
-                                eprintln!("[qr_scan] decoded to {} bytes, header: {:02x?}",
-                                    bytes.len(), &bytes[..bytes.len().min(8)]);
+                                eprintln!(
+                                    "[qr_scan] decoded to {} bytes, header: {:02x?}",
+                                    bytes.len(),
+                                    &bytes[..bytes.len().min(8)]
+                                );
                                 image_data = Some(bytes);
                                 break;
                             }
@@ -215,12 +239,17 @@ pub async fn handle(
                         eprintln!("[qr_scan] got Text content: {} chars", text.len());
                         // Try parsing as JSON with screenshot/data field
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(text) {
-                            let b64_str = val.get("screenshot").and_then(|v| v.as_str())
+                            let b64_str = val
+                                .get("screenshot")
+                                .and_then(|v| v.as_str())
                                 .or_else(|| val.get("data").and_then(|v| v.as_str()))
                                 .or_else(|| val.get("result").and_then(|v| v.as_str()));
                             if let Some(b64) = b64_str {
                                 if let Ok(bytes) = b64_decode(b64) {
-                                    eprintln!("[qr_scan] decoded from Text JSON: {} bytes", bytes.len());
+                                    eprintln!(
+                                        "[qr_scan] decoded from Text JSON: {} bytes",
+                                        bytes.len()
+                                    );
                                     image_data = Some(bytes);
                                     break;
                                 }
@@ -229,7 +258,10 @@ pub async fn handle(
                         // Try as raw base64
                         if let Ok(bytes) = b64_decode(text) {
                             if bytes.len() > 100 {
-                                eprintln!("[qr_scan] decoded from raw Text base64: {} bytes", bytes.len());
+                                eprintln!(
+                                    "[qr_scan] decoded from raw Text base64: {} bytes",
+                                    bytes.len()
+                                );
                                 image_data = Some(bytes);
                                 break;
                             }
@@ -241,7 +273,15 @@ pub async fn handle(
             match image_data {
                 Some(bytes) if !bytes.is_empty() => {
                     rungs.push(RungAttempt::ok("browser_screenshot", rung_ms));
-                    instrumentation::log_rung_attempt("hands_scan_qr", &call_id, "browser_screenshot", true, rung_ms, Some(1.0), &ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_scan_qr",
+                        &call_id,
+                        "browser_screenshot",
+                        true,
+                        rung_ms,
+                        Some(1.0),
+                        &ctx,
+                    );
                     bytes
                 }
                 _ => {
@@ -251,12 +291,19 @@ pub async fn handle(
                     );
                     rungs.push(RungAttempt::failed("browser_screenshot", rung_ms, &err_msg));
                     let elapsed = start.elapsed().as_millis() as u64;
-                    instrumentation::log_aggregate("hands_scan_qr", &call_id, false, "browser_screenshot", rungs.len(), elapsed, None, Some(&err_msg));
-                    return MetaToolResult::failure(
-                        rungs,
-                        MetaError::other(err_msg),
+                    instrumentation::log_aggregate(
+                        "hands_scan_qr",
+                        &call_id,
+                        false,
+                        "browser_screenshot",
+                        rungs.len(),
                         elapsed,
-                    ).with_reversibility(Reversibility::Reversible).to_value();
+                        None,
+                        Some(&err_msg),
+                    );
+                    return MetaToolResult::failure(rungs, MetaError::other(err_msg), elapsed)
+                        .with_reversibility(Reversibility::Reversible)
+                        .to_value();
                 }
             }
         }
@@ -282,13 +329,29 @@ pub async fn handle(
                         match std::fs::read(&data_or_path) {
                             Ok(b) => b,
                             Err(e) => {
-                                let msg = format!("Failed to read screenshot file '{}': {}", data_or_path, e);
+                                let msg = format!(
+                                    "Failed to read screenshot file '{}': {}",
+                                    data_or_path, e
+                                );
                                 rungs.push(RungAttempt::failed("vision_screenshot", rung_ms, &msg));
                                 let elapsed = start.elapsed().as_millis() as u64;
-                                instrumentation::log_aggregate("hands_scan_qr", &call_id, false, "vision_screenshot", rungs.len(), elapsed, None, Some(&msg));
+                                instrumentation::log_aggregate(
+                                    "hands_scan_qr",
+                                    &call_id,
+                                    false,
+                                    "vision_screenshot",
+                                    rungs.len(),
+                                    elapsed,
+                                    None,
+                                    Some(&msg),
+                                );
                                 return MetaToolResult::failure(
-                                    rungs, MetaError::other(msg), elapsed,
-                                ).with_reversibility(Reversibility::Reversible).to_value();
+                                    rungs,
+                                    MetaError::other(msg),
+                                    elapsed,
+                                )
+                                .with_reversibility(Reversibility::Reversible)
+                                .to_value();
                             }
                         }
                     } else {
@@ -297,27 +360,55 @@ pub async fn handle(
                             Err(e) => {
                                 rungs.push(RungAttempt::failed("vision_screenshot", rung_ms, &e));
                                 let elapsed = start.elapsed().as_millis() as u64;
-                                instrumentation::log_aggregate("hands_scan_qr", &call_id, false, "vision_screenshot", rungs.len(), elapsed, None, Some(&e));
+                                instrumentation::log_aggregate(
+                                    "hands_scan_qr",
+                                    &call_id,
+                                    false,
+                                    "vision_screenshot",
+                                    rungs.len(),
+                                    elapsed,
+                                    None,
+                                    Some(&e),
+                                );
                                 return MetaToolResult::failure(
-                                    rungs, MetaError::other(e), elapsed,
-                                ).with_reversibility(Reversibility::Reversible).to_value();
+                                    rungs,
+                                    MetaError::other(e),
+                                    elapsed,
+                                )
+                                .with_reversibility(Reversibility::Reversible)
+                                .to_value();
                             }
                         }
                     };
 
                     rungs.push(RungAttempt::ok("vision_screenshot", rung_ms));
-                    instrumentation::log_rung_attempt("hands_scan_qr", &call_id, "vision_screenshot", true, rung_ms, Some(1.0), &ctx);
+                    instrumentation::log_rung_attempt(
+                        "hands_scan_qr",
+                        &call_id,
+                        "vision_screenshot",
+                        true,
+                        rung_ms,
+                        Some(1.0),
+                        &ctx,
+                    );
                     bytes
                 }
                 Err(e) => {
                     rungs.push(RungAttempt::failed("vision_screenshot", rung_ms, &e));
                     let elapsed = start.elapsed().as_millis() as u64;
-                    instrumentation::log_aggregate("hands_scan_qr", &call_id, false, "vision_screenshot", rungs.len(), elapsed, None, Some(&e));
-                    return MetaToolResult::failure(
-                        rungs,
-                        MetaError::other(e),
+                    instrumentation::log_aggregate(
+                        "hands_scan_qr",
+                        &call_id,
+                        false,
+                        "vision_screenshot",
+                        rungs.len(),
                         elapsed,
-                    ).with_reversibility(Reversibility::Reversible).to_value();
+                        None,
+                        Some(&e),
+                    );
+                    return MetaToolResult::failure(rungs, MetaError::other(e), elapsed)
+                        .with_reversibility(Reversibility::Reversible)
+                        .to_value();
                 }
             }
         }
@@ -329,19 +420,34 @@ pub async fn handle(
         Ok(content) => {
             let rung_ms = rung_start.elapsed().as_millis() as u64;
             rungs.push(RungAttempt::ok("qr_decode", rung_ms));
-            instrumentation::log_rung_attempt("hands_scan_qr", &call_id, "qr_decode", true, rung_ms, Some(1.0), &ctx);
+            instrumentation::log_rung_attempt(
+                "hands_scan_qr",
+                &call_id,
+                "qr_decode",
+                true,
+                rung_ms,
+                Some(1.0),
+                &ctx,
+            );
             content
         }
         Err(e) => {
             let rung_ms = rung_start.elapsed().as_millis() as u64;
             rungs.push(RungAttempt::failed("qr_decode", rung_ms, &e));
             let elapsed = start.elapsed().as_millis() as u64;
-            instrumentation::log_aggregate("hands_scan_qr", &call_id, false, "qr_decode", rungs.len(), elapsed, None, Some(&e));
-            return MetaToolResult::failure(
-                rungs,
-                MetaError::other(e),
+            instrumentation::log_aggregate(
+                "hands_scan_qr",
+                &call_id,
+                false,
+                "qr_decode",
+                rungs.len(),
                 elapsed,
-            ).with_reversibility(Reversibility::Reversible).to_value();
+                None,
+                Some(&e),
+            );
+            return MetaToolResult::failure(rungs, MetaError::other(e), elapsed)
+                .with_reversibility(Reversibility::Reversible)
+                .to_value();
         }
     };
 
@@ -352,7 +458,16 @@ pub async fn handle(
             let rung_ms = rung_start.elapsed().as_millis() as u64;
             rungs.push(RungAttempt::ok("validate_otpauth", rung_ms));
             let elapsed = start.elapsed().as_millis() as u64;
-            instrumentation::log_aggregate("hands_scan_qr", &call_id, true, "qr_decode+validate", rungs.len(), elapsed, Some(1.0), None);
+            instrumentation::log_aggregate(
+                "hands_scan_qr",
+                &call_id,
+                true,
+                "qr_decode+validate",
+                rungs.len(),
+                elapsed,
+                Some(1.0),
+                None,
+            );
 
             MetaToolResult::success(
                 "qr_decode+validate",
@@ -373,7 +488,16 @@ pub async fn handle(
             rungs.push(RungAttempt::failed("validate_otpauth", rung_ms, &e));
             let elapsed = start.elapsed().as_millis() as u64;
             // Still a success (decoded QR content), just not otpauth
-            instrumentation::log_aggregate("hands_scan_qr", &call_id, true, "qr_decode", rungs.len(), elapsed, Some(0.8), None);
+            instrumentation::log_aggregate(
+                "hands_scan_qr",
+                &call_id,
+                true,
+                "qr_decode",
+                rungs.len(),
+                elapsed,
+                Some(0.8),
+                None,
+            );
 
             MetaToolResult::success(
                 "qr_decode",
@@ -384,9 +508,10 @@ pub async fn handle(
                     "warning": e,
                 }),
                 elapsed,
-            ).with_reversibility(Reversibility::Reversible)
-             .with_warning(format!("QR decoded but not an otpauth URI: {}", e))
-             .to_value()
+            )
+            .with_reversibility(Reversibility::Reversible)
+            .with_warning(format!("QR decoded but not an otpauth URI: {}", e))
+            .to_value()
         }
     }
 }
@@ -398,7 +523,10 @@ fn looks_like_file_path(s: &str) -> bool {
     // Windows drive letter: "C:\..." or "C:/..."
     if s.len() >= 3 {
         let bytes = s.as_bytes();
-        if bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/') {
+        if bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'\\' || bytes[2] == b'/')
+        {
             return true;
         }
     }

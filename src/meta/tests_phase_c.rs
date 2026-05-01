@@ -36,26 +36,108 @@ fn test_nl_parse_10_common_phrasings() {
     }
 
     let cases = vec![
-        Case { input: "shows Welcome Back",       check_type: CheckType::TextPresent,  negated: false, require_visible: false, target: "Welcome Back" },
-        Case { input: "contains order confirmed",  check_type: CheckType::TextPresent,  negated: false, require_visible: false, target: "order confirmed" },
-        Case { input: "Dashboard appears",         check_type: CheckType::TextPresent,  negated: false, require_visible: true,  target: "Dashboard" },
-        Case { input: "Submit button is visible",  check_type: CheckType::TextPresent,  negated: false, require_visible: true,  target: "Submit button" },
-        Case { input: "Error message is displayed", check_type: CheckType::TextPresent, negated: false, require_visible: true,  target: "Error message" },
-        Case { input: "no error",                  check_type: CheckType::TextAbsent,   negated: true,  require_visible: false, target: "error" },
-        Case { input: "not loading",               check_type: CheckType::TextAbsent,   negated: true,  require_visible: false, target: "loading" },
-        Case { input: "Spinner is gone",           check_type: CheckType::TextAbsent,   negated: true,  require_visible: false, target: "Spinner" },
-        Case { input: "page loaded",               check_type: CheckType::PageReady,    negated: false, require_visible: false, target: "" },
-        Case { input: "page ready",                check_type: CheckType::PageReady,    negated: false, require_visible: false, target: "" },
+        Case {
+            input: "shows Welcome Back",
+            check_type: CheckType::TextPresent,
+            negated: false,
+            require_visible: false,
+            target: "Welcome Back",
+        },
+        Case {
+            input: "contains order confirmed",
+            check_type: CheckType::TextPresent,
+            negated: false,
+            require_visible: false,
+            target: "order confirmed",
+        },
+        Case {
+            input: "Dashboard appears",
+            check_type: CheckType::TextPresent,
+            negated: false,
+            require_visible: true,
+            target: "Dashboard",
+        },
+        Case {
+            input: "Submit button is visible",
+            check_type: CheckType::TextPresent,
+            negated: false,
+            require_visible: true,
+            target: "Submit button",
+        },
+        Case {
+            input: "Error message is displayed",
+            check_type: CheckType::TextPresent,
+            negated: false,
+            require_visible: true,
+            target: "Error message",
+        },
+        Case {
+            input: "no error",
+            check_type: CheckType::TextAbsent,
+            negated: true,
+            require_visible: false,
+            target: "error",
+        },
+        Case {
+            input: "not loading",
+            check_type: CheckType::TextAbsent,
+            negated: true,
+            require_visible: false,
+            target: "loading",
+        },
+        Case {
+            input: "Spinner is gone",
+            check_type: CheckType::TextAbsent,
+            negated: true,
+            require_visible: false,
+            target: "Spinner",
+        },
+        Case {
+            input: "page loaded",
+            check_type: CheckType::PageReady,
+            negated: false,
+            require_visible: false,
+            target: "",
+        },
+        Case {
+            input: "page ready",
+            check_type: CheckType::PageReady,
+            negated: false,
+            require_visible: false,
+            target: "",
+        },
     ];
 
     for (i, case) in cases.iter().enumerate() {
         let result = parse_nl(case.input);
-        assert!(result.is_ok(), "Case {} ('{}') should parse: {:?}", i, case.input, result.err());
+        assert!(
+            result.is_ok(),
+            "Case {} ('{}') should parse: {:?}",
+            i,
+            case.input,
+            result.err()
+        );
         let r = result.unwrap();
-        assert_eq!(r.check_type, case.check_type,     "Case {} ('{}') check_type mismatch", i, case.input);
-        assert_eq!(r.negated, case.negated,             "Case {} ('{}') negated mismatch", i, case.input);
-        assert_eq!(r.require_visible, case.require_visible, "Case {} ('{}') require_visible mismatch", i, case.input);
-        assert_eq!(r.target, case.target,               "Case {} ('{}') target mismatch", i, case.input);
+        assert_eq!(
+            r.check_type, case.check_type,
+            "Case {} ('{}') check_type mismatch",
+            i, case.input
+        );
+        assert_eq!(
+            r.negated, case.negated,
+            "Case {} ('{}') negated mismatch",
+            i, case.input
+        );
+        assert_eq!(
+            r.require_visible, case.require_visible,
+            "Case {} ('{}') require_visible mismatch",
+            i, case.input
+        );
+        assert_eq!(
+            r.target, case.target,
+            "Case {} ('{}') target mismatch",
+            i, case.input
+        );
     }
 }
 
@@ -92,28 +174,41 @@ fn test_template_resolution_login_success_structured_form() {
     let expansion = verify_templates::resolve_template(
         "verify_login_success",
         &json!({"from_url": "https://app.example.com/login"}),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert!(expansion.requires_browser);
     assert!(expansion.default_timeout_ms >= 10000);
-    assert!(expansion.checks.len() >= 3, "Login template should have >= 3 checks");
+    assert!(
+        expansion.checks.len() >= 3,
+        "Login template should have >= 3 checks"
+    );
 
     // url_changed check must have from field set
-    let url_check = expansion.checks.iter()
+    let url_check = expansion
+        .checks
+        .iter()
         .find(|c| c.check_type == "url_changed")
         .expect("Must have url_changed check");
-    assert_eq!(url_check.from.as_deref(), Some("https://app.example.com/login"));
+    assert_eq!(
+        url_check.from.as_deref(),
+        Some("https://app.example.com/login")
+    );
     assert!(url_check.required);
 
     // element_absent check for password field
-    let absent_check = expansion.checks.iter()
+    let absent_check = expansion
+        .checks
+        .iter()
         .find(|c| c.check_type == "element_absent")
         .expect("Must have element_absent check");
     assert!(absent_check.required);
     assert!(!absent_check.patterns.is_empty());
 
     // element_present is optional (dashboard indicators)
-    let present_check = expansion.checks.iter()
+    let present_check = expansion
+        .checks
+        .iter()
         .find(|c| c.check_type == "element_present");
     if let Some(pc) = present_check {
         assert!(!pc.required, "Dashboard indicator check should be optional");
@@ -128,10 +223,23 @@ fn test_all_templates_resolve_and_have_checks() {
 
     for name in &templates {
         let result = verify_templates::resolve_template(name, &json!({}));
-        assert!(result.is_ok(), "Template '{}' should resolve: {:?}", name, result.err());
+        assert!(
+            result.is_ok(),
+            "Template '{}' should resolve: {:?}",
+            name,
+            result.err()
+        );
         let expansion = result.unwrap();
-        assert!(!expansion.checks.is_empty(), "Template '{}' should have at least one check", name);
-        assert!(!expansion.description.is_empty(), "Template '{}' should have a description", name);
+        assert!(
+            !expansion.checks.is_empty(),
+            "Template '{}' should have at least one check",
+            name
+        );
+        assert!(
+            !expansion.description.is_empty(),
+            "Template '{}' should have a description",
+            name
+        );
     }
 }
 
@@ -141,14 +249,19 @@ fn test_template_form_submitted_custom_success_text() {
     let expansion = verify_templates::resolve_template(
         "verify_form_submitted",
         &json!({"success_text": "Payment Confirmed", "from_url": "https://shop.com/cart"}),
-    ).unwrap();
+    )
+    .unwrap();
 
-    let text_check = expansion.checks.iter()
+    let text_check = expansion
+        .checks
+        .iter()
         .find(|c| c.check_type == "text_present")
         .expect("Must have text_present check");
     assert_eq!(text_check.target.as_deref(), Some("Payment Confirmed"));
 
-    let url_check = expansion.checks.iter()
+    let url_check = expansion
+        .checks
+        .iter()
         .find(|c| c.check_type == "url_changed")
         .expect("Must have url_changed check");
     assert_eq!(url_check.from.as_deref(), Some("https://shop.com/cart"));
@@ -191,8 +304,11 @@ fn test_stabilization_requires_consecutive_matches() {
 
     // Immediately: not yet stabilized
     let stabilized_for = first_match_time.elapsed().as_millis() as u64;
-    assert!(stabilized_for < must_stabilize_ms,
-        "Should not be stabilized immediately (elapsed {}ms)", stabilized_for);
+    assert!(
+        stabilized_for < must_stabilize_ms,
+        "Should not be stabilized immediately (elapsed {}ms)",
+        stabilized_for
+    );
 
     // Simulate interruption: URL change resets stabilization
     let mut first_match_time_opt: Option<Instant> = Some(first_match_time);
@@ -200,7 +316,10 @@ fn test_stabilization_requires_consecutive_matches() {
     if url_changed {
         first_match_time_opt = None; // Reset
     }
-    assert!(first_match_time_opt.is_none(), "URL change should reset stabilization timer");
+    assert!(
+        first_match_time_opt.is_none(),
+        "URL change should reset stabilization timer"
+    );
 }
 
 // ============ HANDS_VERIFY: NAVIGATION GUARD ============
@@ -227,7 +346,10 @@ fn test_navigation_guard_fragment_change_detected() {
     let changed = "https://example.com/page#section2";
 
     // String comparison detects fragment changes
-    assert_ne!(initial, changed, "Fragment change should be detected by URL comparison");
+    assert_ne!(
+        initial, changed,
+        "Fragment change should be detected by URL comparison"
+    );
 }
 
 // ============ HANDS_APP_ACTION: SAVE DIALOG AUTO-HANDLING ============
@@ -268,11 +390,9 @@ fn test_save_dialog_save_mode() {
         suggested_action: "save".into(),
     };
 
-    let resolution = save_dialog::resolve_dialog_action(
-        &info,
-        &save_dialog::SaveDialogAction::Save,
-        "notepad",
-    ).unwrap();
+    let resolution =
+        save_dialog::resolve_dialog_action(&info, &save_dialog::SaveDialogAction::Save, "notepad")
+            .unwrap();
 
     assert_eq!(resolution.button_text.as_deref(), Some("Save"));
     assert!(resolution.description.contains("Save"));
@@ -292,10 +412,13 @@ fn test_save_dialog_discard_mode() {
         &info,
         &save_dialog::SaveDialogAction::Discard,
         "notepad",
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(resolution.button_text.as_deref(), Some("Don't Save"));
-    assert!(resolution.description.contains("discard") || resolution.description.contains("Don't Save"));
+    assert!(
+        resolution.description.contains("discard") || resolution.description.contains("Don't Save")
+    );
 }
 
 /// Auto mode with named file resolves to Save.
@@ -308,14 +431,15 @@ fn test_save_dialog_auto_mode_named_file() {
         suggested_action: "save".into(),
     };
 
-    let resolution = save_dialog::resolve_dialog_action(
-        &info,
-        &save_dialog::SaveDialogAction::Auto,
-        "notepad",
-    ).unwrap();
+    let resolution =
+        save_dialog::resolve_dialog_action(&info, &save_dialog::SaveDialogAction::Auto, "notepad")
+            .unwrap();
 
     assert_eq!(resolution.button_text.as_deref(), Some("Save"));
-    assert!(resolution.description.contains("Named file") || resolution.description.contains("save in place"));
+    assert!(
+        resolution.description.contains("Named file")
+            || resolution.description.contains("save in place")
+    );
 }
 
 /// Auto mode with Untitled file triggers autosave path generation.
@@ -328,17 +452,24 @@ fn test_save_dialog_auto_mode_untitled() {
         suggested_action: "save".into(),
     };
 
-    let resolution = save_dialog::resolve_dialog_action(
-        &info,
-        &save_dialog::SaveDialogAction::Auto,
-        "notepad",
-    ).unwrap();
+    let resolution =
+        save_dialog::resolve_dialog_action(&info, &save_dialog::SaveDialogAction::Auto, "notepad")
+            .unwrap();
 
     assert_eq!(resolution.button_text.as_deref(), Some("Save"));
-    assert!(resolution.save_path.is_some(), "Untitled document should generate autosave path");
+    assert!(
+        resolution.save_path.is_some(),
+        "Untitled document should generate autosave path"
+    );
     let path = resolution.save_path.unwrap();
-    assert!(path.contains("hands-autosave"), "Autosave path should be in hands-autosave dir");
-    assert!(path.ends_with(".txt"), "Notepad autosave should use .txt extension");
+    assert!(
+        path.contains("hands-autosave"),
+        "Autosave path should be in hands-autosave dir"
+    );
+    assert!(
+        path.ends_with(".txt"),
+        "Notepad autosave should use .txt extension"
+    );
 }
 
 /// Ask mode returns no button (no action taken).
@@ -351,26 +482,45 @@ fn test_save_dialog_ask_mode_no_action() {
         suggested_action: "ask".into(),
     };
 
-    let resolution = save_dialog::resolve_dialog_action(
-        &info,
-        &save_dialog::SaveDialogAction::Ask,
-        "notepad",
-    ).unwrap();
+    let resolution =
+        save_dialog::resolve_dialog_action(&info, &save_dialog::SaveDialogAction::Ask, "notepad")
+            .unwrap();
 
-    assert!(resolution.button_text.is_none(), "Ask mode should not click any button");
+    assert!(
+        resolution.button_text.is_none(),
+        "Ask mode should not click any button"
+    );
     assert!(resolution.description.contains("caller"));
 }
 
 /// parse_save_dialog_action covers all modes including default.
 #[test]
 fn test_parse_save_dialog_action_coverage() {
-    assert!(matches!(save_dialog::parse_save_dialog_action(Some("auto")), save_dialog::SaveDialogAction::Auto));
-    assert!(matches!(save_dialog::parse_save_dialog_action(Some("save")), save_dialog::SaveDialogAction::Save));
-    assert!(matches!(save_dialog::parse_save_dialog_action(Some("discard")), save_dialog::SaveDialogAction::Discard));
-    assert!(matches!(save_dialog::parse_save_dialog_action(Some("ask")), save_dialog::SaveDialogAction::Ask));
+    assert!(matches!(
+        save_dialog::parse_save_dialog_action(Some("auto")),
+        save_dialog::SaveDialogAction::Auto
+    ));
+    assert!(matches!(
+        save_dialog::parse_save_dialog_action(Some("save")),
+        save_dialog::SaveDialogAction::Save
+    ));
+    assert!(matches!(
+        save_dialog::parse_save_dialog_action(Some("discard")),
+        save_dialog::SaveDialogAction::Discard
+    ));
+    assert!(matches!(
+        save_dialog::parse_save_dialog_action(Some("ask")),
+        save_dialog::SaveDialogAction::Ask
+    ));
     // Default is Auto
-    assert!(matches!(save_dialog::parse_save_dialog_action(None), save_dialog::SaveDialogAction::Auto));
-    assert!(matches!(save_dialog::parse_save_dialog_action(Some("garbage")), save_dialog::SaveDialogAction::Auto));
+    assert!(matches!(
+        save_dialog::parse_save_dialog_action(None),
+        save_dialog::SaveDialogAction::Auto
+    ));
+    assert!(matches!(
+        save_dialog::parse_save_dialog_action(Some("garbage")),
+        save_dialog::SaveDialogAction::Auto
+    ));
 }
 
 // ============ HANDS_APP_ACTION: MONITOR STICKINESS ============
@@ -396,7 +546,10 @@ fn test_monitor_stickiness_preserved() {
     assert!(state.get_window_monitor("chrome").is_some());
     assert!(state.get_window_monitor("notepad").is_some());
     assert_eq!(state.get_window_monitor("chrome").unwrap().monitor_index, 1);
-    assert_eq!(state.get_window_monitor("notepad").unwrap().monitor_index, 0);
+    assert_eq!(
+        state.get_window_monitor("notepad").unwrap().monitor_index,
+        0
+    );
 }
 
 // ============ HANDS_APP_ACTION: LASTFOCUSED RETRY ============
@@ -416,7 +569,8 @@ fn test_last_focused_returns_first_match() {
         automation_id: None,
     };
 
-    let result = window_match::find_single_window(&windows, &wm, &window_match::MatchMode::LastFocused);
+    let result =
+        window_match::find_single_window(&windows, &wm, &window_match::MatchMode::LastFocused);
     assert!(result.is_ok());
     let r = result.unwrap();
     assert_eq!(r.title, "Notepad - doc1.txt");
@@ -436,7 +590,8 @@ fn test_require_unique_errors_on_multiple() {
         automation_id: None,
     };
 
-    let result = window_match::find_single_window(&windows, &wm, &window_match::MatchMode::RequireUnique);
+    let result =
+        window_match::find_single_window(&windows, &wm, &window_match::MatchMode::RequireUnique);
     assert!(result.is_err());
 
     if let Err(error::MetaError::MultipleWindows { app, candidates }) = result {
@@ -450,9 +605,7 @@ fn test_require_unique_errors_on_multiple() {
 /// Window match with no matches returns ElementNotFound.
 #[test]
 fn test_window_match_no_match_error() {
-    let windows = vec![
-        json!({"title": "Firefox", "process_name": "firefox.exe"}),
-    ];
+    let windows = vec![json!({"title": "Firefox", "process_name": "firefox.exe"})];
 
     let wm = window_match::WindowMatch {
         title: Some("Safari".into()),
@@ -495,11 +648,26 @@ fn test_parse_window_match_flat() {
 /// parse_match_mode covers all modes.
 #[test]
 fn test_parse_match_mode_coverage() {
-    assert!(matches!(window_match::parse_match_mode(Some("first")), window_match::MatchMode::First));
-    assert!(matches!(window_match::parse_match_mode(Some("last_focused")), window_match::MatchMode::LastFocused));
-    assert!(matches!(window_match::parse_match_mode(Some("require_unique")), window_match::MatchMode::RequireUnique));
-    assert!(matches!(window_match::parse_match_mode(Some("all")), window_match::MatchMode::All));
-    assert!(matches!(window_match::parse_match_mode(None), window_match::MatchMode::LastFocused)); // default
+    assert!(matches!(
+        window_match::parse_match_mode(Some("first")),
+        window_match::MatchMode::First
+    ));
+    assert!(matches!(
+        window_match::parse_match_mode(Some("last_focused")),
+        window_match::MatchMode::LastFocused
+    ));
+    assert!(matches!(
+        window_match::parse_match_mode(Some("require_unique")),
+        window_match::MatchMode::RequireUnique
+    ));
+    assert!(matches!(
+        window_match::parse_match_mode(Some("all")),
+        window_match::MatchMode::All
+    ));
+    assert!(matches!(
+        window_match::parse_match_mode(None),
+        window_match::MatchMode::LastFocused
+    )); // default
 }
 
 // ============ HANDS_SCRIPT: OUTPUT_VAR CAPTURE + DOT-NOTATION ============
@@ -656,7 +824,8 @@ fn test_script_per_step_timeout_parsing() {
         "label": "click_submit"
     });
 
-    let default_timeout = step_no_timeout.get("timeout_ms")
+    let default_timeout = step_no_timeout
+        .get("timeout_ms")
         .and_then(|v| v.as_u64())
         .unwrap_or(30_000);
     assert_eq!(default_timeout, 30_000);
@@ -677,8 +846,10 @@ fn test_consent_payment_form_blocked_with_session_flag() {
     assert_eq!(classification.risk, consent::RiskLevel::HighRisk);
     assert!(!classification.auto_acceptable);
     // Even with session auto-accept = true, should still block
-    assert!(!consent::should_auto_accept(&classification, true),
-        "HighRisk payment should NEVER be auto-accepted");
+    assert!(
+        !consent::should_auto_accept(&classification, true),
+        "HighRisk payment should NEVER be auto-accepted"
+    );
     assert!(!consent::should_auto_accept(&classification, false));
 }
 
@@ -694,10 +865,14 @@ fn test_consent_cookie_banner_auto_accepted_with_flag() {
 
     assert_eq!(classification.risk, consent::RiskLevel::NoRisk);
     assert!(classification.auto_acceptable);
-    assert!(consent::should_auto_accept(&classification, true),
-        "NoRisk cookie banner should be auto-accepted when flag is on");
-    assert!(!consent::should_auto_accept(&classification, false),
-        "Should not auto-accept when flag is off");
+    assert!(
+        consent::should_auto_accept(&classification, true),
+        "NoRisk cookie banner should be auto-accepted when flag is on"
+    );
+    assert!(
+        !consent::should_auto_accept(&classification, false),
+        "Should not auto-accept when flag is off"
+    );
 }
 
 /// GDPR consent classified as LowRisk or NoRisk, auto-accepted with flag.
@@ -710,11 +885,19 @@ fn test_consent_gdpr_auto_accepted_with_flag() {
         None,
     );
 
-    assert!(matches!(classification.risk, consent::RiskLevel::NoRisk | consent::RiskLevel::LowRisk),
-        "GDPR consent should be NoRisk or LowRisk, got {:?}", classification.risk);
+    assert!(
+        matches!(
+            classification.risk,
+            consent::RiskLevel::NoRisk | consent::RiskLevel::LowRisk
+        ),
+        "GDPR consent should be NoRisk or LowRisk, got {:?}",
+        classification.risk
+    );
     assert!(classification.auto_acceptable);
-    assert!(consent::should_auto_accept(&classification, true),
-        "GDPR consent should be auto-accepted when flag is on");
+    assert!(
+        consent::should_auto_accept(&classification, true),
+        "GDPR consent should be auto-accepted when flag is on"
+    );
 }
 
 /// Subscription with auto-renew and non-refundable terms is HighRisk.
@@ -756,10 +939,16 @@ fn test_integration_nl_negation_to_verify() {
 
     for (input, expected_negated, expected_target) in &cases {
         let expectation = nl_parser::parse_nl(input).unwrap();
-        assert_eq!(expectation.negated, *expected_negated,
-            "Input '{}': negated should be {}", input, expected_negated);
-        assert_eq!(expectation.target, *expected_target,
-            "Input '{}': target should be '{}'", input, expected_target);
+        assert_eq!(
+            expectation.negated, *expected_negated,
+            "Input '{}': negated should be {}",
+            input, expected_negated
+        );
+        assert_eq!(
+            expectation.target, *expected_target,
+            "Input '{}': target should be '{}'",
+            input, expected_target
+        );
     }
 }
 
@@ -771,8 +960,16 @@ fn test_integration_template_roundtrip() {
         let expansion = verify_templates::resolve_template(name, &json!({})).unwrap();
 
         // Every expansion should be usable: has browser requirement, timeout, and checks
-        assert!(expansion.default_timeout_ms > 0, "Template '{}' should have positive timeout", name);
-        assert!(!expansion.checks.is_empty(), "Template '{}' should have checks", name);
+        assert!(
+            expansion.default_timeout_ms > 0,
+            "Template '{}' should have positive timeout",
+            name
+        );
+        assert!(
+            !expansion.checks.is_empty(),
+            "Template '{}' should have checks",
+            name
+        );
     }
 }
 
@@ -782,28 +979,35 @@ fn test_integration_template_roundtrip() {
 /// and Destructive (reversibility) ensures both safety layers agree.
 #[test]
 fn test_integration_consent_and_reversibility_agree_on_destructive() {
-    use targeting::classify_reversibility;
     use response::Reversibility;
+    use targeting::classify_reversibility;
 
-    let destructive_labels = [
-        "Delete Account",
-        "Remove All Data",
-        "Confirm Payment",
-    ];
+    let destructive_labels = ["Delete Account", "Remove All Data", "Confirm Payment"];
 
     for label in &destructive_labels {
         let rev = classify_reversibility(label);
-        assert_eq!(rev, Reversibility::Destructive,
-            "Reversibility should classify '{}' as Destructive", label);
+        assert_eq!(
+            rev,
+            Reversibility::Destructive,
+            "Reversibility should classify '{}' as Destructive",
+            label
+        );
 
         let consent = consent::classify_consent(
-            &format!("This action will {}. It cannot be undone.", label.to_lowercase()),
+            &format!(
+                "This action will {}. It cannot be undone.",
+                label.to_lowercase()
+            ),
             &[label, "Cancel"],
             Some("https://example.com/settings"),
             None,
         );
-        assert_eq!(consent.risk, consent::RiskLevel::HighRisk,
-            "Consent should classify '{}' context as HighRisk", label);
+        assert_eq!(
+            consent.risk,
+            consent::RiskLevel::HighRisk,
+            "Consent should classify '{}' context as HighRisk",
+            label
+        );
         assert!(!consent.auto_acceptable);
     }
 }
@@ -840,7 +1044,10 @@ fn test_save_dialog_not_detected_for_normal_windows() {
     ];
 
     let detected = save_dialog::detect_save_dialog(&windows);
-    assert!(detected.is_none(), "Normal windows should not trigger save dialog detection");
+    assert!(
+        detected.is_none(),
+        "Normal windows should not trigger save dialog detection"
+    );
 }
 
 // ============ SESSION STATE INTEGRATION ============
@@ -855,8 +1062,14 @@ fn test_session_multiple_monitor_records() {
     state.record_window_monitor("explorer", 2, 1.25);
 
     assert_eq!(state.get_window_monitor("chrome").unwrap().monitor_index, 0);
-    assert_eq!(state.get_window_monitor("notepad").unwrap().monitor_index, 1);
-    assert_eq!(state.get_window_monitor("explorer").unwrap().monitor_index, 2);
+    assert_eq!(
+        state.get_window_monitor("notepad").unwrap().monitor_index,
+        1
+    );
+    assert_eq!(
+        state.get_window_monitor("explorer").unwrap().monitor_index,
+        2
+    );
     assert!(state.get_window_monitor("firefox").is_none());
 }
 
@@ -864,14 +1077,25 @@ fn test_session_multiple_monitor_records() {
 #[test]
 fn test_action_reversibility_classification() {
     // Only close requires confirmation; everything else is reversible
-    let reversible_actions = ["open", "focus", "minimize", "maximize", "restore",
-                              "snap_left", "snap_right", "snap_top", "snap_bottom"];
+    let reversible_actions = [
+        "open",
+        "focus",
+        "minimize",
+        "maximize",
+        "restore",
+        "snap_left",
+        "snap_right",
+        "snap_top",
+        "snap_bottom",
+    ];
 
     for action in &reversible_actions {
         // The action_reversibility function is private, but we can test the principle:
         // non-close actions should be Reversible
-        assert_ne!(*action, "close",
-            "This loop should only contain reversible actions");
+        assert_ne!(
+            *action, "close",
+            "This loop should only contain reversible actions"
+        );
     }
 }
 
@@ -903,8 +1127,10 @@ fn test_error_focus_lost() {
         actual: "Notepad".into(),
     };
     let display = err.to_string();
-    assert!(display.contains("Chrome") || display.contains("Notepad"),
-        "FocusLost should mention expected or actual window");
+    assert!(
+        display.contains("Chrome") || display.contains("Notepad"),
+        "FocusLost should mention expected or actual window"
+    );
 }
 
 // ============ HANDS_HEALTH ============
@@ -915,10 +1141,19 @@ fn test_hands_health_shape() {
 
     // Top-level required fields
     assert_eq!(result["server"], "hands", "server field must be 'hands'");
-    assert_eq!(result["version"], "1.3.0-dev", "version field must be '1.3.0-dev'");
+    assert_eq!(
+        result["version"], "1.3.0-dev",
+        "version field must be '1.3.0-dev'"
+    );
     assert!(result.get("paths").is_some(), "paths field must be present");
-    assert!(result.get("browser").is_some(), "browser field must be present");
-    assert!(result.get("vision").is_some(), "vision field must be present");
+    assert!(
+        result.get("browser").is_some(),
+        "browser field must be present"
+    );
+    assert!(
+        result.get("vision").is_some(),
+        "vision field must be present"
+    );
     assert!(result.get("uia").is_some(), "uia field must be present");
 }
 
@@ -928,11 +1163,26 @@ fn test_hands_health_paths_fields() {
     let paths = &result["paths"];
 
     // HealthReport fields from cpc-paths
-    assert!(paths.get("platform").is_some(), "paths.platform must be present");
-    assert!(paths.get("crate_version").is_some(), "paths.crate_version must be present");
-    assert!(paths.get("volumes").is_some(), "paths.volumes must be present");
-    assert!(paths.get("install").is_some(), "paths.install must be present");
-    assert!(paths.get("backups").is_some(), "paths.backups must be present");
+    assert!(
+        paths.get("platform").is_some(),
+        "paths.platform must be present"
+    );
+    assert!(
+        paths.get("crate_version").is_some(),
+        "paths.crate_version must be present"
+    );
+    assert!(
+        paths.get("volumes").is_some(),
+        "paths.volumes must be present"
+    );
+    assert!(
+        paths.get("install").is_some(),
+        "paths.install must be present"
+    );
+    assert!(
+        paths.get("backups").is_some(),
+        "paths.backups must be present"
+    );
 }
 
 #[test]
@@ -941,11 +1191,14 @@ fn test_hands_health_subsystem_status_values() {
 
     // Each subsystem must have a "status" field with a valid value
     for subsystem in &["browser", "vision", "uia"] {
-        let status = result[subsystem]["status"].as_str()
+        let status = result[subsystem]["status"]
+            .as_str()
             .unwrap_or_else(|| panic!("{}.status must be a string", subsystem));
         assert!(
             matches!(status, "available" | "unavailable" | "unknown"),
-            "{}.status must be available/unavailable/unknown, got '{}'", subsystem, status
+            "{}.status must be available/unavailable/unknown, got '{}'",
+            subsystem,
+            status
         );
     }
 }
@@ -991,16 +1244,30 @@ fn test_phase_d_login_recovery_template_fast_and_valid() {
     // With Phase D typed dispatch, such mismatches now fail at compile time inside
     // the meta-tool bodies (UIA calls), but we verify the step-tool-name contract here.
     let known_meta_tools = [
-        "hands_navigate", "hands_verify", "hands_type", "hands_click",
-        "hands_fill_form", "hands_find", "hands_read_page", "hands_capture",
-        "hands_scan_qr", "hands_app_action", "hands_script", "hands_login_recovery",
+        "hands_navigate",
+        "hands_verify",
+        "hands_type",
+        "hands_click",
+        "hands_fill_form",
+        "hands_find",
+        "hands_read_page",
+        "hands_capture",
+        "hands_scan_qr",
+        "hands_app_action",
+        "hands_script",
+        "hands_login_recovery",
     ];
 
     let steps = script["steps"].as_array().expect("steps must be an array");
-    assert!(!steps.is_empty(), "login_recovery must generate at least one step");
+    assert!(
+        !steps.is_empty(),
+        "login_recovery must generate at least one step"
+    );
 
     for step in steps {
-        let tool = step["tool"].as_str().expect("each step must have a 'tool' field");
+        let tool = step["tool"]
+            .as_str()
+            .expect("each step must have a 'tool' field");
         assert!(
             known_meta_tools.contains(&tool),
             "login_recovery step '{}' is not a recognised meta-tool. \
@@ -1020,23 +1287,22 @@ fn test_phase_d_login_recovery_template_fast_and_valid() {
 fn test_phase_d_atomic_tool_names_match_canonical_strings() {
     use crate::atomic::AtomicTool;
     use crate::atomic::{
-        UiaFocusWindow, UiaKeyPress, UiaWindowState, UiaWindowSnap,
-        UiaFind, UiaFindElement, UiaGetState, UiaListWindow,
-        UiaClick, UiaType, UiaTypeText,
+        UiaClick, UiaFind, UiaFindElement, UiaFocusWindow, UiaGetState, UiaKeyPress, UiaListWindow,
+        UiaType, UiaTypeText, UiaWindowSnap, UiaWindowState,
     };
 
     // Each assert matches what was previously a string literal in the meta-tool body.
     // Phase D guarantee: if the string changes, it changes here and in one macro call —
     // not in N scattered uia_lib::handle_tool_call("...", args) call sites.
-    assert_eq!(UiaFocusWindow.name(),  "uia_focus_window");   // app_action, capture
-    assert_eq!(UiaKeyPress.name(),     "uia_key_press");       // app_action, type_text
-    assert_eq!(UiaWindowState.name(),  "uia_window_state");   // app_action
-    assert_eq!(UiaWindowSnap.name(),   "uia_window_snap");    // app_action
-    assert_eq!(UiaFind.name(),         "uia_find");            // app_action (dialog probe)
-    assert_eq!(UiaFindElement.name(),  "uia_find_element");   // click, find, verify
-    assert_eq!(UiaGetState.name(),     "uia_get_state");       // app_action (foreground)
-    assert_eq!(UiaListWindow.name(),   "uia_list_window");    // app_action (window enum)
-    assert_eq!(UiaClick.name(),        "uia_click");           // app_action, click, type_text
-    assert_eq!(UiaType.name(),         "uia_type");            // type_text (keystroke)
-    assert_eq!(UiaTypeText.name(),     "uia_type_text");      // app_action (Start menu)
+    assert_eq!(UiaFocusWindow.name(), "uia_focus_window"); // app_action, capture
+    assert_eq!(UiaKeyPress.name(), "uia_key_press"); // app_action, type_text
+    assert_eq!(UiaWindowState.name(), "uia_window_state"); // app_action
+    assert_eq!(UiaWindowSnap.name(), "uia_window_snap"); // app_action
+    assert_eq!(UiaFind.name(), "uia_find"); // app_action (dialog probe)
+    assert_eq!(UiaFindElement.name(), "uia_find_element"); // click, find, verify
+    assert_eq!(UiaGetState.name(), "uia_get_state"); // app_action (foreground)
+    assert_eq!(UiaListWindow.name(), "uia_list_window"); // app_action (window enum)
+    assert_eq!(UiaClick.name(), "uia_click"); // app_action, click, type_text
+    assert_eq!(UiaType.name(), "uia_type"); // type_text (keystroke)
+    assert_eq!(UiaTypeText.name(), "uia_type_text"); // app_action (Start menu)
 }

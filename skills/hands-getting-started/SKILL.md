@@ -1,6 +1,6 @@
 ---
 name: hands-getting-started
-description: 'Getting started with Hands -- the 116-tool automation server for browser,
+description: 'Getting started with Hands -- the 117-tool automation server for browser,
 
   Windows desktop, and vision/OCR tasks. Use when: first time using hands,
 
@@ -11,11 +11,11 @@ description: 'Getting started with Hands -- the 116-tool automation server for b
 
 ## What Hands Is
 
-A single MCP server (hands.exe) with 116 tools across 4 subsystems. It replaces pixel-guessing with structured, fast automation.
+A single MCP server (hands.exe) with 117 tools across 5 subsystems. It replaces pixel-guessing with structured, fast automation.
 
 | Subsystem | Prefix | Tools | What It Does |
 |-----------|--------|-------|-------------|
-| Browser | browser_* | 51 | Playwright-based. DOM, JS, network, forms, tabs. |
+| Browser | browser_* | 67 | chromiumoxide CDP. DOM, JS, network, forms, tabs. |
 | UIA | uia_* | 16 | Windows UI Automation. Native app control. |
 | Vision | vision_* | 9 | Screenshots, OCR, template match, image diff. |
 | Combo | (mixed) | 11 | Cross-subsystem: drag, file_upload, find_and_click, read_screen_text, etc. |
@@ -168,7 +168,7 @@ hands:browser_batch(actions=[
 ## Key Differences from Claude Computer Use
 
 Hands is NOT pixel-guessing. It uses structured APIs:
-- **Browser**: Playwright selectors (CSS, XPath, text) -- precise, fast, no screenshots needed
+- **Browser**: chromiumoxide CDP selectors (CSS, XPath, text) -- precise, fast, no screenshots needed
 - **UIA**: Windows Accessibility tree -- finds elements by name, role, state
 - **Vision**: OCR engine + template matching -- structured text extraction, not model interpretation
 

@@ -18,7 +18,7 @@ This guide covers everything you need to do on each machine where you want to ru
 - **Chrome profile path:** `%LOCALAPPDATA%\CPC\chrome-debug-profile` — created on first `browser_debug_launch` call, persists logins across sessions. This path is per-machine; each machine builds its own profile independently.
 - **Vision OCR:** Uses Windows OCR APIs built into Windows 10/11. Works out of the box — no additional install required.
 - **UIA tools:** Windows UI Automation requires accessibility permissions to be enabled if you're accessing processes running at elevated privilege. If `uia_find` fails on a system dialog or elevated-privilege window, check that your Claude Desktop process has the right permissions or run as administrator for testing.
-- **Playwright (browser tier):** Browser binaries are auto-managed by Playwright on first use. On first `browser_launch`, Playwright downloads Chromium to its local cache. Internet access is required the first time on each machine.
+- **Chrome (browser tier):** Hands connects to Chrome over CDP (Chrome DevTools Protocol) via chromiumoxide. Chrome must be installed normally on each machine. Use `browser_debug_launch` to start Chrome with the debug port, or `browser_attach` to connect to an already-running instance with `--remote-debugging-port=9222`. No browser binaries are downloaded or managed by Hands.
 
 **Test post-install:** `hands:browser_status` should return a clean status with no errors.
 

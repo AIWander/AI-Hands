@@ -7,11 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v1.3.5 - 2026-05-01
+
+### Changed
+
+- **cargo fmt** — reformatted `src/atomic.rs` and `src/main.rs` to pass `cargo fmt --all -- --check`.
+- **cargo clippy cleanup** — fixed 32 errors across 11 distinct lints (`collapsible_if`, `if_same_then_else`, `manual_map`, `manual_contains`, `single_match`, `needless_range_loop`, `needless_borrows_for_generic_args`, `unnecessary_cast`, `unnecessary_map_or`, `useless_format`, `regex_creation_in_loops`). Two regex compilations hoisted out of loop in `browser_learn_api`.
+- **README: corrected "Playwright" to chromiumoxide** — Hands uses [chromiumoxide](https://github.com/mattsse/chromiumoxide), a pure-Rust CDP client, not Playwright. Fixed 28 stale references across README.md, CHANGELOG.md, docs/, and skills/.
+- **README: collapsed install sections** — merged separate Windows x64 and ARM64 install sections into one.
+- **README: tool count 116 to 117** — corrected to match actual source tool count.
+- **README: expanded capability inventory** — added sections for stealth mode, a11y-first targeting, multi-context isolation, network interception, API discovery, cross-server graduation pipeline, unattended 2FA, UIA window management, vision template matching, and meta-tool escalation ladder.
+- **README: trimmed "Related repos" header** — removed `cpc-paths` and `cpc-breadcrumbs` (shared library crates, not user-facing servers).
+- **README: email mailto link** — plain text email replaced with clickable `mailto:` link.
+- **Version alignment** — Cargo.toml, README.md, and CHANGELOG.md all at v1.3.5.
+
 ### Added
 
 - **GitHub Actions release workflow** — `v*` tag push builds x64 (windows-latest) + ARM64 (windows-11-arm native) binaries, attaches to draft release as `hands-vX.Y.Z-x64.exe` / `hands-vX.Y.Z-aarch64.exe`.
 - **SECURITY.md** — security policy and reporting instructions.
-- **Platform-split install docs** — README install section split into self-contained Windows x64 and ARM64 sub-sections.
+- **Platform-split install docs** — README install section now covers both x64 and ARM64 in a single section with binary naming convention.
 
 ## v1.3.4 - 2026-04-29
 
@@ -79,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Initial release with 116 MCP tools across 5 automation tiers
-- Browser automation via Playwright CDP (navigate, click, fill, screenshot, eval, and more)
+- Browser automation via chromiumoxide CDP (navigate, click, fill, screenshot, eval, and more)
 - Windows UI Automation via COM (find elements, click, type, read values, manage windows)
 - Vision tier: screenshot capture, OCR text extraction, template matching, image diff
 - Accessibility snapshot support for structured page inspection

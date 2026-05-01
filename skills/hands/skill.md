@@ -9,10 +9,10 @@ description: |
 
 # Hands MCP Server -- Skill Reference
 
-Hands is a single Rust binary that gives you browser automation (Playwright CDP),
+Hands is a single Rust binary that gives you browser automation (chromiumoxide CDP),
 Windows desktop automation (UI Automation), vision (OCR + template matching), and
 a workflow subsystem (API discovery, flow recording, credential storage) -- all over
-MCP. ~87 tools, zero runtime dependencies, one process.
+MCP. 117 tools, zero runtime dependencies, one process.
 
 This skill teaches you how to use it well, not just what buttons exist.
 
@@ -633,8 +633,8 @@ survives window moves and resolution changes.
 
 ### Browser won't launch
 
-- Playwright binaries auto-download on first use. If behind a proxy, set
-  `HTTPS_PROXY` env var or install manually: `npx playwright install chromium`.
+- Hands connects to Chrome over CDP. Use `browser_debug_launch` to start Chrome
+  with `--remote-debugging-port=9222`, or launch Chrome manually with that flag.
 - Check that no other Hands process is holding the browser lock.
 
 ### a11y_ref returns "element not found"

@@ -1,6 +1,6 @@
 ---
 title: "Hands MCP Server — Desktop Automation for AI Agents"
-description: "Getting started guide for the Hands Rust MCP server. Gives Claude and other AI agents browser automation via Playwright CDP, Windows UI Automation, and vision (OCR + template matching) through 116 tools over the Model Context Protocol."
+description: "Getting started guide for the Hands Rust MCP server. Gives Claude and other AI agents browser automation via chromiumoxide CDP, Windows UI Automation, and vision (OCR + template matching) through 117 tools over the Model Context Protocol."
 keywords:
   - MCP server
   - model context protocol server
@@ -9,7 +9,7 @@ keywords:
   - AI agent tools
   - Claude tools
   - browser automation rust
-  - playwright rust
+  - chromiumoxide rust
   - UI automation Windows
   - accessibility tree automation
   - OCR tool
@@ -30,7 +30,7 @@ keywords:
 
 # Getting Started with Hands
 
-Hands is a Rust MCP server that provides 116 tools for desktop automation across five tiers: Browser (Playwright CDP), Windows UI Automation (UIA), and Vision (OCR + template matching). It connects to Claude Desktop, Claude Code, or any MCP-compatible client over standard JSON-RPC on stdin/stdout.
+Hands is a Rust MCP server that provides 117 tools for desktop automation across five tiers: Browser (chromiumoxide CDP), Windows UI Automation (UIA), and Vision (OCR + template matching). It connects to Claude Desktop, Claude Code, or any MCP-compatible client over standard JSON-RPC on stdin/stdout.
 
 Unlike Claude computer use, which relies on repeated screenshots and pixel-coordinate guessing, Hands gives AI agents direct access to the DOM, the Windows accessibility tree, and dedicated OCR --- each chosen for the task at hand. For a full comparison, see the [README](../README.md).
 
@@ -40,7 +40,7 @@ Unlike Claude computer use, which relies on repeated screenshots and pixel-coord
 
 - **Rust toolchain** (stable, 2021 edition or later)
 - **Windows 10/11** (UIA tools require the Windows accessibility API)
-- **Playwright browser binaries** are auto-managed on first browser launch
+- **Chrome** installed normally (any recent version) — Hands connects to Chrome over CDP, no binaries are downloaded
 
 ### Build from source
 
@@ -82,14 +82,14 @@ Add it to `~/.claude/mcp.json` (global) or `.mcp.json` (per-project):
 }
 ```
 
-Restart Claude Desktop or Claude Code after editing. The 116 tools will appear in your tool list.
+Restart Claude Desktop or Claude Code after editing. The 117 tools will appear in your tool list.
 
 ## Architecture Overview
 
 ```
 hands.exe  (MCP tool server, stdin/stdout JSON-RPC)
   |
-  +-- browser-mcp    Playwright CDP: navigate, click, fill, eval JS, intercept network
+  +-- browser-mcp    chromiumoxide CDP: navigate, click, fill, eval JS, intercept network
   +-- uia-mcp        Windows UI Automation COM: find elements, click, type, window mgmt
   +-- vision-core    Screenshot capture, OCR, template matching, image diff
   +-- combo tools    Cross-tier helpers: find_and_click, read_screen_text, wait_for_visual
@@ -103,7 +103,7 @@ Every example below shows the raw JSON-RPC call. When using Claude Desktop or Cl
 
 ### Browser Tier (60 tools)
 
-The browser tier wraps Playwright over CDP. It handles headless browser sessions, web scraping, form filling, JS evaluation, network interception, multi-tab management, and accessibility snapshots.
+The browser tier wraps chromiumoxide over CDP. It handles headless browser sessions, web scraping, form filling, JS evaluation, network interception, multi-tab management, and accessibility snapshots.
 
 **Navigate and extract text:**
 
@@ -263,7 +263,7 @@ A few tools span multiple tiers for common workflows:
 
 **Stealth mode.** The `browser_launch` and `browser_attach` tools accept a `stealth` parameter that applies anti-detection measures for sites that block headless browsers.
 
-**Browser not launching.** Playwright binaries are downloaded on first use. If the download fails (firewall, proxy), you can install them manually with `npx playwright install chromium` and set the browser path in the launch arguments.
+**Browser not launching.** Hands connects to Chrome over CDP. Use `browser_debug_launch` to start Chrome with `--remote-debugging-port=9222`, or launch Chrome manually with that flag. If Chrome is not installed, install it from https://www.google.com/chrome/.
 
 **UIA elements not found.** Some applications use custom-drawn UI that does not expose UIA elements. In that case, fall back to the vision tier. Use `uia_list_window` first to verify the app exposes an accessibility tree.
 

@@ -17,23 +17,18 @@
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
-use super::response::{MetaToolResult, RungAttempt, Confidence, Reversibility};
 use super::error::MetaError;
 use super::instrumentation;
+use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
+use super::save_dialog::{self, parse_save_dialog_action, SaveDialogAction};
 use super::session::SharedSession;
 use super::window_match::{
-    self, WindowMatch, MatchMode, Monitor, WindowMatchResult,
-    parse_window_match, parse_match_mode, parse_monitor, find_single_window,
-};
-use super::save_dialog::{
-    self, SaveDialogAction, parse_save_dialog_action,
+    find_single_window, parse_match_mode, parse_monitor, parse_window_match, MatchMode, Monitor,
+    WindowMatch,
 };
 use crate::atomic::{
-    AtomicTool,
-    UiaFocusWindow, UiaKeyPress, UiaTypeText,
-    UiaFind, UiaClick,
-    UiaWindowState, UiaWindowSnap,
-    UiaListWindow, UiaGetState,
+    AtomicTool, UiaClick, UiaFind, UiaFocusWindow, UiaGetState, UiaKeyPress, UiaListWindow,
+    UiaTypeText, UiaWindowSnap, UiaWindowState,
 };
 
 // ── App launch helper (avoids routing through uia_lib which doesn't know combo tools) ──
@@ -43,10 +38,10 @@ use crate::atomic::{
 /// where uia_lib::handle_tool_call("uia_app_launch", ...) returns "Unknown tool".
 #[cfg(windows)]
 fn launch_application(spec: &str) -> Value {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::Shell::ShellExecuteW;
     use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-    use windows::Win32::Foundation::HWND;
-    use windows::core::PCWSTR;
 
     fn to_wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -94,8 +89,16 @@ fn launch_application(spec: &str) -> Value {
 
 /// Supported window actions.
 const VALID_ACTIONS: &[&str] = &[
-    "open", "close", "focus", "minimize", "maximize", "restore",
-    "snap_left", "snap_right", "snap_top", "snap_bottom",
+    "open",
+    "close",
+    "focus",
+    "minimize",
+    "maximize",
+    "restore",
+    "snap_left",
+    "snap_right",
+    "snap_top",
+    "snap_bottom",
 ];
 
 pub async fn handle(
@@ -114,11 +117,17 @@ pub async fn handle(
         Some(a) => a.to_string(),
         None => {
             instrumentation::log_aggregate(
-                "hands_app_action", &call_id, false, "", 0, 0, None, Some("action is required"),
+                "hands_app_action",
+                &call_id,
+                false,
+                "",
+                0,
+                0,
+                None,
+                Some("action is required"),
             );
-            return MetaToolResult::failure(
-                vec![], MetaError::other("action is required"), 0,
-            ).to_value();
+            return MetaToolResult::failure(vec![], MetaError::other("action is required"), 0)
+                .to_value();
         }
     };
 
@@ -129,19 +138,39 @@ pub async fn handle(
             VALID_ACTIONS.join(", ")
         );
         instrumentation::log_aggregate(
-            "hands_app_action", &call_id, false, "", 0, 0, None, Some(&msg),
+            "hands_app_action",
+            &call_id,
+            false,
+            "",
+            0,
+            0,
+            None,
+            Some(&msg),
         );
         return MetaToolResult::failure(vec![], MetaError::other(msg), 0).to_value();
     }
 
-    let launch_spec = args.get("launch_spec").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let launch_spec = args
+        .get("launch_spec")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let window_match_parsed = parse_window_match(args);
     let match_mode = parse_match_mode(args.get("match_mode").and_then(|v| v.as_str()));
-    let on_save_dialog = parse_save_dialog_action(args.get("on_save_dialog").and_then(|v| v.as_str()));
+    let on_save_dialog =
+        parse_save_dialog_action(args.get("on_save_dialog").and_then(|v| v.as_str()));
     let monitor = parse_monitor(args);
-    let _wait_ready = args.get("wait_ready").and_then(|v| v.as_bool()).unwrap_or(true);
-    let timeout_ms = args.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(10000);
-    let force_close = args.get("force_close").and_then(|v| v.as_bool()).unwrap_or(false);
+    let _wait_ready = args
+        .get("wait_ready")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let timeout_ms = args
+        .get("timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10000);
+    let force_close = args
+        .get("force_close")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let ctx = json!({
         "action": &action,
@@ -153,26 +182,72 @@ pub async fn handle(
 
     // Dispatch to action handler
     let result = match action.as_str() {
-        "open" => handle_open(
-            &launch_spec, &window_match_parsed, &monitor, timeout_ms,
-            &call_id, &ctx, &mut rungs_tried, session,
-        ).await,
-        "close" => handle_close(
-            &window_match_parsed, &match_mode, &on_save_dialog, force_close,
-            timeout_ms, &call_id, &ctx, &mut rungs_tried, session,
-        ).await,
-        "focus" => handle_focus(
-            &window_match_parsed, &match_mode, timeout_ms,
-            &call_id, &ctx, &mut rungs_tried, session,
-        ).await,
-        "minimize" | "maximize" | "restore" => handle_window_state(
-            &action, &window_match_parsed, &match_mode, timeout_ms,
-            &call_id, &ctx, &mut rungs_tried, session,
-        ).await,
-        "snap_left" | "snap_right" | "snap_top" | "snap_bottom" => handle_snap(
-            &action, &window_match_parsed, &match_mode, &monitor, timeout_ms,
-            &call_id, &ctx, &mut rungs_tried, session,
-        ).await,
+        "open" => {
+            handle_open(
+                &launch_spec,
+                &window_match_parsed,
+                &monitor,
+                timeout_ms,
+                &call_id,
+                &ctx,
+                &mut rungs_tried,
+                session,
+            )
+            .await
+        }
+        "close" => {
+            handle_close(
+                &window_match_parsed,
+                &match_mode,
+                &on_save_dialog,
+                force_close,
+                timeout_ms,
+                &call_id,
+                &ctx,
+                &mut rungs_tried,
+                session,
+            )
+            .await
+        }
+        "focus" => {
+            handle_focus(
+                &window_match_parsed,
+                &match_mode,
+                timeout_ms,
+                &call_id,
+                &ctx,
+                &mut rungs_tried,
+                session,
+            )
+            .await
+        }
+        "minimize" | "maximize" | "restore" => {
+            handle_window_state(
+                &action,
+                &window_match_parsed,
+                &match_mode,
+                timeout_ms,
+                &call_id,
+                &ctx,
+                &mut rungs_tried,
+                session,
+            )
+            .await
+        }
+        "snap_left" | "snap_right" | "snap_top" | "snap_bottom" => {
+            handle_snap(
+                &action,
+                &window_match_parsed,
+                &match_mode,
+                &monitor,
+                timeout_ms,
+                &call_id,
+                &ctx,
+                &mut rungs_tried,
+                session,
+            )
+            .await
+        }
         _ => unreachable!(), // validated above
     };
 
@@ -182,8 +257,14 @@ pub async fn handle(
         Ok(payload) => {
             let reversibility = action_reversibility(&action);
             instrumentation::log_aggregate(
-                "hands_app_action", &call_id, true, &action,
-                rungs_tried.len(), elapsed, Some(0.95), None,
+                "hands_app_action",
+                &call_id,
+                true,
+                &action,
+                rungs_tried.len(),
+                elapsed,
+                Some(0.95),
+                None,
             );
             MetaToolResult::success(&action, rungs_tried, payload, elapsed)
                 .with_confidence(Confidence::method_only(0.95))
@@ -193,8 +274,14 @@ pub async fn handle(
         Err(error) => {
             let error_msg = error.to_string();
             instrumentation::log_aggregate(
-                "hands_app_action", &call_id, false, &action,
-                rungs_tried.len(), elapsed, None, Some(&error_msg),
+                "hands_app_action",
+                &call_id,
+                false,
+                &action,
+                rungs_tried.len(),
+                elapsed,
+                None,
+                Some(&error_msg),
             );
             MetaToolResult::failure(rungs_tried, error, elapsed).to_value()
         }
@@ -208,15 +295,15 @@ async fn handle_open(
     launch_spec: &Option<String>,
     window_match: &Option<WindowMatch>,
     monitor: &Option<Monitor>,
-    timeout_ms: u64,
+    _timeout_ms: u64,
     call_id: &str,
     ctx: &Value,
     rungs: &mut Vec<RungAttempt>,
     session: &SharedSession,
 ) -> Result<Value, MetaError> {
-    let spec = launch_spec.as_deref().ok_or_else(|| {
-        MetaError::other("launch_spec is required for open action")
-    })?;
+    let spec = launch_spec
+        .as_deref()
+        .ok_or_else(|| MetaError::other("launch_spec is required for open action"))?;
 
     // Rung 1: launch application directly (ShellExecuteW + Start menu fallback)
     // NOTE: Previously called uia_lib::handle_tool_call("uia_app_launch", ...) which
@@ -226,17 +313,36 @@ async fn handle_open(
     let launch_result = launch_application(spec);
     let rung_ms = rung_start.elapsed().as_millis() as u64;
 
-    let launch_ok = launch_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+    let launch_ok = launch_result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     if launch_ok {
         rungs.push(RungAttempt::ok("uia_app_launch", rung_ms));
         instrumentation::log_rung_attempt(
-            "hands_app_action", call_id, "uia_app_launch", true, rung_ms, Some(0.95), ctx,
+            "hands_app_action",
+            call_id,
+            "uia_app_launch",
+            true,
+            rung_ms,
+            Some(0.95),
+            ctx,
         );
     } else {
-        rungs.push(RungAttempt::failed("uia_app_launch", rung_ms, "Launch failed or no window"));
+        rungs.push(RungAttempt::failed(
+            "uia_app_launch",
+            rung_ms,
+            "Launch failed or no window",
+        ));
         instrumentation::log_rung_attempt(
-            "hands_app_action", call_id, "uia_app_launch", false, rung_ms, None, ctx,
+            "hands_app_action",
+            call_id,
+            "uia_app_launch",
+            false,
+            rung_ms,
+            None,
+            ctx,
         );
         return Err(MetaError::other(format!(
             "Failed to launch '{}': {}",
@@ -253,10 +359,13 @@ async fn handle_open(
     // Record monitor stickiness
     if let Some(ref wm) = window_match {
         let title = wm.title.as_deref().unwrap_or(spec);
-        let monitor_idx = monitor.as_ref().map(|m| match m {
-            Monitor::Index(i) => *i,
-            _ => 0,
-        }).unwrap_or(0);
+        let monitor_idx = monitor
+            .as_ref()
+            .map(|m| match m {
+                Monitor::Index(i) => *i,
+                _ => 0,
+            })
+            .unwrap_or(0);
 
         let mut s = session.write().unwrap_or_else(|e| e.into_inner());
         s.record_window_monitor(title, monitor_idx, 1.0);
@@ -281,7 +390,7 @@ async fn handle_close(
     call_id: &str,
     ctx: &Value,
     rungs: &mut Vec<RungAttempt>,
-    session: &SharedSession,
+    _session: &SharedSession,
 ) -> Result<Value, MetaError> {
     let wm = window_match.as_ref().ok_or_else(|| {
         MetaError::other("window_match (title, process, or automation_id) is required for close")
@@ -302,7 +411,13 @@ async fn handle_close(
     let rung_ms = rung_start.elapsed().as_millis() as u64;
     rungs.push(RungAttempt::ok("focus_before_close", rung_ms));
     instrumentation::log_rung_attempt(
-        "hands_app_action", call_id, "focus_before_close", true, rung_ms, None, ctx,
+        "hands_app_action",
+        call_id,
+        "focus_before_close",
+        true,
+        rung_ms,
+        None,
+        ctx,
     );
 
     // Send Alt+F4
@@ -311,7 +426,13 @@ async fn handle_close(
     let rung_ms = rung_start.elapsed().as_millis() as u64;
     rungs.push(RungAttempt::ok("alt_f4", rung_ms));
     instrumentation::log_rung_attempt(
-        "hands_app_action", call_id, "alt_f4", true, rung_ms, None, ctx,
+        "hands_app_action",
+        call_id,
+        "alt_f4",
+        true,
+        rung_ms,
+        None,
+        ctx,
     );
 
     // Poll for save dialog — it may take up to 2s to appear after Alt+F4.
@@ -355,10 +476,20 @@ async fn handle_close(
         // Try 4 (Phase C fix3): Direct button probe — look for known save-dialog
         // buttons by name, which catches dialogs even when detect_save_dialog misses
         // because UIA find returns items in an unexpected format.
-        let probe_buttons = ["Don't Save", "Do&n't Save", "&Don't Save", "Save", "&Save", "No", "&No", "Discard"];
+        let probe_buttons = [
+            "Don't Save",
+            "Do&n't Save",
+            "&Don't Save",
+            "Save",
+            "&Save",
+            "No",
+            "&No",
+            "Discard",
+        ];
         let mut found_buttons = Vec::new();
         for btn_name in &probe_buttons {
-            let probe = UiaFind.call(&json!({"name": btn_name, "role": "button", "max_results": 1}));
+            let probe =
+                UiaFind.call(&json!({"name": btn_name, "role": "button", "max_results": 1}));
             if let Some(items) = probe.get("items").and_then(|v| v.as_array()) {
                 if !items.is_empty() {
                     found_buttons.push(btn_name.to_string());
@@ -379,8 +510,13 @@ async fn handle_close(
     let dialog_poll_ms = dialog_poll_start.elapsed().as_millis() as u64;
     rungs.push(RungAttempt::ok("dialog_poll", dialog_poll_ms));
     instrumentation::log_rung_attempt(
-        "hands_app_action", call_id, "dialog_poll",
-        dialog_info_found.is_some(), dialog_poll_ms, None, ctx,
+        "hands_app_action",
+        call_id,
+        "dialog_poll",
+        dialog_info_found.is_some(),
+        dialog_poll_ms,
+        None,
+        ctx,
     );
 
     if let Some(dialog_info) = dialog_info_found {
@@ -394,8 +530,13 @@ async fn handle_close(
                     let rung_ms = rung_start.elapsed().as_millis() as u64;
                     rungs.push(RungAttempt::ok("dialog_button_click", rung_ms));
                     instrumentation::log_rung_attempt(
-                        "hands_app_action", call_id, "dialog_button_click", true,
-                        rung_ms, None, ctx,
+                        "hands_app_action",
+                        call_id,
+                        "dialog_button_click",
+                        true,
+                        rung_ms,
+                        None,
+                        ctx,
                     );
                     dialog_handled = true;
                 } else {
@@ -494,20 +635,44 @@ async fn handle_focus(
     };
     let rung_ms = rung_start.elapsed().as_millis() as u64;
 
-    let focus_ok = focus_result.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+    let focus_ok = focus_result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     if focus_ok {
-        let method = if used_hwnd { "uia_focus_window(hwnd)" } else { "uia_focus_window(title)" };
+        let method = if used_hwnd {
+            "uia_focus_window(hwnd)"
+        } else {
+            "uia_focus_window(title)"
+        };
         rungs.push(RungAttempt::ok(method, rung_ms));
         instrumentation::log_rung_attempt(
-            "hands_app_action", call_id, "uia_focus_window", true, rung_ms, Some(0.95), ctx,
+            "hands_app_action",
+            call_id,
+            "uia_focus_window",
+            true,
+            rung_ms,
+            Some(0.95),
+            ctx,
         );
     } else {
-        let error_detail = focus_result.get("error")
+        let error_detail = focus_result
+            .get("error")
             .and_then(|v| v.as_str())
             .unwrap_or("focus primitive returned failure");
-        rungs.push(RungAttempt::failed("uia_focus_window", rung_ms, error_detail));
+        rungs.push(RungAttempt::failed(
+            "uia_focus_window",
+            rung_ms,
+            error_detail,
+        ));
         instrumentation::log_rung_attempt(
-            "hands_app_action", call_id, "uia_focus_window", false, rung_ms, None, ctx,
+            "hands_app_action",
+            call_id,
+            "uia_focus_window",
+            false,
+            rung_ms,
+            None,
+            ctx,
         );
         return Err(MetaError::FocusLost {
             expected: target_title.clone(),
@@ -563,20 +728,40 @@ async fn handle_window_state(
     let state_result = UiaWindowState.call(&state_args);
     let rung_ms = rung_start.elapsed().as_millis() as u64;
 
-    let state_ok = state_result.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+    let state_ok = state_result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     if state_ok {
         rungs.push(RungAttempt::ok("uia_window_state", rung_ms));
         instrumentation::log_rung_attempt(
-            "hands_app_action", call_id, "uia_window_state", true, rung_ms, Some(0.95), ctx,
+            "hands_app_action",
+            call_id,
+            "uia_window_state",
+            true,
+            rung_ms,
+            Some(0.95),
+            ctx,
         );
     } else {
-        rungs.push(RungAttempt::failed("uia_window_state", rung_ms, "State change failed"));
+        rungs.push(RungAttempt::failed(
+            "uia_window_state",
+            rung_ms,
+            "State change failed",
+        ));
         instrumentation::log_rung_attempt(
-            "hands_app_action", call_id, "uia_window_state", false, rung_ms, None, ctx,
+            "hands_app_action",
+            call_id,
+            "uia_window_state",
+            false,
+            rung_ms,
+            None,
+            ctx,
         );
         return Err(MetaError::other(format!(
             "Failed to {} window '{}': {}",
-            action, target_title,
+            action,
+            target_title,
             serde_json::to_string(&state_result).unwrap_or_default()
         )));
     }
@@ -644,28 +829,49 @@ async fn handle_snap(
         json!({"title": &target_title, "direction": direction})
     };
     if let Some(idx) = monitor_idx {
-        snap_args.as_object_mut().unwrap().insert(
-            "monitor".to_string(), json!(idx),
-        );
+        snap_args
+            .as_object_mut()
+            .unwrap()
+            .insert("monitor".to_string(), json!(idx));
     }
 
     let snap_result = UiaWindowSnap.call(&snap_args);
     let rung_ms = rung_start.elapsed().as_millis() as u64;
 
-    let snap_ok = snap_result.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+    let snap_ok = snap_result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     if snap_ok {
         rungs.push(RungAttempt::ok("uia_window_snap", rung_ms));
         instrumentation::log_rung_attempt(
-            "hands_app_action", call_id, "uia_window_snap", true, rung_ms, Some(0.9), ctx,
+            "hands_app_action",
+            call_id,
+            "uia_window_snap",
+            true,
+            rung_ms,
+            Some(0.9),
+            ctx,
         );
     } else {
-        rungs.push(RungAttempt::failed("uia_window_snap", rung_ms, "Snap failed"));
+        rungs.push(RungAttempt::failed(
+            "uia_window_snap",
+            rung_ms,
+            "Snap failed",
+        ));
         instrumentation::log_rung_attempt(
-            "hands_app_action", call_id, "uia_window_snap", false, rung_ms, None, ctx,
+            "hands_app_action",
+            call_id,
+            "uia_window_snap",
+            false,
+            rung_ms,
+            None,
+            ctx,
         );
         return Err(MetaError::other(format!(
             "Failed to snap window '{}' {}: {}",
-            target_title, direction,
+            target_title,
+            direction,
             serde_json::to_string(&snap_result).unwrap_or_default()
         )));
     }
@@ -705,7 +911,8 @@ async fn handle_snap(
 /// List all windows via UiaListWindow, returning the array of window objects.
 fn list_windows() -> Vec<Value> {
     let result = UiaListWindow.call(&json!({}));
-    result.get("windows")
+    result
+        .get("windows")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default()
@@ -717,7 +924,8 @@ fn verify_foreground_window(
     fallback_title: &str,
 ) -> Result<(), MetaError> {
     let fg_result = UiaGetState.call(&json!({"property": "foreground_window"}));
-    let fg_title = fg_result.get("title")
+    let fg_title = fg_result
+        .get("title")
         .or_else(|| fg_result.get("name"))
         .or_else(|| fg_result.get("foreground_title"))
         .and_then(|v| v.as_str())
@@ -728,7 +936,10 @@ fn verify_foreground_window(
         .and_then(|wm| wm.title.as_deref())
         .unwrap_or(fallback_title);
 
-    if fg_title.to_lowercase().contains(&expected_title.to_lowercase()) {
+    if fg_title
+        .to_lowercase()
+        .contains(&expected_title.to_lowercase())
+    {
         Ok(())
     } else {
         Err(MetaError::FocusLost {
