@@ -243,6 +243,29 @@ jobs:
           else:
               print("All version checks passed.")
 
+  mcpb-manifest-check:
+    name: MCPB Manifest Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify manifest.json version matches Cargo.toml
+        shell: bash
+        run: |
+          if [ ! -f "mcpb/manifest.json" ]; then
+            echo "::warning::No mcpb/manifest.json found, skipping check"
+            exit 0
+          fi
+          CARGO_VER=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          MCPB_VER=$(python3 -c "import json; print(json.load(open('mcpb/manifest.json'))['version'])")
+          echo "Cargo.toml version: $CARGO_VER"
+          echo "manifest.json version: $MCPB_VER"
+          if [ "$CARGO_VER" != "$MCPB_VER" ]; then
+            echo "::error::Version mismatch: Cargo.toml=$CARGO_VER, mcpb/manifest.json=$MCPB_VER"
+            exit 1
+          fi
+          echo "OK: versions aligned at $CARGO_VER"
+
   cpc-leakage-scan:
     name: CPC Leakage Scanner
     runs-on: ubuntu-latest
