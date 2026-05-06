@@ -101,7 +101,7 @@ All three tiers compile into one binary. The MCP server reads JSON-RPC requests 
 
 Every example below shows the raw JSON-RPC call. When using Claude Desktop or Claude Code, the client builds these calls automatically from natural-language requests.
 
-### Browser Tier (60 tools)
+### Browser Tier (67 tools)
 
 The browser tier wraps chromiumoxide over CDP. It handles headless browser sessions, web scraping, form filling, JS evaluation, network interception, multi-tab management, and accessibility snapshots.
 
@@ -162,7 +162,7 @@ The browser tier wraps chromiumoxide over CDP. It handles headless browser sessi
 
 Other notable browser tools: `browser_eval` (run arbitrary JS), `browser_get_forms` (discover form fields), `browser_scroll_collect` (paginate and collect), `browser_http_scrape` (lightweight fetch without a full browser), `browser_a11y_snapshot` (accessibility tree dump).
 
-### UIA Tier (12 tools)
+### UIA Tier (18 tools)
 
 The Windows UI Automation tier interacts with native desktop applications through the accessibility tree --- no pixel guessing required. It can find elements by name, control type, or automation ID, then click, type, read values, and manage windows.
 

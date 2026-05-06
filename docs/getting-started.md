@@ -110,7 +110,7 @@ All three tiers compile into one binary. The MCP server reads JSON-RPC requests 
 
 Every example below shows the raw JSON-RPC call. When using Claude Desktop or Claude Code, the client builds these calls automatically from natural-language requests.
 
-### Browser Tier (66 tools)
+### Browser Tier (67 tools)
 
 The browser tier wraps chromiumoxide over CDP. It handles headless browser sessions, web scraping, form filling, JS evaluation, network interception, multi-tab management, and accessibility snapshots.
 
