@@ -12,6 +12,11 @@ categories = ["command-line-utilities", "development-tools", "web-programming"]
 name = "hands"
 path = "src/main.rs"
 
+[features]
+default = ["desktop"]
+desktop = ["dep:vision-core", "dep:uia-mcp", "dep:cpc-paths", "dep:image", "dep:rqrr"]
+browser-only = []  # Minimal: browser + MCP stdio only (no UIA/vision/desktop)
+
 [dependencies]
 # MCP protocol + async
 tokio = { version = "1", features = ["full"] }
@@ -26,13 +31,13 @@ chrono = "0.4"
 browser-mcp = { git = "https://github.com/AIWander/browser-mcp", tag = "v0.1.1" }
 
 # Vision (shared library - screenshot, OCR, diff, template match)
-vision-core = { git = "https://github.com/AIWander/vision-core", tag = "v0.1.0" }
+vision-core = { git = "https://github.com/AIWander/vision-core", tag = "v0.1.0", optional = true }
 
 # UIA (UI Automation - Windows native element inspection + input)
-uia-mcp = { git = "https://github.com/AIWander/uia-mcp", tag = "v1.0.0" }
+uia-mcp = { git = "https://github.com/AIWander/uia-mcp", tag = "v1.0.0", optional = true }
 
 # Image processing (for PrintWindow capture)
-image = "0.24"
+image = { version = "0.24", optional = true }
 
 # Base64 encoding (for file_upload tool)
 base64 = "0.22"
@@ -41,13 +46,13 @@ base64 = "0.22"
 regex = "1"
 
 # QR code decoding for TOTP 2FA registration
-rqrr = { version = "0.7", default-features = false }
+rqrr = { version = "0.7", default-features = false, optional = true }
 
 # Async utilities (catch_unwind for panic-safe meta-tool dispatch)
 futures = "0.3"
 
 # Path discovery (cpc-paths: resolve Volumes, install, backups paths)
-cpc-paths = { git = "https://github.com/AIWander/cpc-paths", tag = "v0.1.3" }
+cpc-paths = { git = "https://github.com/AIWander/cpc-paths", tag = "v0.1.3", optional = true }
 tiny_http = "0.12"
 
 [dev-dependencies]
