@@ -36,7 +36,10 @@ pub(crate) fn _resolve_hands_log_dir(legacy: &Path) -> anyhow::Result<PathBuf> {
     if legacy.exists() && has_hands_log_data(legacy) {
         return Ok(legacy.to_path_buf());
     }
-    cpc_paths::data_path("hands")
+    #[cfg(feature = "desktop")]
+    { cpc_paths::data_path("hands") }
+    #[cfg(not(feature = "desktop"))]
+    { Ok(std::env::temp_dir().join("hands_logs")) }
 }
 
 /// Returns true if `dir` contains at least one hands_meta log file.

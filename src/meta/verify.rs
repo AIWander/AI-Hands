@@ -24,6 +24,7 @@ use super::nl_parser;
 use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
 use super::session::SharedSession;
 use super::verify_templates;
+#[cfg(feature = "desktop")]
 use crate::atomic::{AtomicTool, UiaFindElement};
 
 /// Main entry point for hands_verify.
@@ -612,7 +613,8 @@ async fn run_verification_ladder(
         }
     }
 
-    // Rung 4: OCR fallback (throttled to 2s minimum gap)
+    // Rung 4: OCR fallback (gated behind desktop feature)
+    #[cfg(feature = "desktop")]
     if matches!(config.check_mode, VerifyMode::Text) && !config.target.is_empty() {
         let should_run_ocr = match last_ocr_time {
             Some(t) => t.elapsed().as_millis() >= 2000,
@@ -696,7 +698,8 @@ async fn run_verification_ladder(
         }
     }
 
-    // Rung 5: UIA text search (desktop)
+    // Rung 5: UIA text search (gated behind desktop feature)
+    #[cfg(feature = "desktop")]
     if use_desktop && matches!(config.check_mode, VerifyMode::Text) && !config.target.is_empty() {
         let rung_start = Instant::now();
         let result = run_uia_text_search(&config.target, config.negated);
@@ -1003,6 +1006,7 @@ async fn run_element_query(
 }
 
 /// Rung 4: OCR text search.
+#[cfg(feature = "desktop")]
 async fn run_ocr_search(target: &str, negated: bool) -> RungResult {
     let ocr_result = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
     let ocr_text = ocr_result
@@ -1036,6 +1040,7 @@ async fn run_ocr_search(target: &str, negated: bool) -> RungResult {
 }
 
 /// Rung 5: UIA text search for desktop elements.
+#[cfg(feature = "desktop")]
 fn run_uia_text_search(target: &str, negated: bool) -> RungResult {
     let find_result = UiaFindElement.call(&json!({"name": target, "max_depth": 6}));
 

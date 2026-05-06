@@ -21,6 +21,7 @@ use super::response::{
     adaptive_timeout_multiplier, Confidence, MetaToolResult, Reversibility, RungAttempt,
 };
 use super::session::SharedSession;
+#[cfg(feature = "desktop")]
 use crate::atomic::{AtomicTool, UiaFindElement};
 
 /// The result payload shape for hands_find.
@@ -307,7 +308,8 @@ pub async fn handle(
         return result.to_value();
     }
 
-    // ── RUNG 4: UIA find (desktop) ──
+    // ── RUNG 4: UIA find (desktop, gated) ──
+    #[cfg(feature = "desktop")]
     if use_desktop {
         let rung_start = Instant::now();
         let find_result = UiaFindElement.call(&json!({"name": &target, "max_depth": 8}));
@@ -375,7 +377,8 @@ pub async fn handle(
         );
     }
 
-    // ── RUNG 5: OCR (with monitor iteration on scope=screen) ──
+    // ── RUNG 5: OCR (gated behind desktop feature) ──
+    #[cfg(feature = "desktop")]
     if use_desktop || scope == "screen" {
         let rung_start = Instant::now();
 
@@ -448,7 +451,8 @@ pub async fn handle(
         );
     }
 
-    // ── RUNG 6: Template match (requires template bytes or path) ──
+    // ── RUNG 6: Template match (gated behind desktop feature) ──
+    #[cfg(feature = "desktop")]
     if let Some(template_val) = args.get("template") {
         let rung_start = Instant::now();
         // template can be a file path string or base64-encoded bytes

@@ -51,6 +51,7 @@ pub mod label_match;
 pub mod reversibility;
 
 // ── Meta-tool implementations (Phase A) ──
+#[cfg(feature = "desktop")]
 pub mod capture;
 pub mod click;
 pub mod navigate;
@@ -59,16 +60,21 @@ pub mod read_page;
 // ── Meta-tool implementations (Phase B) ──
 pub mod fill_form;
 pub mod find;
+#[cfg(feature = "desktop")]
 pub mod type_text;
 
 // ── Phase C shared helpers ──
 pub mod nl_parser;
+#[cfg(feature = "desktop")]
 pub mod save_dialog;
 pub mod verify_templates;
+#[cfg(feature = "desktop")]
 pub mod window_match;
 
 // ── Meta-tool implementations (Phase C) ──
+#[cfg(feature = "desktop")]
 pub mod app_action;
+#[cfg(feature = "desktop")]
 pub mod qr_scan;
 pub mod script;
 pub mod templates;
@@ -187,8 +193,40 @@ async fn dispatch_meta_tool(
             .unwrap_or(META_TOOL_TIMEOUT_MS),
     );
 
+    // Desktop-only meta-tools (gated)
+    #[cfg(feature = "desktop")]
+    let result: Option<Result<Value, _>> = match name {
+        "hands_capture" => {
+            Some(tokio::time::timeout(timeout, capture::handle(args, browser, session)).await)
+        }
+        "hands_type" => {
+            Some(tokio::time::timeout(timeout, type_text::handle(args, browser, session)).await)
+        }
+        "hands_scan_qr" => {
+            Some(tokio::time::timeout(timeout, qr_scan::handle(args, browser, session)).await)
+        }
+        "hands_app_action" => {
+            Some(tokio::time::timeout(timeout, app_action::handle(args, browser, session)).await)
+        }
+        _ => None,
+    };
+    #[cfg(not(feature = "desktop"))]
+    let result: Option<Result<Value, _>> = None;
+
+    // Short-circuit if desktop-only tool matched
+    if result.is_some() {
+        return match result {
+            Some(Ok(value)) => Some(value),
+            Some(Err(_elapsed)) => {
+                eprintln!("[hands] META-TOOL TIMEOUT: '{}' exceeded {}ms", name, timeout.as_millis());
+                Some(json!({"success": false, "error": format!("Meta-tool '{}' timed out after {}ms", name, timeout.as_millis()), "timeout": true, "method": name}))
+            }
+            None => None,
+        };
+    }
+
+    // Cross-platform meta-tools (always available)
     let result = match name {
-        // Phase A
         "hands_read_page" => {
             Some(tokio::time::timeout(timeout, read_page::handle(args, browser, session)).await)
         }
@@ -198,28 +236,14 @@ async fn dispatch_meta_tool(
         "hands_navigate" => {
             Some(tokio::time::timeout(timeout, navigate::handle(args, browser, session)).await)
         }
-        "hands_capture" => {
-            Some(tokio::time::timeout(timeout, capture::handle(args, browser, session)).await)
-        }
-        // Phase B
         "hands_find" => {
             Some(tokio::time::timeout(timeout, find::handle(args, browser, session)).await)
-        }
-        "hands_type" => {
-            Some(tokio::time::timeout(timeout, type_text::handle(args, browser, session)).await)
         }
         "hands_fill_form" => {
             Some(tokio::time::timeout(timeout, fill_form::handle(args, browser, session)).await)
         }
-        // Phase C
         "hands_verify" => {
             Some(tokio::time::timeout(timeout, verify::handle(args, browser, session)).await)
-        }
-        "hands_scan_qr" => {
-            Some(tokio::time::timeout(timeout, qr_scan::handle(args, browser, session)).await)
-        }
-        "hands_app_action" => {
-            Some(tokio::time::timeout(timeout, app_action::handle(args, browser, session)).await)
         }
         "hands_script" => Some(
             tokio::time::timeout(timeout, Box::pin(script::handle(args, browser, session))).await,

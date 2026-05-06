@@ -146,8 +146,11 @@ pub fn parse_ntp_drift(w32tm_output: &str) -> Option<i64> {
 /// Aggregated health report for the hands MCP tool.
 /// Combines cpc-paths path status with browser and vision subsystem probes.
 pub fn hands_health() -> serde_json::Value {
+    #[cfg(feature = "desktop")]
     let paths = serde_json::to_value(cpc_paths::health_check())
         .unwrap_or_else(|e| serde_json::json!({"error": format!("serialize: {}", e)}));
+    #[cfg(not(feature = "desktop"))]
+    let paths = serde_json::json!({"note": "cpc-paths not available (browser-only build)"});
 
     let browser_status = probe_browser();
     let vision_status = probe_vision();

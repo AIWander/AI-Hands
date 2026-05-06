@@ -25,6 +25,7 @@ use super::instrumentation;
 use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
 use super::session::SharedSession;
 use super::targeting::classify_reversibility;
+#[cfg(feature = "desktop")]
 use crate::atomic::{AtomicTool, UiaClick, UiaFindElement};
 
 pub async fn handle(
@@ -484,7 +485,8 @@ pub async fn handle(
         }
     }
 
-    // ── DESKTOP RUNGS ──
+    // ── DESKTOP RUNGS (gated behind desktop feature) ──
+    #[cfg(feature = "desktop")]
     if page_context == "desktop" || page_context == "auto" {
         // Rung 6: UIA find → click
         {

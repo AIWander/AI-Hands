@@ -15,11 +15,13 @@ use serde_json::{json, Value};
 use std::io::{BufRead, Write};
 
 mod a11y_cache;
+#[cfg(feature = "desktop")]
 mod atomic;
 mod dashboard_endpoint;
 mod meta;
 mod security;
 mod stealth;
+#[cfg(feature = "desktop")]
 mod uia;
 
 #[cfg(windows)]
@@ -118,17 +120,21 @@ fn get_all_tool_definitions() -> Vec<Value> {
     }
 
     // --- UIA tools (from uia_lib) ---
+    #[cfg(feature = "desktop")]
     for mut t in uia_lib::get_tool_definitions() {
         uia::augment_tool_definition(&mut t);
         tools.push(t);
     }
 
     // --- Vision tools (from vision-core) ---
+    #[cfg(feature = "desktop")]
     for t in vision_core::get_all_definitions() {
         tools.push(t);
     }
 
-    // --- Combo tools (new, unique to Hands) ---
+    // --- Combo tools (desktop: UIA + vision) ---
+    #[cfg(feature = "desktop")]
+    {
     tools.push(json!({
         "name": "find_and_click",
         "description": "Find text on screen via OCR, then click its location via UIA. Combines vision + UIA in one call. When window_title is provided, focuses that window first. When text isn't found on the visible screen, automatically tries focusing other windows to find it.",
@@ -303,7 +309,9 @@ fn get_all_tool_definitions() -> Vec<Value> {
             "required": ["name"]
         }
     }));
+    } // end #[cfg(feature = "desktop")] combo tools
 
+    // --- Browser-only combo tools ---
     tools.push(json!({
         "name": "browser_a11y_snapshot",
         "description": "Get the current page's accessibility tree - the SEMANTIC structure as seen by assistive technology. Returns roles (button, link, heading, textbox, etc.), accessible names, values, and states (disabled, checked, expanded, required, etc.) in a hierarchical tree format. Each node gets a stable ref ID (e.g., 'ref_0') that can be passed to browser_click, browser_type, browser_hover, browser_focus, browser_select as an a11y_ref parameter for targeted interaction. With incremental=true, returns only what changed since the last snapshot (added, removed, changed nodes). Different from browser_get_html (raw DOM) or browser_get_text (plain text) - this shows what a screen reader sees. Requires browser to be launched/attached first.",
@@ -517,6 +525,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
         }
     }));
 
+    #[cfg(feature = "desktop")]
     tools.push(json!({
         "name": "uia_batch",
         "description": "Execute multiple UIA (desktop) actions in sequence. Each action calls the same internal function as the individual tool. Stops on first error unless continue_on_error=true. Returns array of results.",
@@ -557,6 +566,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
 // ============ COMBO TOOL HANDLERS ============
 
+#[cfg(feature = "desktop")]
 async fn handle_find_and_click(args: &Value) -> Value {
     let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
     let button = args
@@ -764,6 +774,7 @@ async fn handle_find_and_click(args: &Value) -> Value {
     result
 }
 
+#[cfg(feature = "desktop")]
 async fn handle_read_screen_text(args: &Value) -> Value {
     // Optionally focus window first
     if let Some(title) = args.get("window_title").and_then(|v| v.as_str()) {
@@ -774,6 +785,7 @@ async fn handle_read_screen_text(args: &Value) -> Value {
     vision_core::execute("vision_screenshot_ocr", &json!({})).await
 }
 
+#[cfg(feature = "desktop")]
 async fn handle_wait_for_visual(args: &Value) -> Value {
     let text = args.get("text").and_then(|v| v.as_str());
     let template = args.get("template_path").and_then(|v| v.as_str());
@@ -854,6 +866,7 @@ async fn handle_wait_for_visual(args: &Value) -> Value {
     }
 }
 
+#[cfg(feature = "desktop")]
 async fn handle_window_screenshot(args: &Value) -> Value {
     let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("");
     let save_path = args.get("save_path").and_then(|v| v.as_str());
@@ -1629,6 +1642,7 @@ fn handle_uia_app_launch(_args: &Value) -> Value {
     json!({"success": false, "error": "App launch only available on Windows"})
 }
 
+#[cfg(feature = "desktop")]
 fn handle_type_into_window(args: &Value) -> Value {
     let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("");
     let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
@@ -1670,6 +1684,7 @@ fn handle_type_into_window(args: &Value) -> Value {
     })
 }
 
+#[cfg(feature = "desktop")]
 fn handle_drag(args: &Value) -> Value {
     let from_x = args.get("from_x").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
     let from_y = args.get("from_y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
@@ -2683,22 +2698,26 @@ async fn handle_element_drag(args: &Value, browser: &browser_mcp::browser::Share
 }
 
 fn handle_hands_status() -> Value {
-    let uia_ok = {
+    #[cfg(feature = "desktop")]
+    let uia_status = {
         let result = uia_lib::handle_tool_call("uia_list_windows", &json!({}));
-        result
+        let uia_ok = result
             .get("success")
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
-            || result.get("windows").is_some()
+            || result.get("windows").is_some();
+        if uia_ok { "active" } else { "unavailable (Windows only)" }
     };
+    #[cfg(not(feature = "desktop"))]
+    let uia_status = "not compiled (browser-only build)";
 
     json!({
         "server": "hands",
         "version": "0.1.0",
         "subsystems": {
             "browser": "available (call browser_launch or browser_attach first)",
-            "uia": if uia_ok { "active" } else { "unavailable (Windows only)" },
-            "vision": "available (screenshot + OCR + template matching)"
+            "uia": uia_status,
+            "vision": if cfg!(feature = "desktop") { "available (screenshot + OCR + template matching)" } else { "not compiled (browser-only build)" }
         },
         "tool_count": get_all_tool_definitions().len(),
         "categories": {
@@ -3252,6 +3271,7 @@ async fn handle_browser_batch(
     json!({"success": true, "results": results, "total": actions.len(), "executed": results.len()})
 }
 
+#[cfg(feature = "desktop")]
 fn handle_uia_batch(args: &Value) -> Value {
     let actions = match args.get("actions").and_then(|v| v.as_array()) {
         Some(a) => a,
@@ -3400,7 +3420,8 @@ async fn handle_tool_call_inner(
         }
     }
 
-    // Combo tools (unique to Hands)
+    // Desktop combo tools (UIA + vision — gated)
+    #[cfg(feature = "desktop")]
     match name {
         "find_and_click" => return handle_find_and_click(args).await,
         "read_screen_text" => return handle_read_screen_text(args).await,
@@ -3413,6 +3434,12 @@ async fn handle_tool_call_inner(
         "uia_window_state" => return handle_uia_window_state(args),
         "uia_window_snap" => return handle_uia_window_snap(args),
         "uia_app_launch" => return handle_uia_app_launch(args),
+        "uia_batch" => return handle_uia_batch(args),
+        _ => {}
+    }
+
+    // Browser + cross-platform combo tools
+    match name {
         "retry_click" => return handle_retry_click(args, browser).await,
         "file_upload" => return handle_file_upload(args, browser).await,
         "status" | "hands_status" => return handle_hands_status(),
@@ -3426,7 +3453,6 @@ async fn handle_tool_call_inner(
         "browser_a11y_find" => return handle_a11y_find(args),
         "browser_get_all_network" => return handle_get_all_network(args, browser).await,
         "browser_learn_api" => return handle_learn_api(args, browser).await,
-        "uia_batch" => return handle_uia_batch(args),
         _ => {}
     }
 
@@ -3718,6 +3744,7 @@ fn handle_request(
 
 fn main() {
     // Orphan-process prevention: kill this process tree when parent dies.
+    #[cfg(feature = "desktop")]
     if let Err(e) = cpc_paths::process::ensure_kill_on_parent_death() {
         eprintln!("[warn] job-object setup failed: {e}");
     }

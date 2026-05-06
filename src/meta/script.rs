@@ -524,9 +524,9 @@ async fn dispatch_underlying_tool(
     args: &Value,
     browser: &browser_mcp::browser::SharedBrowser,
 ) -> Option<Value> {
+    #[cfg(feature = "desktop")]
     if tool.starts_with("uia_") {
         let result = uia_lib::handle_tool_call(tool, args);
-        // Check if uia_lib recognized the tool (vs returning "Unknown tool")
         if result
             .get("error")
             .and_then(|e| e.as_str())
@@ -537,6 +537,7 @@ async fn dispatch_underlying_tool(
         }
         return Some(result);
     }
+    #[cfg(feature = "desktop")]
     if tool.starts_with("vision_") {
         let result = vision_core::execute(tool, args).await;
         return Some(result);
