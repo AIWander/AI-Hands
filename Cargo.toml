@@ -14,7 +14,7 @@ path = "src/main.rs"
 
 [features]
 default = ["desktop"]
-desktop = ["dep:vision-core", "dep:uia-mcp", "dep:cpc-paths", "dep:image", "dep:rqrr"]
+desktop = ["dep:vision-core", "dep:uia-mcp", "dep:cpc-paths", "dep:image", "dep:rqrr", "browser-mcp/ocr"]
 browser-only = []  # Minimal: browser + MCP stdio only (no UIA/vision/desktop)
 
 [dependencies]
@@ -28,7 +28,7 @@ anyhow = "1.0"
 chrono = "0.4"
 
 # Browser lib (CDP, scraping, smart_browse, etc.)
-browser-mcp = { git = "https://github.com/AIWander/browser-mcp", tag = "v0.1.1" }
+browser-mcp = { git = "https://github.com/AIWander/browser-mcp", branch = "main", default-features = false }
 
 # Vision (shared library - screenshot, OCR, diff, template match)
 vision-core = { git = "https://github.com/AIWander/vision-core", tag = "v0.1.0", optional = true }
