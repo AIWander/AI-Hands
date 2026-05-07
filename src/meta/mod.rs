@@ -211,7 +211,7 @@ async fn dispatch_meta_tool(
         _ => None,
     };
     #[cfg(not(feature = "desktop"))]
-    let result: Option<Result<Value, _>> = None;
+    let result: Option<Result<Value, tokio::time::error::Elapsed>> = None;
 
     // Short-circuit if desktop-only tool matched
     if result.is_some() {
