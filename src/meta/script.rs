@@ -398,12 +398,14 @@ async fn execute_step(
             tokio::time::timeout(timeout_dur, super::navigate::handle(args, browser, session))
                 .await,
         ),
+        #[cfg(feature = "desktop")]
         "hands_capture" => Some(
             tokio::time::timeout(timeout_dur, super::capture::handle(args, browser, session)).await,
         ),
         "hands_find" => Some(
             tokio::time::timeout(timeout_dur, super::find::handle(args, browser, session)).await,
         ),
+        #[cfg(feature = "desktop")]
         "hands_type" => Some(
             tokio::time::timeout(
                 timeout_dur,
@@ -421,9 +423,11 @@ async fn execute_step(
         "hands_verify" => Some(
             tokio::time::timeout(timeout_dur, super::verify::handle(args, browser, session)).await,
         ),
+        #[cfg(feature = "desktop")]
         "hands_scan_qr" => Some(
             tokio::time::timeout(timeout_dur, super::qr_scan::handle(args, browser, session)).await,
         ),
+        #[cfg(feature = "desktop")]
         "hands_app_action" => Some(
             tokio::time::timeout(
                 timeout_dur,

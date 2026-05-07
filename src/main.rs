@@ -2589,6 +2589,7 @@ async fn handle_get_all_network(
     })
 }
 
+#[cfg(feature = "desktop")]
 async fn handle_element_drag(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
     let from_selector = match args.get("from_selector").and_then(|v| v.as_str()) {
         Some(s) => s,
@@ -3351,6 +3352,7 @@ fn handle_uia_batch(args: &Value) -> Value {
     json!({"success": true, "results": results, "total": actions.len(), "executed": results.len()})
 }
 
+#[cfg(feature = "desktop")]
 fn dispatch_uia_tool(name: &str, args: &Value) -> Value {
     match name {
         "uia_get_state" => uia::handle_get_state(args),
@@ -3428,6 +3430,7 @@ async fn handle_tool_call_inner(
         "wait_for_visual" => return handle_wait_for_visual(args).await,
         "window_screenshot" => return handle_window_screenshot(args).await,
         "type_into_window" => return handle_type_into_window(args),
+        #[cfg(feature = "desktop")]
         "drag" => return handle_drag(args),
         "uia_window_resize" => return handle_uia_window_resize(args),
         "uia_window_move" => return handle_uia_window_move(args),
@@ -3448,6 +3451,7 @@ async fn handle_tool_call_inner(
             return handle_accessibility_snapshot(args, browser).await
         }
         "browser_get_performance_log" => return handle_get_network_log(args, browser).await,
+        #[cfg(feature = "desktop")]
         "element_drag" => return handle_element_drag(args, browser).await,
         "browser_batch" => return handle_browser_batch(args, browser).await,
         "browser_a11y_find" => return handle_a11y_find(args),
@@ -3650,11 +3654,13 @@ async fn handle_tool_call_inner(
     }
 
     // UIA tools (uia_ prefix)
+    #[cfg(feature = "desktop")]
     if name.starts_with("uia_") {
         return dispatch_uia_tool(name, args);
     }
 
     // Vision tools (vision_ prefix)
+    #[cfg(feature = "desktop")]
     if name.starts_with("vision_") {
         return vision_core::execute(name, args).await;
     }

@@ -414,24 +414,29 @@ pub async fn handle(
             }
             _ => {
                 // Text-like field: use hands_type internally
-                let type_result = super::type_text::handle(
-                    &json!({
-                        "target": label,
-                        "text": value_str,
-                        "clear_first": true,
-                        "verify_focus": true,
-                        "fast_set": !field_role.is_sensitive(),
-                    }),
-                    browser,
-                    session,
-                )
-                .await;
-
-                let ok = type_result
-                    .get("success")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                (ok, "typed")
+                #[cfg(feature = "desktop")]
+                let (ok, method) = {
+                    let type_result = super::type_text::handle(
+                        &json!({
+                            "target": label,
+                            "text": value_str,
+                            "clear_first": true,
+                            "verify_focus": true,
+                            "fast_set": !field_role.is_sensitive(),
+                        }),
+                        browser,
+                        session,
+                    )
+                    .await;
+                    let ok = type_result
+                        .get("success")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    (ok, "typed")
+                };
+                #[cfg(not(feature = "desktop"))]
+                let (ok, method) = (false, "unsupported_no_desktop");
+                (ok, method)
             }
         };
 
