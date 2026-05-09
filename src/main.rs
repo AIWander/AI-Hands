@@ -3462,6 +3462,41 @@ async fn handle_tool_call_inner(
 
     // Browser tools (prefixed with browser_)
     if let Some(browser_tool) = name.strip_prefix("browser_") {
+        // Auto-launch browser if not running and this isn't a launch/close/attach tool
+        const LAUNCH_TOOLS: &[&str] = &["launch", "close", "debug_launch", "attach", "exists", "status"];
+        if !LAUNCH_TOOLS.contains(&browser_tool) {
+            let active = meta::browser_is_active(browser).await;
+            if !active {
+                eprintln!("[hands] Browser not active for browser_{} — auto-launching", browser_tool);
+                let launch_result =
+                    browser_mcp::tools::handle_tool(browser, "launch", json!({"headless": false}))
+                        .await;
+                if launch_result.is_error {
+                    // Headful failed (no display?), try headless
+                    eprintln!("[hands] Headful auto-launch failed, trying headless");
+                    let hl_result =
+                        browser_mcp::tools::handle_tool(browser, "launch", json!({"headless": true}))
+                            .await;
+                    if hl_result.is_error {
+                        let err_text: String = hl_result
+                            .content
+                            .iter()
+                            .filter_map(|c| match c {
+                                browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        return json!({
+                            "success": false,
+                            "error": format!("Auto-launch failed (both headful and headless). Launch browser first. Detail: {}", err_text)
+                        });
+                    }
+                }
+                eprintln!("[hands] Auto-launch succeeded");
+            }
+        }
+
         if let Some(url) = get_browser_url(browser).await {
             if let Err(message) = security::check_browser_write_action(&url, browser_tool) {
                 return json!({"success": false, "error": message});

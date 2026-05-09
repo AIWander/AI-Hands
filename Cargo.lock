@@ -124,8 +124,8 @@ dependencies = [
 
 [[package]]
 name = "browser-mcp"
-version = "0.1.1"
-source = "git+https://github.com/AIWander/browser-mcp?tag=v0.1.1#37c34c24f894243f80425423e6e9eae482080a14"
+version = "0.1.2"
+source = "git+https://github.com/AIWander/browser-mcp?branch=main#785f4a3a355d743c572b81d0c191e0c13f9deea0"
 dependencies = [
  "base64 0.21.7",
  "chromiumoxide",
@@ -136,7 +136,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "vision-core 0.1.0 (git+https://github.com/josephwander-arch/vision-core?tag=v0.1.0)",
+ "vision-core",
 ]
 
 [[package]]
@@ -973,7 +973,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uia-mcp",
- "vision-core 0.1.0 (git+https://github.com/AIWander/vision-core?tag=v0.1.0)",
+ "vision-core",
  "windows 0.58.0",
 ]
 
@@ -3043,22 +3043,6 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vision-core"
 version = "0.1.0"
 source = "git+https://github.com/AIWander/vision-core?tag=v0.1.0#a6e2547199ec8cbbd8b92632198a509daf595b0e"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "image",
- "reqwest 0.12.28",
- "screenshots",
- "serde",
- "serde_json",
- "tokio",
- "windows 0.58.0",
-]
-
-[[package]]
-name = "vision-core"
-version = "0.1.0"
-source = "git+https://github.com/josephwander-arch/vision-core?tag=v0.1.0#a6e2547199ec8cbbd8b92632198a509daf595b0e"
 dependencies = [
  "base64 0.22.1",
  "chrono",
