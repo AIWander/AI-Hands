@@ -106,24 +106,53 @@ AI-Hands takes a different approach: **use the right automation layer for each t
 | **UIA** (Win UI Automation) | Accessibility tree, named elements, window management, app launch | Native Windows apps |
 | **Vision** (OCR + template match) | Screenshot, OCR, image diff, visual analysis | Anything else, verification |
 
-## Comparison with Claude Computer Use
+## Comparison
 
-| Capability | Claude Computer Use | AI-Hands |
-|-----------|-------------------|-------|
-| Element identification | Screenshot → guess coordinates | CSS selectors, XPath, UIA names, accessibility tree |
-| Speed | ~2s per action (screenshot cycle) | Milliseconds (direct API calls) |
-| Browser JS execution | No | Full eval, inject, extract |
-| Network interception | No | Route, mock, log requests |
-| Form handling | Type into coordinates | `fill_form`, `submit_form`, `get_forms` |
-| Multi-tab/context | No | Full tab and context management |
-| Native app control | Screenshot + click | Full UIA: find, click, type, read values, window snap/resize |
-| OCR | Relies on vision model | Dedicated OCR engine |
-| Template matching | No | `vision_find_template` |
-| Image diff | No | `vision_diff` |
-| Batch operations | One action per turn | `browser_batch`, `uia_batch` |
-| Tracing | No | `trace_start/stop/save`, metrics |
-| Platform | Anthropic-hosted sandbox or managed OS image | Windows (UIA + browser + vision) on your own machine |
-| Setup | Zero (built into Claude) | MCP server binary |
+AI-Hands is a **capability surface** — a local MCP server that lets your chosen AI model (Claude, GPT, Gemini, local LLM) drive your browser, Windows apps, and screen. It does not bundle an AI; you bring the model. The tables below set that apart from (1) other BYOM capability surfaces and (2) AI-bundled computer-use products. Status current as of May 2026.
+
+### vs. other BYOM capability surfaces
+
+| | **AI-Hands** | Playwright MCP |
+|---|---|---|
+| Runtime | Single Rust binary (`hands.exe`) | Node.js + Playwright runner |
+| Procs per session | 1 | 18+ (Node procs + workers) |
+| RAM per session (measured) | **~184 MB** | **~320 MB** (5.83× heavier full-stack) |
+| Browser control | CDP attach to your existing Chrome | Spawns its own Chromium |
+| Persistent auth | YOUR logins, YOUR cookies | Fresh browser each session |
+| DOM access | ✓ via CDP | ✓ via Playwright API |
+| Native Windows UIA | ✓ | ✗ |
+| Vision/OCR (local) | ✓ Tesseract | ✗ DOM only |
+| `file://` protocol | ✓ | ✗ blocked by default |
+| Screenshot save path | any | restricted to `.playwright-mcp` and `C:\` |
+| Smart cross-tier routers | ✓ `hands_click` runs a 7-rung ladder (a11y → fuzzy → CSS → snapshot refresh → clickables → UIA → OCR) under one tool entrypoint | ✗ pick the primitive yourself |
+| Chain depth | Claude → `hands.exe` → Chrome (2 hops) | Claude → Node MCP → Playwright API → Chrome (3 hops) |
+
+*Per-session memory measured side-by-side loading example.com with the same Chrome attached.*
+
+### vs. AI-bundled computer-use products
+
+These bundle a specific AI model with their own UI surface. AI-Hands does neither — it gives your model a surface.
+
+| | **AI-Hands + your model** | Claude Computer Use | OpenAI Operator (CUA) | Google Mariner / Gemini Agent | Perplexity Comet |
+|---|---|---|---|---|---|
+| **Surface** | Your Chrome + your Windows apps | Anthropic-hosted VM or your container | OpenAI-hosted browser sandbox | Chrome extension in your browser | Standalone Chromium-based browser |
+| **Cost (May 2026)** | ~$0 marginal (BYOM) | API or Claude subscription | ChatGPT Pro **$200/mo**, or API $3/$12 per 1M tokens (research preview, tiers 3-5) | Free w/ Google account (Mariner-standalone shut down May 4, 2026; capabilities folded into Gemini Agent) | Free since Mar 18, 2026; Comet Plus +$5/mo |
+| **Privacy** | All local; your model provider sees what you send it | Anthropic sees screen pixels | OpenAI sees screen pixels | Google sees browser actions; you stay logged in | Perplexity sees pages; you stay logged in |
+| **DOM access** | ✓ | ✗ (pixel only) | ✗ (pixel only) | ✓ (extension API) | ✓ (native) |
+| **Native app / UIA** | ✓ Windows | ✓ (full OS sandbox) | ✗ (browser only) | ✗ (browser only) | ✗ (browser only) |
+| **Vision/OCR** | ✓ local Tesseract | implicit (vision model) | implicit (vision model) | implicit | implicit |
+| **Element identification** | CSS, XPath, UIA names, a11y tree, OCR text, template match | Screenshot → guess coordinates | Screenshot → guess coordinates | DOM + screenshot | DOM + screenshot |
+| **Persistent auth** | YOUR Chrome cookies (via debug-port attach) | sandbox VM cookies | sandbox VM cookies | YOUR Chrome | OWN browser, OWN profile |
+| **Local memory** | ~184 MB | 0 (remote) | 0 (remote) | ~50-100 MB ext + browser | 500+ MB (full browser app) |
+| **Bring your own model** | ✓ any | ✗ Claude only | ✗ OpenAI only | ✗ Gemini only | ✗ Perplexity model stack |
+| **OSWorld benchmark** | n/a (capability layer) | varies by Claude model | 38.1% (CUA in research preview) | n/a post-shutdown | n/a (browser-only) |
+| **Public availability** | v1.0.1 (this repo) | GA | Research preview API; ChatGPT Pro UI | Standalone shut down May 4 2026; lives inside Gemini Agent / Chrome Auto-Browse | Public, free, Windows + macOS |
+
+### TL;DR
+
+- **AI-Hands wins on capability surface** (DOM + UIA + Vision in one binary) and **local resource cost** (~5.8× lighter than Playwright MCP).
+- **Bundled-AI products win on plug-and-play onboarding** (no model selection, no setup) but lock you into one provider and surrender screen contents to them.
+- **If you already pay for a Claude / GPT / Gemini API subscription**, AI-Hands lets you reuse that model with full DOM + native-app reach for ~$0 marginal cost.
 
 ## 117 Tools
 
