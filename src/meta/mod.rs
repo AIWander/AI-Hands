@@ -71,6 +71,7 @@ pub mod qr_scan;
 pub mod script;
 pub mod templates;
 pub mod verify;
+pub mod verify_expectations;
 
 // ── Phase D — Self-improvement ──
 pub mod self_record;
@@ -216,6 +217,10 @@ async fn dispatch_meta_tool(
         "hands_verify" => {
             Some(tokio::time::timeout(timeout, verify::handle(args, browser, session)).await)
         }
+        "hands_verify_expectations" => Some(
+            tokio::time::timeout(timeout, verify_expectations::handle(args, browser, session))
+                .await,
+        ),
         "hands_scan_qr" => {
             Some(tokio::time::timeout(timeout, qr_scan::handle(args, browser, session)).await)
         }
@@ -817,6 +822,47 @@ pub fn meta_tool_definitions() -> Vec<Value> {
                     }
                 },
                 "required": ["name"]
+            }
+        }),
+        json!({
+            "name": "hands_verify_expectations",
+            "description": "Run a list of post-flow expectations and report per-expectation pass/fail with polling, predicates (equals/contains/not_contains/not_equals/regex/gt/lt/in_range), and tolerance (polls, interval_ms, timeout_per_check_ms, string_distance for fuzzy match via Levenshtein). Pairs with hands_self_record: a saved flow has implicit expectations (final state matches first successful run). Supported check_tools: browser_get_text, browser_exists, vision_ocr_text_contains, uia_text_exists.",
+            "recommended_for": ["verify expectations", "post-flow assert", "validate replay", "test harness", "regression check"],
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "expectations": {
+                        "type": "array",
+                        "description": "List of expectation specifications",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": { "type": "string", "description": "Human-readable name for this expectation (appears in report)" },
+                                "check_tool": { "type": "string", "enum": ["browser_get_text", "browser_exists", "vision_ocr_text_contains", "uia_text_exists"] },
+                                "args": { "type": "object", "description": "Arguments forwarded to the check_tool" },
+                                "expected_predicate": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": { "type": "string", "enum": ["equals", "contains", "not_contains", "not_equals", "regex", "gt", "lt", "in_range"] },
+                                        "value": { "description": "Expected value (or {min, max} for in_range)" }
+                                    },
+                                    "required": ["type"]
+                                },
+                                "tolerance": {
+                                    "type": "object",
+                                    "properties": {
+                                        "polls": { "type": "integer", "default": 3 },
+                                        "interval_ms": { "type": "integer", "default": 500 },
+                                        "timeout_per_check_ms": { "type": "integer", "default": 5000 },
+                                        "string_distance": { "type": "integer", "default": 0 }
+                                    }
+                                }
+                            },
+                            "required": ["check_tool", "expected_predicate"]
+                        }
+                    }
+                },
+                "required": ["expectations"]
             }
         }),
     ]
