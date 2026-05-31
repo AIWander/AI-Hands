@@ -104,8 +104,7 @@ fn try_create_lock(path: &Path, record: &LockRecord) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-    let line = serde_json::to_string(record)
-        .map_err(|e| io::Error::other(e.to_string()))?;
+    let line = serde_json::to_string(record).map_err(|e| io::Error::other(e.to_string()))?;
     let mut bytes = line.into_bytes();
     bytes.push(b'\n');
     file.write_all(&bytes)?;
