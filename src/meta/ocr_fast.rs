@@ -155,7 +155,7 @@ fn detect_gpu() -> Value {
 
 #[cfg(target_os = "windows")]
 fn detect_gpu_windows() -> Value {
-    detect_gpu_inner(list_adapters_via_wmic)
+    detect_gpu_inner(list_adapters_with_fallback)
 }
 
 // On non-Windows builds the function still exists so tests can call it. It
@@ -240,6 +240,65 @@ fn parse_wmic_adapters(output: &str) -> Vec<String> {
         .collect()
 }
 
+/// Fallback adapter lister using PowerShell + Get-CimInstance.
+/// Required on Windows 11 build 26200+ where wmic was removed.
+/// One Name per line; empty lines + non-Name lines (PSReadLine warnings) filtered.
+#[cfg(target_os = "windows")]
+fn list_adapters_via_powershell() -> Vec<String> {
+    let output = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name",
+        ])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            parse_powershell_adapters(&stdout)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Parse PowerShell `Get-CimInstance Win32_VideoController | Select-Object
+/// -ExpandProperty Name` output — one adapter name per line, no `Name=` prefix.
+/// Trims each line, skips empties, and filters PowerShell warning/error lines
+/// (e.g. `WARNING: ...`, `Get-CimInstance: ...`).
+fn parse_powershell_adapters(s: &str) -> Vec<String> {
+    s.lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .filter(|line| !line.starts_with("WARNING:"))
+        .filter(|line| !line.starts_with("Get-CimInstance:"))
+        .collect()
+}
+
+/// Try wmic first (faster, ~50ms); fall back to PowerShell + Get-CimInstance
+/// (slower, ~300ms but available on Windows 11 26200+ where wmic was removed).
+#[cfg(target_os = "windows")]
+fn list_adapters_with_fallback() -> Vec<String> {
+    list_adapters_with_fallback_inner(list_adapters_via_wmic, list_adapters_via_powershell)
+}
+
+/// Testable core of `list_adapters_with_fallback` — parameterised over the two
+/// adapter-listing strategies so tests can inject closures without shelling out.
+fn list_adapters_with_fallback_inner<P, S>(primary: P, secondary: S) -> Vec<String>
+where
+    P: Fn() -> Vec<String>,
+    S: Fn() -> Vec<String>,
+{
+    let result = primary();
+    if !result.is_empty() {
+        return result;
+    }
+    // Primary returned empty (either truly no GPU OR primary is gone on this
+    // Windows 11 build); fall back to the secondary strategy.
+    secondary()
+}
+
 /// Best-effort vendor inference from adapter display names. First match wins,
 /// preserving the order NVIDIA → AMD/Radeon → Intel → Apple.
 fn infer_vendor(adapters: &[String]) -> Option<String> {
@@ -294,6 +353,59 @@ mod tests {
                 "Intel UHD Graphics".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn parse_powershell_adapters_extracts_names() {
+        // Get-CimInstance ... | Select -ExpandProperty Name returns one
+        // adapter name per line, no `Name=` prefix.
+        let sample = "NVIDIA GeForce RTX 4090\nIntel UHD Graphics\n";
+        let adapters = parse_powershell_adapters(sample);
+        assert_eq!(
+            adapters,
+            vec![
+                "NVIDIA GeForce RTX 4090".to_string(),
+                "Intel UHD Graphics".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_powershell_adapters_skips_warnings_and_blanks() {
+        // Real-world PowerShell output can include warning lines (PSReadLine,
+        // CIM session warnings) and Get-CimInstance error lines. Those + blanks
+        // must be filtered so they don't pollute the adapter list.
+        let sample = "WARNING: PSReadLine session timed out\n\nNVIDIA GeForce RTX 4090\nGet-CimInstance: The CIM session failed\nIntel UHD Graphics\n   \n";
+        let adapters = parse_powershell_adapters(sample);
+        assert_eq!(
+            adapters,
+            vec![
+                "NVIDIA GeForce RTX 4090".to_string(),
+                "Intel UHD Graphics".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn fallback_returns_powershell_when_wmic_empty() {
+        // Primary (wmic) returns empty → fall back to secondary (powershell).
+        let primary = Vec::new;
+        let secondary = || vec!["Qualcomm(R) Adreno(TM) X1-85 GPU".to_string()];
+        let adapters = list_adapters_with_fallback_inner(primary, secondary);
+        assert_eq!(
+            adapters,
+            vec!["Qualcomm(R) Adreno(TM) X1-85 GPU".to_string()]
+        );
+
+        // Primary returns adapters → secondary is NOT consulted.
+        let primary = || vec!["NVIDIA GeForce RTX 4090".to_string()];
+        let secondary = || vec!["should not appear".to_string()];
+        let adapters = list_adapters_with_fallback_inner(primary, secondary);
+        assert_eq!(adapters, vec!["NVIDIA GeForce RTX 4090".to_string()]);
+
+        // Both empty → empty.
+        let adapters = list_adapters_with_fallback_inner(Vec::new, Vec::new);
+        assert!(adapters.is_empty());
     }
 
     #[test]
