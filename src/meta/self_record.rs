@@ -41,13 +41,11 @@ const INSTANT_WAIT_THRESHOLD_MS: u64 = 100;
 /// Keep this list stable — changing it changes tokenization, which changes
 /// cosine similarity scores against records already on disk.
 const STOPWORDS: &[&str] = &[
-    "the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "be",
-    "been", "being", "have", "has", "had", "do", "does", "did", "will",
-    "would", "should", "could", "can", "may", "might", "must", "shall",
-    "to", "of", "in", "on", "at", "by", "for", "with", "about", "against",
-    "between", "into", "through", "during", "before", "after", "above",
-    "below", "from", "up", "down", "out", "off", "over", "under", "again",
-    "further", "then", "once",
+    "the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "should", "could", "can", "may",
+    "might", "must", "shall", "to", "of", "in", "on", "at", "by", "for", "with", "about",
+    "against", "between", "into", "through", "during", "before", "after", "above", "below", "from",
+    "up", "down", "out", "off", "over", "under", "again", "further", "then", "once",
 ];
 
 // ──────────────────────────────────────────────────────────────────────
@@ -110,8 +108,16 @@ fn cosine_similarity(a: &HashMap<String, usize>, b: &HashMap<String, usize>) -> 
             dot += (count as f64) * (other as f64);
         }
     }
-    let norm_a: f64 = a.values().map(|&c| (c as f64) * (c as f64)).sum::<f64>().sqrt();
-    let norm_b: f64 = b.values().map(|&c| (c as f64) * (c as f64)).sum::<f64>().sqrt();
+    let norm_a: f64 = a
+        .values()
+        .map(|&c| (c as f64) * (c as f64))
+        .sum::<f64>()
+        .sqrt();
+    let norm_b: f64 = b
+        .values()
+        .map(|&c| (c as f64) * (c as f64))
+        .sum::<f64>()
+        .sqrt();
     if norm_a == 0.0 || norm_b == 0.0 {
         return 0.0;
     }
@@ -168,8 +174,7 @@ fn load_records() -> Result<SelfRecordsFile, String> {
     if !path.exists() {
         return Ok(SelfRecordsFile::default());
     }
-    let raw =
-        fs::read_to_string(&path).map_err(|e| format!("read {}: {}", path.display(), e))?;
+    let raw = fs::read_to_string(&path).map_err(|e| format!("read {}: {}", path.display(), e))?;
     if raw.trim().is_empty() {
         return Ok(SelfRecordsFile::default());
     }
@@ -476,9 +481,7 @@ fn prune_steps(steps: &[Value]) -> Vec<Value> {
     for step in steps {
         if step_tool_name(step) == "browser_scroll" {
             if let Some(prev) = kept.last() {
-                if step_tool_name(prev) == "browser_scroll"
-                    && scroll_targets_match(prev, step)
-                {
+                if step_tool_name(prev) == "browser_scroll" && scroll_targets_match(prev, step) {
                     continue; // skip duplicate scroll
                 }
             }
@@ -615,8 +618,7 @@ fn drop_unreferenced_screenshots(steps: &[Value]) -> Vec<Value> {
             needles.push(p.to_string());
         }
         // Drop empties / very short strings to avoid spurious matches.
-        let needles: Vec<String> =
-            needles.into_iter().filter(|n| n.len() >= 4).collect();
+        let needles: Vec<String> = needles.into_iter().filter(|n| n.len() >= 4).collect();
 
         // If we have no needle to search for, keep the screenshot (we can't
         // prove it's unreferenced).
@@ -715,7 +717,11 @@ mod tests {
         let a = term_frequencies(&tokenize("login to gmail and send a draft"));
         let b = term_frequencies(&tokenize("send gmail email"));
         let sim = cosine_similarity(&a, &b);
-        assert!(sim < DEFAULT_SIMILARITY_THRESHOLD, "expected <0.7, got {}", sim);
+        assert!(
+            sim < DEFAULT_SIMILARITY_THRESHOLD,
+            "expected <0.7, got {}",
+            sim
+        );
         assert!(sim > 0.0, "expected >0.0, got {}", sim);
     }
 
