@@ -409,6 +409,21 @@ fn get_all_tool_definitions() -> Vec<Value> {
     }));
 
     tools.push(json!({
+        "name": "vision_cache_stats",
+        "description": "Return current vision cache stats (entries, hit_rate, hits, misses, evictions, invalidations, TTL). Optional reset=true zeros all counters and empties the cache. Pure local-state inspection — does not call any vision tool.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reset": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "If true, clear all entries and reset stat counters"
+                }
+            }
+        }
+    }));
+
+    tools.push(json!({
         "name": "browser_get_performance_log",
         "description": "Get recent network requests from the browser via performance.getEntriesByType('resource'). Returns URL, type, duration, and size for each request. Lightweight — no CDP hooks needed, works with any page. Clears entries after reading so subsequent calls return only new requests.",
         "inputSchema": {
@@ -607,7 +622,7 @@ async fn handle_find_and_click(args: &Value) -> Value {
     }
 
     // Step 1: Screenshot + OCR
-    let ocr_result = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
+    let ocr_result = meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({})).await;
     let ocr_text = ocr_result
         .get("text")
         .and_then(|v| v.as_str())
@@ -640,7 +655,8 @@ async fn handle_find_and_click(args: &Value) -> Value {
                 uia_lib::handle_tool_call("uia_focus_window", &json!({"title": title_val}));
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-                let retry_ocr = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
+                let retry_ocr =
+                    meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({})).await;
                 let retry_text = retry_ocr.get("text").and_then(|v| v.as_str()).unwrap_or("");
                 if !retry_text.is_empty() && retry_text.to_lowercase().contains(&search_lower) {
                     found_text = true;
@@ -800,7 +816,7 @@ async fn handle_read_screen_text(args: &Value) -> Value {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    vision_core::execute("vision_screenshot_ocr", &json!({})).await
+    meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({})).await
 }
 
 async fn handle_wait_for_visual(args: &Value) -> Value {
@@ -839,7 +855,7 @@ async fn handle_wait_for_visual(args: &Value) -> Value {
         }
 
         if let Some(search_text) = text {
-            let ocr = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
+            let ocr = meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({})).await;
             if let Some(ocr_text) = ocr.get("text").and_then(|v| v.as_str()) {
                 if ocr_text
                     .to_lowercase()
@@ -922,7 +938,7 @@ async fn handle_window_screenshot(args: &Value) -> Value {
                 .unwrap()
                 .insert("save_path".to_string(), json!(path));
         }
-        let result = vision_core::execute("vision_screenshot_ocr", &ocr_args).await;
+        let result = meta::vision_cache::cached_execute("vision_screenshot_ocr", &ocr_args).await;
         json!({
             "success": true,
             "window": title,
@@ -1116,7 +1132,8 @@ async fn handle_window_screenshot_behind(
     // Step 8: Optionally run OCR on the saved image
     if do_ocr {
         let ocr_result =
-            vision_core::execute("vision_ocr", &json!({"image_path": output_path})).await;
+            meta::vision_cache::cached_execute("vision_ocr", &json!({"image_path": output_path}))
+                .await;
         json!({
             "success": true,
             "window": ctx.found_title,
@@ -3452,6 +3469,7 @@ async fn handle_tool_call_inner(
         "file_upload" => return handle_file_upload(args, browser).await,
         "status" | "hands_status" => return handle_hands_status(),
         "hands_health" => return meta::health::hands_health(),
+        "vision_cache_stats" => return meta::vision_cache::handle_stats(args),
         // Phase D — self-record / replay loop (plan-not-action: returns workflow:* call plans)
         "hands_self_record_start" => {
             return meta::self_record::handle_self_record_start(args).await

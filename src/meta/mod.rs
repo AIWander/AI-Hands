@@ -76,6 +76,9 @@ pub mod verify_expectations;
 // ── Phase D — Self-improvement ──
 pub mod self_record;
 
+// ── Phase E — Caching ──
+pub mod vision_cache;
+
 // ── Tests ──
 #[cfg(test)]
 mod tests;
