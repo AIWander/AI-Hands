@@ -30,6 +30,7 @@ mod a11y_cache;
 mod atomic;
 mod dashboard_endpoint;
 mod meta;
+mod plugin;
 mod security;
 mod stealth;
 mod uia;
@@ -435,6 +436,24 @@ fn get_all_tool_definitions() -> Vec<Value> {
                     "description": "If true, clear all entries and reset stat counters"
                 }
             }
+        }
+    }));
+
+    tools.push(json!({
+        "name": "hands_plugin_list",
+        "description": "List currently loaded hands plugins, their ABI versions, and their tools. Phase 1: returns empty list; plugin loading wiring is phase 2 (requires libloading dep). The C ABI is stable in phase 1 — plugin authors can develop against installers/plugin-abi/ai_hands_plugin.h today and load them once phase 2 lands.",
+        "inputSchema": { "type": "object", "properties": {} }
+    }));
+
+    tools.push(json!({
+        "name": "hands_plugin_load",
+        "description": "Load a plugin from a .dll/.so/.dylib path. Phase 1: validates the path exists, then returns phase-2-pending status. Phase 2 will Library::new the file, verify ABI major version, call ai_hands_plugin_init(), and register the plugin's tools into the MCP tool list.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Absolute path to the plugin binary" }
+            },
+            "required": ["path"]
         }
     }));
 
@@ -2830,6 +2849,61 @@ async fn get_browser_url(browser: &browser_mcp::browser::SharedBrowser) -> Optio
     guard.get_url().await.ok()
 }
 
+// ============ PLUGIN MCP HANDLERS ============
+
+fn plugin_list_handler() -> Value {
+    let plugins = plugin::registry::list();
+    let plugin_count = plugins.len();
+    json!({
+        "ok": true,
+        "abi_version": {
+            "major": plugin::abi::ABI_VERSION_MAJOR,
+            "minor": plugin::abi::ABI_VERSION_MINOR
+        },
+        "plugins": plugins.iter().map(|p| json!({
+            "name": p.name,
+            "version": p.version,
+            "author": p.author,
+            "description": p.description,
+            "library_path": p.library_path,
+            "loaded_at": p.loaded_at,
+            "abi_version": {
+                "major": p.abi_version_major,
+                "minor": p.abi_version_minor
+            },
+            "tools": p.tools.iter().map(|t| json!({
+                "name": t.name,
+                "description": t.description
+            })).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+        "count": plugin_count,
+        "phase": "phase_1_stub",
+        "note": "Plugin loading wiring is phase 2 (requires libloading dep). The ABI types + registry + C header are stable in phase 1; plugin authors can develop against installers/plugin-abi/ai_hands_plugin.h today."
+    })
+}
+
+fn plugin_load_handler(args: &Value) -> Value {
+    let Some(path) = args.get("path").and_then(|v| v.as_str()) else {
+        return json!({"ok": false, "error": "missing required arg: path"});
+    };
+    match plugin::loader::load_from_path(path) {
+        Ok(p) => json!({"ok": true, "loaded": p.name, "path": path}),
+        Err(plugin::loader::LoadError::PhaseNotImplemented) => json!({
+            "ok": false,
+            "error": "plugin loading wiring is phase 2 (requires libloading dep)",
+            "phase": "phase_1_stub",
+            "path_validated": path,
+            "next_step": "phase 2 will add libloading=\"0.8\" and implement Library::new + symbol resolution"
+        }),
+        Err(plugin::loader::LoadError::PathNotFound(p)) => json!({
+            "ok": false,
+            "error": "path does not exist",
+            "path": p
+        }),
+        Err(e) => json!({"ok": false, "error": format!("{:?}", e), "path": path}),
+    }
+}
+
 // ============ A11Y REF RESOLUTION ============
 
 /// Resolve an a11y ref to a CSS selector by executing JS in the browser.
@@ -3543,6 +3617,8 @@ async fn handle_tool_call_inner(
         "hands_attach_lock_acquire" => return meta::attach_lock::handle_acquire(args),
         "hands_attach_lock_release" => return meta::attach_lock::handle_release(args),
         "hands_attach_lock_status" => return meta::attach_lock::handle_status(args),
+        "hands_plugin_list" => return plugin_list_handler(),
+        "hands_plugin_load" => return plugin_load_handler(args),
         // Phase D — self-record / replay loop (plan-not-action: returns workflow:* call plans)
         "hands_self_record_start" => {
             return meta::self_record::handle_self_record_start(args).await

@@ -1,0 +1,21 @@
+# Example AI-Hands plugin — standalone Rust crate, NOT part of the
+# AI-Hands workspace. Build with `cargo build --release` from this
+# directory.
+#
+# The crate is intentionally minimal: no extra deps beyond std, one
+# trivial tool (`example_echo`) that round-trips a `message` field.
+# Use it as a starting point for your own plugin.
+
+[package]
+name = "example_plugin"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal example plugin for AI-Hands (round-trips one tool)."
+license = "Apache-2.0"
+
+[lib]
+# cdylib produces:
+#   - example_plugin.dll        on Windows
+#   - libexample_plugin.so      on Linux
+#   - libexample_plugin.dylib   on macOS
+crate-type = ["cdylib"]
