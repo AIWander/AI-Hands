@@ -409,6 +409,21 @@ fn get_all_tool_definitions() -> Vec<Value> {
     }));
 
     tools.push(json!({
+        "name": "hands_summarize_run",
+        "description": "Summarize a breadcrumb's run telemetry: tools_used breakdown, total/avg ms, success rate, failure steps, files_changed. Agent uses this to self-optimize ('my last 5 runs averaged 12s, this approach is 4s — adopt it'). Reads from C:/My Drive/Volumes/breadcrumbs/ + hands_meta.jsonl. Pure local-state — no browser/session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "breadcrumb_id": {
+                    "type": "string",
+                    "description": "Full id (bc_...), short prefix (bc_TIMESTAMP), or bare timestamp"
+                }
+            },
+            "required": ["breadcrumb_id"]
+        }
+    }));
+
+    tools.push(json!({
         "name": "vision_cache_stats",
         "description": "Return current vision cache stats (entries, hit_rate, hits, misses, evictions, invalidations, TTL). Optional reset=true zeros all counters and empties the cache. Pure local-state inspection — does not call any vision tool.",
         "inputSchema": {
@@ -3469,6 +3484,7 @@ async fn handle_tool_call_inner(
         "file_upload" => return handle_file_upload(args, browser).await,
         "status" | "hands_status" => return handle_hands_status(),
         "hands_health" => return meta::health::hands_health(),
+        "hands_summarize_run" => return meta::summarize_run::handle(args),
         "vision_cache_stats" => return meta::vision_cache::handle_stats(args),
         // Phase D — self-record / replay loop (plan-not-action: returns workflow:* call plans)
         "hands_self_record_start" => {

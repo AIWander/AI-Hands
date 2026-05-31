@@ -79,6 +79,9 @@ pub mod self_record;
 // ── Phase E — Caching ──
 pub mod vision_cache;
 
+// ── Phase F — Telemetry export (agent self-optimization) ──
+pub mod summarize_run;
+
 // ── Tests ──
 #[cfg(test)]
 mod tests;
