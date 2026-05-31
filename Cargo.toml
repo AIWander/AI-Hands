@@ -26,7 +26,7 @@ chrono = "0.4"
 browser-mcp = { git = "https://github.com/AIWander/browser-mcp", tag = "v0.1.1" }
 
 # Vision (shared library - screenshot, OCR, diff, template match)
-vision-core = { git = "https://github.com/AIWander/vision-core", tag = "v0.1.0" }
+vision-core = { git = "https://github.com/AIWander/vision-core", tag = "v0.2.0" }
 
 # UIA (UI Automation - Windows native element inspection + input)
 uia-mcp = { git = "https://github.com/AIWander/uia-mcp", tag = "v1.0.0" }

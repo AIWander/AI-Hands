@@ -136,7 +136,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "vision-core 0.1.0 (git+https://github.com/josephwander-arch/vision-core?tag=v0.1.0)",
+ "vision-core 0.1.0",
 ]
 
 [[package]]
@@ -980,7 +980,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uia-mcp",
- "vision-core 0.1.0 (git+https://github.com/AIWander/vision-core?tag=v0.1.0)",
+ "vision-core 0.2.0",
  "windows 0.58.0",
 ]
 
@@ -3057,7 +3057,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vision-core"
 version = "0.1.0"
-source = "git+https://github.com/AIWander/vision-core?tag=v0.1.0#a6e2547199ec8cbbd8b92632198a509daf595b0e"
+source = "git+https://github.com/josephwander-arch/vision-core?tag=v0.1.0#a6e2547199ec8cbbd8b92632198a509daf595b0e"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3072,8 +3072,8 @@ dependencies = [
 
 [[package]]
 name = "vision-core"
-version = "0.1.0"
-source = "git+https://github.com/josephwander-arch/vision-core?tag=v0.1.0#a6e2547199ec8cbbd8b92632198a509daf595b0e"
+version = "0.2.0"
+source = "git+https://github.com/AIWander/vision-core?tag=v0.2.0#0eeb0fcd2503c9f538a57ff5798d4ad523d10720"
 dependencies = [
  "base64 0.22.1",
  "chrono",

@@ -8,7 +8,8 @@
 //! Architecture:
 //! - `vision_ocr_fast` routes through `vision_cache::cached_execute("vision_ocr", args)`
 //!   and annotates the result with `backend_metadata` documenting the current
-//!   backend (tesseract), the detected GPU, and the planned ONNX backend.
+//!   backend (Windows.Media.Ocr — the OS built-in OCR, NOT Tesseract), the
+//!   detected GPU, and the experimental ONNX backend.
 //!   Registered via the Phase A/B/C path (`dispatch_meta_tool`) because
 //!   `cached_execute` is async; the handler accepts `browser`/`session` but
 //!   ignores them.
@@ -59,12 +60,12 @@ pub async fn handle_ocr_fast(
     let raw = super::vision_cache::cached_execute("vision_ocr", args).await;
 
     let backend_metadata = json!({
-        "backend": "tesseract",
+        "backend": "windows_ocr",
         "phase": "phase_1_stub",
         "gpu_detected": gpu_detected,
-        "future_backend": "PaddleOCR-ONNX (vision-core v0.2.0 — pending)",
-        "speedup_potential": "5-10x on complex screens (handoff acceptance)",
-        "note": "Callers can adopt vision_ocr_fast today; phase 2 will swap the underlying OCR backend transparently when vision-core v0.2.0 lands with ONNX support."
+        "future_backend": "PaddleOCR-ONNX (vision-core v0.2.0, behind --features onnx — experimental, NOT enabled in this build)",
+        "speedup_potential": "cross-platform OCR for macOS/Linux where Windows.Media.Ocr is unavailable; incremental accuracy gain on Windows",
+        "note": "Backend today is Windows.Media.Ocr (OS built-in). Callers can adopt vision_ocr_fast now; the PaddleOCR-ONNX path ships in vision-core v0.2.0 behind --features onnx (opt-in, not compiled into this default build)."
     });
 
     annotate_with_backend_metadata(raw, backend_metadata)
@@ -122,12 +123,12 @@ fn build_capabilities() -> Value {
     json!({
         "ok": true,
         "platform": platform,
-        "backends_available": ["tesseract"],
+        "backends_available": ["windows_ocr"],
         "backends_planned": ["paddleocr_onnx_gpu", "paddleocr_onnx_cpu"],
         "gpu": gpu,
-        "current_default": "tesseract",
+        "current_default": "windows_ocr",
         "phase_1_stub": true,
-        "note": "Phase 2 will add backends_available = [..., 'paddleocr_onnx_gpu'] once vision-core upgrades to v0.2.0 with ONNX support."
+        "note": "Backend is Windows.Media.Ocr (OS built-in). vision-core v0.2.0 ships experimental PaddleOCR-ONNX behind --features onnx; this build does not enable it, so backends_available is windows_ocr only. Build vision-core + AI-Hands with the onnx feature to add paddleocr_onnx_*."
     })
 }
 
@@ -489,12 +490,12 @@ mod tests {
         let caps = get_capabilities(false);
         assert_eq!(caps["ok"], json!(true));
         assert!(caps.get("platform").is_some());
-        assert_eq!(caps["backends_available"], json!(["tesseract"]));
+        assert_eq!(caps["backends_available"], json!(["windows_ocr"]));
         assert_eq!(
             caps["backends_planned"],
             json!(["paddleocr_onnx_gpu", "paddleocr_onnx_cpu"])
         );
-        assert_eq!(caps["current_default"], json!("tesseract"));
+        assert_eq!(caps["current_default"], json!("windows_ocr"));
         assert_eq!(caps["phase_1_stub"], json!(true));
         assert!(caps.get("note").is_some());
         // gpu sub-object must exist and have the documented keys.
@@ -515,7 +516,7 @@ mod tests {
         // panic and doesn't return a degraded/empty Value.
         let refreshed = get_capabilities(true);
         assert_eq!(refreshed["ok"], json!(true));
-        assert_eq!(refreshed["backends_available"], json!(["tesseract"]));
+        assert_eq!(refreshed["backends_available"], json!(["windows_ocr"]));
         assert_eq!(refreshed["phase_1_stub"], json!(true));
         // Force-refresh path is invoked even when the OnceLock is hot — the
         // returned object is a fresh allocation (different ptr than cached
@@ -541,7 +542,7 @@ mod tests {
     #[test]
     fn backend_metadata_annotated_when_wrapping_object_result() {
         let raw = json!({"text": "hello world", "confidence": 0.95});
-        let metadata = json!({"backend": "tesseract", "phase": "phase_1_stub"});
+        let metadata = json!({"backend": "windows_ocr", "phase": "phase_1_stub"});
         let annotated = annotate_with_backend_metadata(raw, metadata.clone());
         assert_eq!(annotated["text"], json!("hello world"));
         assert_eq!(annotated["confidence"], json!(0.95));
@@ -553,7 +554,7 @@ mod tests {
         // If vision_cache somehow returned a string or array, we wrap it
         // rather than silently dropping the metadata.
         let raw = json!("just a string");
-        let metadata = json!({"backend": "tesseract"});
+        let metadata = json!({"backend": "windows_ocr"});
         let annotated = annotate_with_backend_metadata(raw.clone(), metadata.clone());
         assert_eq!(annotated["result"], raw);
         assert_eq!(annotated["backend_metadata"], metadata);
