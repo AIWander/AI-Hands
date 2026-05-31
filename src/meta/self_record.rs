@@ -10,8 +10,8 @@
 //! ## Tools
 //! - `hands_self_record_start`              — generate flow_name, persist intent
 //! - `hands_self_record_lookup`             — cosine-similarity search prior records
-//! - `hands_self_record_stop_and_optimize`  — two-stage orchestrator: stop, replay
-//!                                             (dry_run), prune, optionally replace
+//! - `hands_self_record_stop_and_optimize`  — two-stage orchestrator: stop,
+//!   replay (dry_run), prune, optionally replace
 //!
 //! ## Storage
 //! Records live in `cpc_paths::data_path("hands")/self_records.json`. Writes are
