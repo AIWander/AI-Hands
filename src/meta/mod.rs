@@ -82,6 +82,9 @@ pub mod vision_cache;
 // ── Phase F — Telemetry export (agent self-optimization) ──
 pub mod summarize_run;
 
+// ── Phase G — Concurrency arbitration ──
+pub mod attach_lock;
+
 // ── Tests ──
 #[cfg(test)]
 mod tests;

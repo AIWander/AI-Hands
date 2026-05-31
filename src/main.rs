@@ -439,6 +439,60 @@ fn get_all_tool_definitions() -> Vec<Value> {
     }));
 
     tools.push(json!({
+        "name": "hands_attach_lock_acquire",
+        "description": "Acquire a cross-process file lock for a Chrome debug port BEFORE calling browser_attach. Other hands.exe processes attempting to acquire the same port will block until released. Returns a lock_id used for hands_attach_lock_release. 30-minute timestamp-based stale TTL — abandoned locks are overtaken automatically. Pure local-state — no browser/session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "description": "Chrome debug port (e.g. 9222)"
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "default": 10000,
+                    "description": "Total wait budget in ms before giving up (default 10000)"
+                },
+                "stale_after_ms": {
+                    "type": "integer",
+                    "default": 1800000,
+                    "description": "Timestamp-based stale TTL in ms; locks older than this are overtaken (default 30 minutes)"
+                }
+            },
+            "required": ["port"]
+        }
+    }));
+
+    tools.push(json!({
+        "name": "hands_attach_lock_release",
+        "description": "Release a previously acquired attach lock by lock_id. Idempotent — already-released lock_ids return ok:true. Call this after browser_detach or when finished with the Chrome session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "lock_id": {
+                    "type": "string",
+                    "description": "lock_id returned by hands_attach_lock_acquire"
+                }
+            },
+            "required": ["lock_id"]
+        }
+    }));
+
+    tools.push(json!({
+        "name": "hands_attach_lock_status",
+        "description": "Inspect current attach locks across all hands.exe processes on this machine. Returns active locks with port, owner PID, age, and whether they're owned by this process.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "description": "Optional filter by port"
+                }
+            }
+        }
+    }));
+
+    tools.push(json!({
         "name": "browser_get_performance_log",
         "description": "Get recent network requests from the browser via performance.getEntriesByType('resource'). Returns URL, type, duration, and size for each request. Lightweight — no CDP hooks needed, works with any page. Clears entries after reading so subsequent calls return only new requests.",
         "inputSchema": {
@@ -3486,6 +3540,9 @@ async fn handle_tool_call_inner(
         "hands_health" => return meta::health::hands_health(),
         "hands_summarize_run" => return meta::summarize_run::handle(args),
         "vision_cache_stats" => return meta::vision_cache::handle_stats(args),
+        "hands_attach_lock_acquire" => return meta::attach_lock::handle_acquire(args),
+        "hands_attach_lock_release" => return meta::attach_lock::handle_release(args),
+        "hands_attach_lock_status" => return meta::attach_lock::handle_status(args),
         // Phase D — self-record / replay loop (plan-not-action: returns workflow:* call plans)
         "hands_self_record_start" => {
             return meta::self_record::handle_self_record_start(args).await
