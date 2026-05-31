@@ -69,6 +69,33 @@ See the [`examples/`](examples/) directory for sample configurations and walkthr
 
 ## Install
 
+> **winget submission pending.** The `microsoft/winget-pkgs` PR is in flight — once it merges, `winget install AIWander.AI-Hands` works against the published index. Until then, [`installers/winget/manifests/`](installers/winget/manifests/) in this repo is the source of truth (use the `--manifest` form below). The manual download path is unaffected.
+
+### Option A — winget (recommended once the PR lands)
+
+```powershell
+winget install AIWander.AI-Hands
+# Until the upstream PR lands, install from this repo's manifest directly:
+# winget install --manifest https://raw.githubusercontent.com/AIWander/AI-Hands/main/installers/winget/manifests/a/AIWander/AI-Hands/1.0.1/AIWander.AI-Hands.installer.yaml
+
+# Then wire it into Claude Desktop (writes a timestamped .bak first):
+.\installers\scripts\register-hands.ps1
+```
+
+Open a new shell after the install so winget's portable-shim directory (`%LOCALAPPDATA%\Microsoft\WinGet\Links`) is on PATH, then run the registration script. See [`installers/README.md`](installers/README.md) for `-Force` / `-DryRun` flags and rollback.
+
+### Option B — Scoop
+
+```powershell
+# Direct URL (no bucket required):
+scoop install https://raw.githubusercontent.com/AIWander/AI-Hands/main/installers/scoop/ai-hands.json
+
+# Then register with Claude Desktop:
+.\installers\scripts\register-hands.ps1
+```
+
+### Option C — Manual download (always works)
+
 1. Download from the [latest release](https://github.com/AIWander/AI-Hands/releases/latest):
    - **Windows x64** → `hands-vX.Y.Z-x64.exe`
    - **Windows ARM64** (Snapdragon X / X Elite / X Plus) → `hands-vX.Y.Z-aarch64.exe`
