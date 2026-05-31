@@ -88,6 +88,9 @@ pub mod attach_lock;
 // ── Phase H — Network event streaming (poll-based) ──
 pub mod network_subscribe;
 
+// ── Phase I — OCR fast path (Item 4 phase 1; ONNX wiring pending vision-core v0.2.0) ──
+pub mod ocr_fast;
+
 // ── Tests ──
 #[cfg(test)]
 mod tests;
@@ -280,6 +283,10 @@ async fn dispatch_meta_tool(
                 network_subscribe::handle_subscriptions(args, browser, session),
             )
             .await,
+        ),
+        // Phase I — OCR fast path (Item 4 phase 1 — routes through vision_cache + annotates).
+        "vision_ocr_fast" => Some(
+            tokio::time::timeout(timeout, ocr_fast::handle_ocr_fast(args, browser, session)).await,
         ),
         _ => None,
     };
@@ -951,6 +958,21 @@ pub fn meta_tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {}
+            }
+        }),
+        // ── Phase I — OCR fast path (Item 4 phase 1) ──
+        json!({
+            "name": "vision_ocr_fast",
+            "description": "OCR with future-fast-path branding. Phase 1: routes through vision_cache (Item 9) and adds backend_metadata documenting the GPU detected + the planned ONNX backend. Callers can adopt vision_ocr_fast today and benefit transparently when vision-core v0.2.0 ships with PaddleOCR ONNX (5-10x faster on complex screens, per the Milestone A handoff). Same input surface as vision_ocr.",
+            "recommended_for": ["OCR", "text extraction", "future fast OCR"],
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "image_path": {
+                        "type": "string",
+                        "description": "Optional. If omitted, OCRs the current screenshot (matches vision_ocr's surface)."
+                    }
+                }
             }
         }),
         json!({

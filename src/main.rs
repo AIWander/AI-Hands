@@ -440,6 +440,21 @@ fn get_all_tool_definitions() -> Vec<Value> {
     }));
 
     tools.push(json!({
+        "name": "vision_ocr_capabilities",
+        "description": "Introspect OCR backend capabilities (Item 4 phase 1). Returns current platform, available backends (phase 1: tesseract only), planned backends, GPU vendor + adapter list, and DLL presence checks (nvml.dll, DirectML.dll). Cached via OnceLock; pass force_refresh=true to re-detect. Pure local-state — no browser/session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "force_refresh": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "If true, bypass the OnceLock cache and re-run GPU/DLL detection."
+                }
+            }
+        }
+    }));
+
+    tools.push(json!({
         "name": "hands_plugin_list",
         "description": "List currently loaded hands plugins, their ABI versions, and their tools. Phase 1: returns empty list; plugin loading wiring is phase 2 (requires libloading dep). The C ABI is stable in phase 1 — plugin authors can develop against installers/plugin-abi/ai_hands_plugin.h today and load them once phase 2 lands.",
         "inputSchema": { "type": "object", "properties": {} }
@@ -3614,6 +3629,7 @@ async fn handle_tool_call_inner(
         "hands_health" => return meta::health::hands_health(),
         "hands_summarize_run" => return meta::summarize_run::handle(args),
         "vision_cache_stats" => return meta::vision_cache::handle_stats(args),
+        "vision_ocr_capabilities" => return meta::ocr_fast::handle_capabilities(args),
         "hands_attach_lock_acquire" => return meta::attach_lock::handle_acquire(args),
         "hands_attach_lock_release" => return meta::attach_lock::handle_release(args),
         "hands_attach_lock_status" => return meta::attach_lock::handle_status(args),
