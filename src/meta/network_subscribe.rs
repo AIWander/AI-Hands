@@ -629,15 +629,21 @@ async fn fetch_network_events(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
     /// Tests mutate process-global SUBSCRIPTIONS — serialize them so they
-    /// don't race each other. Each test acquires the guard first.
-    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
-        static TEST_LOCK: Mutex<()> = Mutex::new(());
-        TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    /// don't race each other. Async-aware (tokio) lock so the async
+    /// `#[tokio::test]`s can hold it across `.await` without the std-Mutex
+    /// `await_holding_lock` hazard; sync `#[test]`s take it via `blocking_lock()`.
+    static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    /// Sync `#[test]`s (no runtime): acquire via `blocking_lock()`.
+    fn test_guard() -> tokio::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.blocking_lock()
+    }
+
+    /// Async `#[tokio::test]`s: acquire via `.await` so the guard is held
+    /// safely across await points (no std-Mutex hazard).
+    async fn test_guard_async() -> tokio::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.lock().await
     }
 
     fn reset_subs() {
@@ -1024,7 +1030,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsubscribe_removes_subscription() {
-        let _g = test_guard();
+        let _g = test_guard_async().await;
         reset_subs();
         let sub_id = make_sub(Filter::default(), 10);
         assert!(with_subs(|m| m.contains_key(&sub_id)));
@@ -1046,7 +1052,7 @@ mod tests {
 
     #[tokio::test]
     async fn unsubscribe_unknown_returns_ok_anyway() {
-        let _g = test_guard();
+        let _g = test_guard_async().await;
         reset_subs();
         let browser = browser_mcp::browser::create_shared();
         let session = super::super::session::new_session();
@@ -1062,7 +1068,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscriptions_list_returns_all() {
-        let _g = test_guard();
+        let _g = test_guard_async().await;
         reset_subs();
         let _id1 = make_sub(Filter::default(), 10);
         std::thread::sleep(std::time::Duration::from_millis(2));
