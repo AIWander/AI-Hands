@@ -24,6 +24,8 @@ See the [`examples/`](examples/) directory for sample configurations and walkthr
 
 </details>
 
+The entries below are pre-rename `AIWander/hands` lineage notes kept for context; AI-Hands restarted public release numbering at `v1.0.0` on 2026-05-15.
+
 <details>
 <summary>v1.3.4</summary>
 
@@ -57,7 +59,7 @@ See the [`examples/`](examples/) directory for sample configurations and walkthr
 <details>
 <summary>Previous releases</summary>
 
-**v1.3.0** (2026-04-16) — Path deps to git tags, Cargo.lock committed, README MIT to Apache-2.0, version sync. First version that builds as standalone public clone.
+**v1.3.0** (2026-04-16) — Path deps to git tags, Cargo.lock committed, README license metadata aligned to Apache-2.0, version sync. First version that builds as standalone public clone.
 
 **v1.2.2** — Phase C Fix3: meta-tool dispatch, async Send bound, notify parity.
 
@@ -142,7 +144,7 @@ AI-Hands takes a different approach: **use the right automation layer for each t
 
 ## Comparison
 
-AI-Hands is a **capability surface** — a local MCP server that lets your chosen AI model (Claude, GPT, Gemini, local LLM) drive your browser, Windows apps, and screen. It does not bundle an AI; you bring the model. The tables below set that apart from (1) other BYOM capability surfaces and (2) AI-bundled computer-use products. Status current as of May 2026.
+AI-Hands is a **capability surface** — a local MCP server that lets your chosen AI model (Claude, GPT, Gemini, local LLM) drive your browser, Windows apps, and screen. It does not bundle an AI; you bring the model. The tables below set that apart from (1) other BYOM capability surfaces and (2) AI-bundled computer-use products. This comparison is a May 2026 snapshot; verify third-party pricing, availability, and benchmarks before relying on them.
 
 ### vs. other BYOM capability surfaces
 

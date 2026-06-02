@@ -24,7 +24,7 @@ Write-Host ""
 
 # 1. Binary exists
 $binaryPaths = @(
-    "C:\CPC\servers\hands.exe",
+    "$env:LOCALAPPDATA\CPC\servers\hands.exe",
     "C:\MCP\servers\hands.exe",
     "$env:LOCALAPPDATA\hands\hands.exe"
 )

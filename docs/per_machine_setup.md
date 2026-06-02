@@ -6,7 +6,7 @@ This guide covers everything you need to do on each machine where you want to ru
 
 | Item | Per-machine? | How to set up |
 |---|---|---|
-| MCP binary | Yes | Download from GitHub release → `C:\CPC\servers\hands.exe`. Pick right arch (`_arm64.exe` or `_x64.exe`). |
+| MCP binary | Yes | Download from GitHub release → `%LOCALAPPDATA%\CPC\servers\hands.exe`. Pick right arch (`_arm64.exe` or `_x64.exe`). |
 | Claude Desktop config | Yes | Edit `%APPDATA%\Claude\claude_desktop_config.json` — copy entry from `claude_desktop_config.example.json` in this repo into your `mcpServers` object. |
 | Per-machine paths | Yes | Will be auto-detected by `cpc-paths` (forthcoming). For now, set env vars or hardcode in your config. See "Path Configuration" below. |
 | User preferences | Yes | Open Claude Desktop → Settings → Profile → paste your preferences. (UI-only, can't script.) |
@@ -28,8 +28,8 @@ This guide covers everything you need to do on each machine where you want to ru
 
 | Path | Env var | Default fallback |
 |---|---|---|
-| Volumes (knowledge base) | `CPC_VOLUMES_PATH` | `C:\My Drive\Volumes` (Windows) |
-| Install (server binaries) | `CPC_INSTALL_PATH` | `C:\CPC\servers` (Windows) |
+| Volumes (knowledge base) | `CPC_VOLUMES_PATH` | Auto-detected by `cpc-paths`; set explicitly if your Drive root is custom |
+| Install (server binaries) | `CPC_INSTALL_PATH` | `%LOCALAPPDATA%\CPC\servers` (Windows) |
 | Backups | `CPC_BACKUPS_PATH` | `%LOCALAPPDATA%\CPC\backups` (Windows) |
 
 If you're on a different platform or your Drive is mounted elsewhere, set the env vars in your shell profile or system environment before launching Claude Desktop.
@@ -41,7 +41,7 @@ Every CPC server writes data to exactly one of two roots. Keeping them separate 
 ### Tier 1 — Volumes (Drive-synced, cross-machine)
 
 - **Resolver:** `cpc_paths::volumes_path()`
-- **Default:** `C:\My Drive\Volumes\` (Windows) — wherever your Drive root is
+- **Default:** resolved by `cpc-paths`; set `CPC_VOLUMES_PATH` if your Drive root is custom
 - **Override:** `CPC_VOLUMES_PATH` env var or `.cpc-config.toml`
 
 What lives here: knowledge base (Operating files, CATALOG.md, skills/), completed breadcrumb archives, handoffs, transcripts, behavioral patterns, shared reference docs.
@@ -76,7 +76,7 @@ If you have `C:\CPC\logs\`, `C:\CPC\state\`, etc. from a legacy install, they co
 ### Setting up a second machine
 
 1. Verify Google Drive is syncing on the new machine — Volumes is already there.
-2. Download and install the MCP binaries (right arch) to `C:\CPC\servers\` or wherever you configure `CPC_INSTALL_PATH`.
+2. Download and install the MCP binaries (right arch) to `%LOCALAPPDATA%\CPC\servers\` or wherever you configure `CPC_INSTALL_PATH`.
 3. Copy the `mcpServers` entry from `claude_desktop_config.example.json` into your Claude Desktop config on the new machine.
 4. Re-enter credentials per machine via `workflow:credential_store` — secrets do NOT sync.
 5. Active session state starts fresh on each machine. That's intentional.

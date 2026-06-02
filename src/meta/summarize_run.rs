@@ -7,7 +7,7 @@
 //! no browser, no session, no async.
 //!
 //! Inputs come from two sources:
-//!   1. Breadcrumb JSON at C:/My Drive/Volumes/breadcrumbs/{active,completed/<date>}/bc_*.json
+//!   1. Breadcrumb JSON at cpc_paths::volumes_path()/breadcrumbs/{active,completed/<date>}/bc_*.json
 //!   2. Instrumentation log at <resolved_log_dir>/hands_meta.jsonl
 //!
 //! Acceptance criterion (aspirational, warm cache): <50ms per breadcrumb_id.
@@ -21,7 +21,6 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-const VOLUMES_BREADCRUMBS_ROOT: &str = r"C:\My Drive\Volumes\breadcrumbs";
 const LEGACY_LOG_DIR: &str = r"C:\CPC\logs";
 const LOG_FILE: &str = "hands_meta.jsonl";
 
@@ -41,9 +40,19 @@ pub fn handle(args: &Value) -> Value {
         }
     };
 
-    let breadcrumbs_root = Path::new(VOLUMES_BREADCRUMBS_ROOT);
+    let breadcrumbs_root = resolve_breadcrumbs_root();
     let log_path = resolve_log_path();
-    _summarize_from_paths(input, breadcrumbs_root, log_path.as_deref())
+    _summarize_from_paths(input, &breadcrumbs_root, log_path.as_deref())
+}
+
+fn resolve_breadcrumbs_root() -> PathBuf {
+    cpc_paths::volumes_path()
+        .map(|path| path.join("breadcrumbs"))
+        .unwrap_or_else(|_| {
+            cpc_paths::data_path("hands")
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("breadcrumbs")
+        })
 }
 
 /// Resolve the hands_meta.jsonl path via the same legacy-fallback logic used by

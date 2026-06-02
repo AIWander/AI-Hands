@@ -1,7 +1,7 @@
 #![allow(dead_code)] // scaffolded module, awaiting integration
 //! Instrumentation logger — writes rung attempts to hands_meta.jsonl.
 //! Log directory resolved via legacy-fallback:
-//!   1. C:\CPC\logs — if it exists with hands_meta data (Joe's machine)
+//!   1. Legacy C:\CPC\logs — if it exists with hands_meta data
 //!   2. cpc_paths::data_path("hands") — fresh installs
 //! One line per rung attempt, one aggregate line per call.
 //! Rotate daily at midnight, keep 7 days.
@@ -28,7 +28,7 @@ fn log_dir() -> &'static PathBuf {
 }
 
 /// Resolve the hands log directory.
-/// 1. Legacy `C:\CPC\logs` — if it exists AND contains hands_meta data (Joe's machine).
+/// 1. Legacy `C:\CPC\logs` — if it exists AND contains hands_meta data.
 /// 2. `cpc_paths::data_path("hands")` — fresh installs.
 ///
 /// Testable inner function — takes `legacy` as a parameter so tests can inject tempdirs.
@@ -311,7 +311,7 @@ mod tests {
     fn test_legacy_path_wins() {
         let _guard = ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        // Create hands_meta.jsonl — simulates Joe's machine
+        // Create hands_meta.jsonl — simulates an existing legacy install
         std::fs::write(dir.path().join("hands_meta.jsonl"), "").unwrap();
 
         let result = _resolve_hands_log_dir(dir.path()).unwrap();
