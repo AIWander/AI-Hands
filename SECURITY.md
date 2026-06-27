@@ -10,4 +10,4 @@ The latest minor version receives security updates.
 
 ## Reporting Security Issues
 
-Please open a [GitHub Issue](https://github.com/AIWander/AI-Hands/issues) or email josephwander@gmail.com.
+Please open a [GitHub Issue](https://github.com/AIWander/AI-Hands/issues) or email contact@aiwander.ai.

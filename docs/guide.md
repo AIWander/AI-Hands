@@ -261,7 +261,7 @@ A few tools span multiple tiers for common workflows:
 
 **Accessibility-first interaction.** Browser tools that support `a11y_ref` (click, type, hover, focus, select) can target elements by their accessibility tree reference instead of CSS selectors. Use `browser_a11y_snapshot` to get the tree, then pass the ref directly.
 
-**Stealth mode.** The `browser_launch` and `browser_attach` tools accept a `stealth` parameter that applies anti-detection measures for sites that block headless browsers.
+**Browser compatibility mode.** Launch and attach flows can apply compatibility adjustments for authorized automation testing in environments you control or have permission to test. Users are responsible for site terms and permissions.
 
 **Browser not launching.** Hands connects to Chrome over CDP. Use `browser_debug_launch` to start Chrome with `--remote-debugging-port=9222`, or launch Chrome manually with that flag. If Chrome is not installed, install it from https://www.google.com/chrome/.
 

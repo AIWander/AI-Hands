@@ -10,6 +10,10 @@ See the [`examples/`](examples/) directory for sample configurations and walkthr
 
 **Part of [CPC](https://github.com/AIWander) (Copy Paste Compute)** — a multi-agent AI orchestration platform. Related repos: [manager](https://github.com/AIWander/manager) · [local](https://github.com/AIWander/local) · [workflow](https://github.com/AIWander/workflow)
 
+## Safe Use / Permission Model
+
+AIWander tools are local, user-authorized MCP capability surfaces. They do not grant an AI new permissions by themselves. They expose tools the user explicitly installs and enables. Sensitive actions should be confirmed by the user, credentials should stay in the OS keyring or local vault, and demos should use mock data.
+
 ## What's New in v1.0.1
 
 - **Security: 3 Dependabot alerts resolved** — `openssl` 0.10.78 → 0.10.79 (fixes [GHSA-xp3w-r5p5-63rr](https://github.com/advisories/GHSA-xp3w-r5p5-63rr) HIGH OCSP UB and [GHSA-xv59-967r-8726](https://github.com/advisories/GHSA-xv59-967r-8726) MODERATE AES key-wrap heap overflow); `lru` 0.12.5 → 0.16.4 (fixes [GHSA-rhfx-m35p-ff5j](https://github.com/advisories/GHSA-rhfx-m35p-ff5j) LOW IterMut Stacked Borrows) via `rqrr` 0.7 → 0.10. Binary size: x64 22.55 MB (−1.10 MB vs v1.0.0), ARM64 19.01 MB (−0.94 MB vs v1.0.0).
@@ -37,7 +41,7 @@ The entries below are pre-rename `AIWander/hands` lineage notes kept for context
 
 - **Phase D: compile-time ZST AtomicTool dispatch** — Replaced all runtime string-based UIA tool dispatch in meta-tools with zero-sized-type (ZST) `AtomicTool` handles resolved at compile time. 11 UIA tools wrapped. 7 meta-tool files refactored. 27 call sites replaced.
 - **`src/atomic.rs`** — New module defining the `AtomicTool` trait and ZST wrappers for all UIA tools.
-- **`src/stealth.rs`** — Stealth/anti-detection module for browser automation.
+- **Browser compatibility module** — Optional browser compatibility adjustments for authorized automation testing.
 </details>
 
 <details>
@@ -202,7 +206,7 @@ Find elements by name/type/automation ID, click, type, read values, get state, w
 Screenshot (full/window/region), OCR, template matching, image diff, visual analysis, screenshot+OCR combo.
 
 ### Meta-Tools (12 tools)
-Smart orchestration layer: reads page, clicks, navigates, captures, finds, types, fills forms, verifies, scans QR, launches apps, runs scripts, recovers login flows — picks the right tier automatically.
+Smart orchestration layer: reads page, clicks, navigates, captures, finds, types, fills forms, verifies, handles authorized setup flows, launches apps, runs scripts, recovers login flows — picks the right tier automatically.
 
 ### Combo & Utility (11 tools)
 Cross-tier tools: find-and-click (OCR→UIA), read screen text, wait for visual, window screenshot, type into window, drag, element drag, retry click, file upload, status, health check.
@@ -213,7 +217,7 @@ Cross-tier tools: find-and-click (OCR→UIA), read screen text, wait for visual,
 
 **Accessibility-first targeting.** Every `browser_navigate` auto-caches an accessibility snapshot. Each interactive element gets a stable ref (`ref_0`, `ref_1`, ...) that flows into `browser_click`, `browser_type`, `browser_hover`, and every other interaction tool. Refs survive minor DOM changes — no brittle CSS selectors needed. This is AI-Hands' primary competitive advantage over screenshot-based agents.
 
-**Stealth mode.** `browser_launch(stealth=true)` or `browser_attach(stealth=true)` strips WebDriver indicators, spoofs navigator properties, and adjusts timing to bypass common bot-detection checks (Cloudflare, Akamai, navigator.webdriver). Not foolproof against enterprise anti-bot, but handles the common cases.
+**Browser compatibility mode.** Launch and attach flows can apply compatibility adjustments for authorized automation testing in environments you control or have permission to test. Users are responsible for site terms and permissions.
 
 **Multi-context isolation.** `browser_context_create` spins up isolated cookie jars — separate login sessions, multi-account flows, A/B testing, all in one Chrome instance without cross-contamination.
 
@@ -253,9 +257,9 @@ Cross-tier tools: find-and-click (OCR→UIA), read screen text, wait for visual,
 
 **`hands_verify`** — 5-rung verification ladder with configurable polling and named templates.
 
-**`hands_login_recovery`** — 5-stage pipeline: detect login page → fill credentials → handle 2FA (including TOTP via `workflow:totp_generate`) → verify success → retry on failure.
+**`hands_login_recovery`** — 5-stage pipeline: detect login page → fill approved credentials → handle user-authorized MFA steps → verify success → retry on failure.
 
-**`hands_scan_qr`** — decodes QR codes on screen and feeds results to `workflow:totp_register_from_uri` for automatic TOTP vault seeding.
+**`hands_scan_qr`** — supports authorized on-screen setup flows without placing secrets or recovery codes in prompts.
 
 **`hands_script`** — multi-step orchestration with `{{var}}` substitution across tool calls.
 
@@ -263,7 +267,7 @@ Cross-tier tools: find-and-click (OCR→UIA), read screen text, wait for visual,
 
 **Graduation pipeline (hands → workflow).** `browser_learn_api` extracts API patterns during a browser session. `workflow:api_store` saves them. `workflow:api_call` replays direct HTTP forever — ~50-200ms vs 3-5s browser cycle. Automate once in Chrome, replay at API speed indefinitely.
 
-**Unattended 2FA (hands + workflow).** `hands_scan_qr` decodes a TOTP registration QR from the screen, calls `workflow:totp_register_from_uri` to seed the OS keyring (Windows Credential Manager, target `totp:<name>.cpc-workflow`). On every subsequent login, `hands_login_recovery` generates the current TOTP via `workflow:totp_generate` and types it in. Neither password nor TOTP seed ever enters chat context.
+**Credential and MFA workflows (hands + workflow).** Credential and MFA workflows require explicit user authorization and local keyring storage. Public docs intentionally avoid implementation details. Do not place passwords, tokens, recovery codes, or MFA setup material in chat context.
 
 ## Quick Start
 
@@ -372,4 +376,4 @@ Copyright 2026 Joseph Wander.
 
 Joseph Wander
 - GitHub: [github.com/AIWander](https://github.com/AIWander/)
-- Email: [josephwander@gmail.com](mailto:josephwander@gmail.com)
+- Contact: [GitHub Issues](https://github.com/AIWander/AI-Hands/issues) or contact@aiwander.ai

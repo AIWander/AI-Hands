@@ -143,7 +143,7 @@ Same pattern for desktop automation:
 ### Lifecycle
 | Tool | Purpose |
 |------|---------|
-| `browser_launch` | Start Chrome. Params: `headless` (bool), `stealth` (bool), `profile_path` (string). |
+| `browser_launch` | Start Chrome. Params include headless mode, optional compatibility adjustments, and profile path. |
 | `browser_close` | Close the browser session. Always clean up when done. |
 | `browser_navigate` | Go to URL. Auto-caches a11y snapshot on load. |
 | `browser_back` / `browser_forward` / `browser_reload` | History navigation. |
@@ -461,29 +461,28 @@ This is especially powerful for:
 
 ---
 
-## Stealth Mode
+## Browser Compatibility Mode
 
-Some sites detect headless browsers and block them. `browser_launch` accepts a
-`stealth` parameter that applies anti-detection measures:
+Some authorized test environments behave differently under automated browser
+sessions. Browser launch flows include optional compatibility adjustments for
+workflows you control or have permission to test:
 
 ```json
-{"tool": "browser_launch", "arguments": {"stealth": true}}
+{"tool": "browser_launch", "arguments": {"headless": false}}
 ```
 
-This modifies browser fingerprints, removes automation indicators, and adjusts
-timing patterns. It's not foolproof -- sophisticated anti-bot systems will still
-catch it -- but it handles the common checks (navigator.webdriver, headless
-detection, etc.).
+Use compatibility adjustments only for authorized automation testing. They are
+not a way to evade site terms, access controls, or permission boundaries.
 
-**When to use stealth:**
-- Sites that return different content to headless browsers.
-- Sites with Cloudflare, Akamai, or similar bot detection.
-- When `browser_http_scrape` fails with 403 or returns a challenge page.
+**When to use compatibility adjustments:**
+- Internal tools, staging sites, or apps you control.
+- Test workflows where browser automation is explicitly permitted.
+- Cases where headless rendering differs from an approved headed browser run.
 
-**When NOT to use stealth:**
-- Internal tools, admin panels, APIs you control.
-- Sites that don't do bot detection (most of them).
-- Stealth mode adds startup time. Don't use it by default.
+**When NOT to use compatibility adjustments:**
+- Sites where automation is not authorized.
+- Attempts to avoid access controls, usage limits, or site terms.
+- Default browsing. Compatibility adjustments can add startup time.
 
 ---
 
@@ -654,8 +653,8 @@ survives window moves and resolution changes.
 ### browser_http_scrape returns empty or 403
 
 - The site may require JS rendering. Step up to `browser_smart_browse`.
-- The site may block non-browser user agents. Step up to `browser_launch` with
-  `stealth: true`.
+- The site may require an approved headed browser session. Step up to
+  `browser_launch` with the right profile.
 - The site may require auth. Use `browser_launch` with `profile_path` to log in
   first.
 
@@ -673,12 +672,12 @@ survives window moves and resolution changes.
 - Set `continue_on_error: true` if you want best-effort execution.
 - The return value includes results for all completed steps plus the error.
 
-### Stealth mode still gets blocked
+### Browser compatibility mode still fails
 
-- Sophisticated anti-bot systems (Cloudflare Enterprise, PerimeterX) may still
-  detect automation. Stealth handles common checks but isn't a silver bullet.
-- Try adding realistic delays between actions.
-- Consider the graduation pipeline -- capture the API and skip the browser entirely.
+- Verify the workflow is authorized for automation.
+- Try a normal headed browser profile first.
+- Consider the graduation pipeline for approved repeat workflows -- capture the
+  API and skip the browser entirely.
 
 ---
 

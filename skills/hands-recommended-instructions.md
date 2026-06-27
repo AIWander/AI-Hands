@@ -51,10 +51,10 @@ nothing useful for that app).
 Always call `browser_close` when you're done with a browser session. Leaked Chrome
 processes waste memory and can block future launches.
 
-### Stealth
-Only enable `stealth: true` on `browser_launch` when a site actively blocks headless
-browsers (403s, challenge pages, different content). Don't use it by default -- it
-adds startup latency.
+### Browser Compatibility
+Use browser compatibility adjustments only for authorized automation testing in
+environments the user controls or has permission to test. Don't use them by
+default -- they can add startup latency.
 
 <!-- ======== END HANDS INSTRUCTIONS ======== -->
 ```

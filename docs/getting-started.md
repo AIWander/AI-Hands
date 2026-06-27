@@ -267,7 +267,7 @@ Key meta-tools:
 - `hands_script` — run multi-step browser automation scripts
 - `hands_app_action` — orchestrate Windows app interactions
 - `hands_login_recovery` — handle login walls and session expiry
-- `hands_scan_qr` — capture and decode QR codes
+- `hands_scan_qr` — support authorized on-screen setup flows
 - `hands_type` — intelligent typing with field detection and verification
 
 ## Common Workflows
@@ -288,7 +288,7 @@ Key meta-tools:
 
 **Accessibility-first interaction.** Browser tools that support `a11y_ref` (click, type, hover, focus, select) can target elements by their accessibility tree reference instead of CSS selectors. Use `browser_a11y_snapshot` to get the tree, then pass the ref directly.
 
-**Stealth mode.** The `browser_launch` and `browser_attach` tools accept a `stealth` parameter that applies anti-detection measures for sites that block headless browsers.
+**Browser compatibility mode.** Launch and attach flows can apply compatibility adjustments for authorized automation testing in environments you control or have permission to test. Users are responsible for site terms and permissions.
 
 **Browser not launching.** Hands connects to Chrome over CDP. Use `browser_debug_launch` to start Chrome with `--remote-debugging-port=9222`, or launch Chrome manually with that flag. If Chrome is not installed, install it from https://www.google.com/chrome/.
 
