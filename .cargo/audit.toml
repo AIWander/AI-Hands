@@ -1,0 +1,14 @@
+# cargo-audit configuration — documented, tracked advisory exceptions.
+# Each ignore below records WHY it is safe and WHEN to remove it.
+[advisories]
+ignore = [
+    # quick-xml <0.41 DoS advisories: RUSTSEC-2026-0194 (quadratic duplicate-attribute
+    # check) and RUSTSEC-2026-0195 (unbounded namespace-declaration allocation).
+    # Reachability: quick-xml is pulled ONLY by wayland-scanner + xcb (Linux windowing
+    # crates), which use it at BUILD TIME to parse trusted, crate-shipped protocol XML —
+    # never attacker-controlled input, and not compiled at all on the Windows target.
+    # Upgrade blocked upstream: wayland-scanner/xcb pin quick-xml 0.28/0.30; no release
+    # using >=0.41 exists yet. Remove these two lines once that upgrade path opens.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
