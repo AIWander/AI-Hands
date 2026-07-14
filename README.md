@@ -8,7 +8,7 @@
 
 See the [`examples/`](examples/) directory for sample configurations and walkthroughs.
 
-**Part of [CPC](https://github.com/AIWander) (Copy Paste Compute)** and the free core trio with [Voice-Command](https://github.com/AIWander/Voice-Command) and [Programmer-Wander](https://github.com/AIWander/Programmer-Wander). Related repos: [manager-universal](https://github.com/AIWander/manager-universal) (manager/dashboard Beta and coming soon) · [local](https://github.com/AIWander/local) · [workflow](https://github.com/AIWander/workflow)
+**Part of [CPC](https://github.com/AIWander) (Copy Paste Compute)** and the free core trio with [Voice-Command](https://github.com/AIWander/Voice-Command) and [Programmer-Wander](https://github.com/AIWander/Programmer-Wander). Related repo: [manager-universal](https://github.com/AIWander/manager-universal) (manager/dashboard Beta and coming soon)
 
 ## Safe Use / Permission Model
 
@@ -294,8 +294,6 @@ cargo build --release -p hands
 `hands` runs standalone — one binary, one client, and you have browser + UIA + vision automation. Pair with other CPC servers when an automation task needs orchestration, file I/O, or credential-backed HTTP replay.
 
 - Pair with [manager-universal](https://github.com/AIWander/manager-universal) to test delegated browser chores; manager and its dashboard are Beta and coming soon.
-- Pair with [workflow](https://github.com/AIWander/workflow) to graduate discovered API calls from browser automation to direct-HTTP replay (`browser_learn_api` feeds `api_store`).
-- Pair with [local](https://github.com/AIWander/local) for filesystem and shell steps before or after automation runs.
 
 Host clients: Claude Desktop, Claude Code, OpenAI Codex CLI, Gemini CLI, or any MCP-compatible host.
 
