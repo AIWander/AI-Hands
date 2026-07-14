@@ -1,0 +1,24 @@
+{
+  "name": "grok-ai-hands",
+  "version": "1.0.0",
+  "description": "Grok plugin for AI-Hands: meta-tool routing skills, real-click safety, workflow recipes, PreToolUse safety gate, and PostToolUse audit hooks.",
+  "author": {
+    "name": "AIWander",
+    "url": "https://github.com/AIWander/AI-Hands"
+  },
+  "homepage": "https://github.com/AIWander/AI-Hands/tree/main/plugins/grok-ai-hands",
+  "repository": "https://github.com/AIWander/AI-Hands",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ai-hands",
+    "hands",
+    "automation",
+    "browser",
+    "uia",
+    "vision",
+    "grok",
+    "mcp",
+    "safety",
+    "hooks"
+  ]
+}

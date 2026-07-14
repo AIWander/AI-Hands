@@ -1,0 +1,41 @@
+{
+  "description": "AI-Hands PreToolUse safety gate + PostToolUse audit logging for Grok/Claude harnesses",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "AI-Hands__|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/bin/ai_hands_pre_safety.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "AI-Hands__|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/bin/ai_hands_post_audit.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "AI-Hands__|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/bin/ai_hands_post_audit.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
