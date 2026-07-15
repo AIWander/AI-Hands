@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "hands": {
+      "command": "hands.exe",
+      "args": [],
+      "env": {
+        "HANDS_TOOL_PROFILE": "default"
+      }
+    }
+  }
+}

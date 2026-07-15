@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
+use crate::uia_lib::{Point, Rect};
 use serde::Serialize;
-use uia_lib::{Point, Rect};
 use windows::Win32::UI::Accessibility::IUIAutomationElement;
 
 #[derive(Clone, Serialize)]

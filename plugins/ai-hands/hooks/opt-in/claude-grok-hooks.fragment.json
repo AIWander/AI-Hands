@@ -1,0 +1,41 @@
+{
+  "description": "Optional single-owner policy hooks for AI-Hands",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "hands__|AI-Hands__|mcp__hands__|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.11 \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/claude-grok/hook_adapter.py\" --event PreToolUse",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "hands__|AI-Hands__|mcp__hands__|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.11 \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/claude-grok/hook_adapter.py\" --event PostToolUse",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "hands__|AI-Hands__|mcp__hands__|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.11 \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/claude-grok/hook_adapter.py\" --event PostToolUseFailure",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

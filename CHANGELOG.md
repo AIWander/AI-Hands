@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v1.1.0-unified.1 - 2026-07-15 - Unified preview
+
+### Added
+
+- Ability-based union profiles (`default`, `full`, `strict`, and `compatibility`) with a machine-readable capability catalog and no duplicate registrations.
+- Central fail-closed monitor scope with fixed physical stable IDs and locking for unattended automation.
+- Collision-resistant screenshot filenames across same-process, same-second, and concurrent-process captures.
+- Optional cross-host plugin with Codex and Claude manifests, ability-routed skills, per-AI instructions, and inert opt-in hook templates.
+- Inno Setup package that stages the Rust binary, plugin, skills, prerequisites, helper files, and a per-AI guide without silently editing AI or hook configuration.
+
+### Changed
+
+- Vendored browser, UIA, and vision libraries so the audited source used by the binary is present in this repository.
+- Removed workstation-specific screenshot paths from vision-core. Default captures now resolve the signed-in user's Pictures directory at runtime and use unique names.
+- Made the optional Node extraction helper portable through PATH or `AIHANDS_NODE_EXE`, `AIHANDS_JS_EXTRACT_SCRIPT`, and `AIHANDS_NODE_PATH`.
+- Disabled execution of untrusted page scripts in the optional jsdom parser. Use attached-browser DOM tools when live JavaScript execution is required.
+
+### Validation
+
+- 370 unit tests passed and one optional example-plugin test was ignored.
+- Clippy passed for all targets with warnings denied.
+- Two strict four-monitor acceptance runs passed all 13 checks on the exact publication-sanitized binary; physical stable IDs were identical across runs.
+- Installer acceptance confirmed the embedded binary hash, nine required payloads, unchanged PATH when disabled, no AI-config edits, no false Chrome warning, clean uninstall, and truthful clipboard-unavailable fallback.
+
+
 ## v1.0.1 — 2026-05-15 — Dep-bump security release
 
 Resolves Dependabot alerts inherited from the AIWander/hands → AIWander/AI-Hands

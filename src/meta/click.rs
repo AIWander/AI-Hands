@@ -26,6 +26,7 @@ use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
 use super::session::SharedSession;
 use super::targeting::classify_reversibility;
 use crate::atomic::{AtomicTool, UiaClick, UiaFindElement};
+use crate::vision_core;
 
 pub async fn handle(
     args: &Value,
@@ -88,6 +89,7 @@ pub async fn handle(
     let offset_x = args.get("offset_x").and_then(|v| v.as_i64()).unwrap_or(0);
     let offset_y = args.get("offset_y").and_then(|v| v.as_i64()).unwrap_or(0);
     let offset_active = offset_x != 0 || offset_y != 0;
+    let monitor = args.get("monitor").and_then(Value::as_u64).unwrap_or(0) as usize;
 
     // Pre-click reversibility check
     let reversibility = classify_reversibility(&target);
@@ -100,6 +102,7 @@ pub async fn handle(
         "allow_destructive": allow_destructive,
         "offset_x": offset_x,
         "offset_y": offset_y,
+        "monitor": monitor,
     });
 
     if reversibility == Reversibility::Destructive && !allow_destructive {
@@ -572,7 +575,7 @@ pub async fn handle(
                         let success = click_result
                             .get("success")
                             .and_then(|v| v.as_bool())
-                            .unwrap_or(true);
+                            .unwrap_or(false);
                         let rung_ms = rung_start.elapsed().as_millis() as u64;
 
                         if success {
@@ -625,28 +628,50 @@ pub async fn handle(
         // Rung 7: OCR → coords click
         {
             let rung_start = Instant::now();
-            let ocr_result = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
+            let ocr_result =
+                vision_core::execute("vision_screenshot_ocr", &json!({"monitor": monitor})).await;
             let ocr_text = ocr_result
                 .get("text")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
             if ocr_text.to_lowercase().contains(&target.to_lowercase()) {
-                let screenshot_path = vision_core::take_screenshot(None, 0, 80).unwrap_or_default();
+                let screenshot_path =
+                    vision_core::take_screenshot(None, monitor, 80).unwrap_or_default();
                 if !screenshot_path.is_empty() {
                     if let Ok(words) = vision_core::ocr_image_with_positions(&screenshot_path).await
                     {
                         let _ = std::fs::remove_file(&screenshot_path);
                         if let Some((x, y)) = find_text_in_ocr_words(&words, &target) {
-                            let click_x = x + offset_x;
-                            let click_y = y + offset_y;
+                            let (global_x, global_y) =
+                                match crate::monitor_scope::globalize_local_point(x, y, monitor) {
+                                    Ok(point) => point,
+                                    Err(error) => {
+                                        let rung_ms = rung_start.elapsed().as_millis() as u64;
+                                        rungs_tried.push(RungAttempt::failed(
+                                            "ocr_coords",
+                                            rung_ms,
+                                            &error,
+                                        ));
+                                        let elapsed = start.elapsed().as_millis() as u64;
+                                        return MetaToolResult::failure(
+                                            rungs_tried,
+                                            MetaError::other(error),
+                                            elapsed,
+                                        )
+                                        .with_reversibility(reversibility)
+                                        .to_value();
+                                    }
+                                };
+                            let click_x = global_x + offset_x;
+                            let click_y = global_y + offset_y;
                             let click_result = UiaClick.call(
                                 &json!({"x": click_x, "y": click_y, "button": button, "double_click": double_click}),
                             );
                             let success = click_result
                                 .get("success")
                                 .and_then(|v| v.as_bool())
-                                .unwrap_or(true);
+                                .unwrap_or(false);
                             let rung_ms = rung_start.elapsed().as_millis() as u64;
 
                             if success {

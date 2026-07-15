@@ -1,0 +1,20 @@
+{
+  "name": "aiwander-ai-hands",
+  "interface": {
+    "displayName": "AIWander AI-Hands"
+  },
+  "plugins": [
+    {
+      "name": "ai-hands",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ai-hands"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

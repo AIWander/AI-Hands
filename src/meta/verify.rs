@@ -15,6 +15,7 @@
 //!   - Location-based confidence: heading=1.0, body=0.7, footer/nav=0.4, hidden=0.2
 //!   - Three input modes: structured (text|regex|element), natural_text, template
 
+use crate::vision_core;
 use serde_json::{json, Value};
 use std::time::Instant;
 

@@ -28,12 +28,16 @@ use std::io::{BufRead, Write};
 
 mod a11y_cache;
 mod atomic;
+mod canonical;
 mod dashboard_endpoint;
 mod meta;
+mod monitor_scope;
 mod plugin;
 mod security;
 mod stealth;
 mod uia;
+mod uia_lib;
+mod vision_core;
 
 #[cfg(windows)]
 use windows::{
@@ -81,11 +85,14 @@ struct JsonRpcResponse {
 
 // ============ TOOL DEFINITIONS ============
 
-fn get_all_tool_definitions() -> Vec<Value> {
+fn get_all_tool_definitions_raw() -> Vec<Value> {
     let mut tools = Vec::new();
 
     // --- Phase A Meta-tools (prepended — Claude defaults to these) ---
     tools.extend(meta::meta_tool_definitions());
+
+    // --- Central multi-monitor scope (one ability front door) ---
+    tools.push(monitor_scope::tool_definition());
 
     // --- Browser tools (from browser-mcp lib) ---
     // Tools that support a11y_ref for accessibility-first interaction
@@ -103,6 +110,12 @@ fn get_all_tool_definitions() -> Vec<Value> {
     const STEALTH_TOOLS: &[&str] = &["launch", "attach"];
 
     for t in browser_mcp::tools::list_tools() {
+        // Hands owns the united accessibility contract. The vendored browser
+        // crate also registers these names with a smaller, different schema;
+        // skipping them here removes the duplicate at its source.
+        if matches!(t.name.as_str(), "a11y_snapshot" | "a11y_find") {
+            continue;
+        }
         let mut schema = t.input_schema.clone();
         // Inject a11y_ref parameter into supported tools
         if A11Y_REF_TOOLS.contains(&t.name.as_str()) {
@@ -144,7 +157,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
     // --- Combo tools (new, unique to Hands) ---
     tools.push(json!({
         "name": "find_and_click",
-        "description": "\u{26A0} DEPRECATED 2026-05-15 \u{2014} use hands_click (offset_x/offset_y subsume the find_and_click offset behavior; rungs 6+7 cover OCR + UIA fallback). Find text on screen via OCR, then click its location via UIA. Combines vision + UIA in one call. When window_title is provided, focuses that window first. When text isn't found on the visible screen, automatically tries focusing other windows to find it.",
+        "description": "DEPRECATED: use hands_click (offset_x/offset_y subsume the find_and_click offset behavior; rungs 6+7 cover OCR + UIA fallback). Find text on screen via OCR, then click its location via UIA. Combines vision + UIA in one call. When window_title is provided, focuses that window first. When text isn't found on the visible screen, automatically tries focusing other windows to find it.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -161,7 +174,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
     tools.push(json!({
         "name": "read_screen_text",
-        "description": "\u{26A0} DEPRECATED 2026-05-15 \u{2014} use hands_capture (accepts optional window_title to focus a named window before OCR) or vision_screenshot_ocr for screen-only OCR. Take a screenshot and return all text via OCR. Optionally target a specific window by title.",
+        "description": "DEPRECATED: use hands_capture (accepts optional window_title to focus a named window before OCR) or vision_screenshot_ocr for screen-only OCR. Take a screenshot and return all text via OCR. Optionally target a specific window by title.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -197,7 +210,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
     tools.push(json!({
         "name": "window_screenshot",
-        "description": "\u{26A0} PARTIALLY DEPRECATED 2026-05-15 \u{2014} for default (behind=false) capture, prefer `vision_screenshot` (focus the window yourself if needed, then screenshot). For obscured/background windows, prefer the new `vision_screenshot_hidden_window` tool (PrintWindow API, always-on). This combined tool remains registered for backward compatibility. Focus a window by title and take a screenshot of it. Returns OCR text + saves image. With behind=true, captures the window content even if it's obscured by other windows (uses Win32 PrintWindow API).",
+        "description": "PARTIALLY DEPRECATED: for default (behind=false) capture, prefer `vision_screenshot` (focus the window yourself if needed, then screenshot). For obscured/background windows, prefer the new `vision_screenshot_hidden_window` tool (PrintWindow API, always-on). This combined tool remains registered for backward compatibility. Focus a window by title and take a screenshot of it. Returns OCR text + saves image. With behind=true, captures the window content even if it's obscured by other windows (uses Win32 PrintWindow API).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -229,7 +242,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
     tools.push(json!({
         "name": "type_into_window",
-        "description": "\u{26A0} DEPRECATED 2026-05-15 \u{2014} use hands_type (adds focus verification, chunked typing for >100 chars, fast_set, and sensitive-field detection). Focus a window by title, optionally click at coordinates, then type text. Combines focus + click + type in one call.",
+        "description": "DEPRECATED: use hands_type (adds focus verification, chunked typing for >100 chars, fast_set, and sensitive-field detection). Focus a window by title, optionally click at coordinates, then type text. Combines focus + click + type in one call.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -282,7 +295,8 @@ fn get_all_tool_definitions() -> Vec<Value> {
             "properties": {
                 "title": { "type": "string", "description": "Window title to match (case-insensitive substring)" },
                 "x": { "type": "integer", "description": "Screen X coordinate for the top-left corner" },
-                "y": { "type": "integer", "description": "Screen Y coordinate for the top-left corner" }
+                "y": { "type": "integer", "description": "Screen Y coordinate for the top-left corner" },
+                "allow_rehome": { "type": "boolean", "default": false, "description": "Explicitly allow moving a uniquely matched window from outside into an active strict monitor fence" }
             },
             "required": ["title", "x", "y"]
         }
@@ -315,8 +329,9 @@ fn get_all_tool_definitions() -> Vec<Value> {
                 "position": {
                     "type": "string",
                     "description": "Target snap region",
-                    "enum": ["left", "right", "top-left", "top-right", "center"]
-                }
+                    "enum": ["left", "right", "top", "bottom", "top-left", "top-right", "center"]
+                },
+                "monitor": { "type": "integer", "minimum": 0, "description": "Target display index; an active strict scope overrides this and rejects mismatches" }
             },
             "required": ["title", "position"]
         }
@@ -354,6 +369,12 @@ fn get_all_tool_definitions() -> Vec<Value> {
                     "default": 10,
                     "description": "Maximum depth to traverse the tree (default: 10)"
                 },
+                "max_nodes": {
+                    "type": "integer",
+                    "default": 200,
+                    "minimum": 1,
+                    "description": "Maximum semantic nodes to include (default: 200)"
+                },
                 "incremental": {
                     "type": "boolean",
                     "default": false,
@@ -365,7 +386,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
     tools.push(json!({
         "name": "retry_click",
-        "description": "\u{26A0} DEPRECATED 2026-05-15 \u{2014} use browser_click with the new retry / retry_delay_ms options (same behavior, fewer hops). Robust click with automatic retry. If the click fails (element not found, stale, not clickable), waits and retries up to max_attempts times. Supports same args as browser_click (selector, match_text, x, y).",
+        "description": "DEPRECATED: use browser_click with the new retry / retry_delay_ms options (same behavior, fewer hops). Robust click with automatic retry. If the click fails (element not found, stale, not clickable), waits and retries up to max_attempts times. Supports same args as browser_click (selector, match_text, x, y).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -411,7 +432,7 @@ fn get_all_tool_definitions() -> Vec<Value> {
 
     tools.push(json!({
         "name": "hands_summarize_run",
-        "description": "Summarize a breadcrumb's run telemetry: tools_used breakdown, total/avg ms, success rate, failure steps, files_changed. Agent uses this to self-optimize ('my last 5 runs averaged 12s, this approach is 4s — adopt it'). Reads from C:/My Drive/Volumes/breadcrumbs/ + hands_meta.jsonl. Pure local-state — no browser/session.",
+        "description": "Summarize a breadcrumb's run telemetry: tools_used breakdown, total/avg ms, success rate, failure steps, files_changed. Agent uses this to self-optimize ('my last 5 runs averaged 12s, this approach is 4s — adopt it'). Reads from the configured breadcrumb storage and hands_meta.jsonl. Pure local-state — no browser/session.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -640,7 +661,10 @@ fn get_all_tool_definitions() -> Vec<Value> {
             "type": "object",
             "properties": {
                 "role": { "type": "string", "description": "ARIA role to find (button, link, textbox, heading, etc.)" },
-                "name": { "type": "string", "description": "Accessible name to match (case-insensitive substring)" }
+                "name": { "type": "string", "description": "Accessible name to match (case-insensitive substring unless exact=true)" },
+                "exact": { "type": "boolean", "default": false, "description": "Require an exact accessible-name match" },
+                "refresh": { "type": "boolean", "default": false, "description": "Refresh the accessibility snapshot before searching" },
+                "max_nodes": { "type": "integer", "default": 200, "minimum": 1, "description": "Maximum matches to return" }
             }
         }
     }));
@@ -727,6 +751,10 @@ fn get_all_tool_definitions() -> Vec<Value> {
     tools
 }
 
+fn get_all_tool_definitions() -> Vec<Value> {
+    canonical::filter_tool_definitions(get_all_tool_definitions_raw())
+}
+
 // ============ COMBO TOOL HANDLERS ============
 
 async fn handle_find_and_click(args: &Value) -> Value {
@@ -742,6 +770,7 @@ async fn handle_find_and_click(args: &Value) -> Value {
     let offset_x = args.get("offset_x").and_then(|v| v.as_i64()).unwrap_or(0);
     let offset_y = args.get("offset_y").and_then(|v| v.as_i64()).unwrap_or(0);
     let window_title = args.get("window_title").and_then(|v| v.as_str());
+    let monitor = args.get("monitor").and_then(Value::as_u64).unwrap_or(0) as usize;
 
     // If window_title provided, focus that window first
     if let Some(title) = window_title {
@@ -750,7 +779,9 @@ async fn handle_find_and_click(args: &Value) -> Value {
     }
 
     // Step 1: Screenshot + OCR
-    let ocr_result = meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({})).await;
+    let ocr_result =
+        meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({"monitor": monitor}))
+            .await;
     let ocr_text = ocr_result
         .get("text")
         .and_then(|v| v.as_str())
@@ -783,8 +814,11 @@ async fn handle_find_and_click(args: &Value) -> Value {
                 uia_lib::handle_tool_call("uia_focus_window", &json!({"title": title_val}));
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-                let retry_ocr =
-                    meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({})).await;
+                let retry_ocr = meta::vision_cache::cached_execute(
+                    "vision_screenshot_ocr",
+                    &json!({"monitor": monitor}),
+                )
+                .await;
                 let retry_text = retry_ocr.get("text").and_then(|v| v.as_str()).unwrap_or("");
                 if !retry_text.is_empty() && retry_text.to_lowercase().contains(&search_lower) {
                     found_text = true;
@@ -835,8 +869,12 @@ async fn handle_find_and_click(args: &Value) -> Value {
                         "double_click": double_click
                     }),
                 );
+                let click_ok = click_result
+                    .get("success")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 let mut result = json!({
-                    "success": true,
+                    "success": click_ok,
                     "found_via": "uia",
                     "method": "uia",
                     "text": text,
@@ -853,7 +891,7 @@ async fn handle_find_and_click(args: &Value) -> Value {
     }
 
     // Fallback: text was in OCR but not in UIA tree — click at OCR coordinates via SendInput
-    let screenshot_path = vision_core::take_screenshot(None, 0, 80).unwrap_or_default();
+    let screenshot_path = vision_core::take_screenshot(None, monitor, 80).unwrap_or_default();
     if !screenshot_path.is_empty() {
         if let Ok(words) = vision_core::ocr_image_with_positions(&screenshot_path).await {
             std::fs::remove_file(&screenshot_path).ok();
@@ -867,8 +905,8 @@ async fn handle_find_and_click(args: &Value) -> Value {
                 if word_text.to_lowercase().contains(&search_lower)
                     || search_lower.contains(&word_text.to_lowercase())
                 {
-                    match_x = Some((*x + w / 2.0) as i64 + offset_x);
-                    match_y = Some((*y + h / 2.0) as i64 + offset_y);
+                    match_x = Some((*x + w / 2.0) as i64);
+                    match_y = Some((*y + h / 2.0) as i64);
                     break;
                 }
             }
@@ -886,8 +924,8 @@ async fn handle_find_and_click(args: &Value) -> Value {
                         if combined.to_lowercase().contains(&search_lower) {
                             // Click at center of the span
                             let end_x = words[j].1 + words[j].3;
-                            match_x = Some(((start_x + end_x) / 2.0) as i64 + offset_x);
-                            match_y = Some((start_y + start_h / 2.0) as i64 + offset_y);
+                            match_x = Some(((start_x + end_x) / 2.0) as i64);
+                            match_y = Some((start_y + start_h / 2.0) as i64);
                             break;
                         }
                     }
@@ -897,7 +935,14 @@ async fn handle_find_and_click(args: &Value) -> Value {
                 }
             }
 
-            if let (Some(cx), Some(cy)) = (match_x, match_y) {
+            if let (Some(local_x), Some(local_y)) = (match_x, match_y) {
+                let (global_x, global_y) =
+                    match monitor_scope::globalize_local_point(local_x, local_y, monitor) {
+                        Ok(point) => point,
+                        Err(error) => return json!({"success": false, "error": error}),
+                    };
+                let cx = global_x + offset_x;
+                let cy = global_y + offset_y;
                 let click_result = uia_lib::handle_tool_call(
                     "uia_click",
                     &json!({
@@ -907,8 +952,12 @@ async fn handle_find_and_click(args: &Value) -> Value {
                         "double_click": double_click
                     }),
                 );
+                let click_ok = click_result
+                    .get("success")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
                 let mut result = json!({
-                    "success": true,
+                    "success": click_ok,
                     "found_via": "ocr_coordinates",
                     "method": "ocr_coordinates",
                     "text": text,
@@ -938,13 +987,14 @@ async fn handle_find_and_click(args: &Value) -> Value {
 }
 
 async fn handle_read_screen_text(args: &Value) -> Value {
+    let monitor = args.get("monitor").and_then(Value::as_u64).unwrap_or(0);
     // Optionally focus window first
     if let Some(title) = args.get("window_title").and_then(|v| v.as_str()) {
         uia_lib::handle_tool_call("uia_focus_window", &json!({"title": title}));
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({})).await
+    meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({"monitor": monitor})).await
 }
 
 async fn handle_wait_for_visual(args: &Value) -> Value {
@@ -958,6 +1008,7 @@ async fn handle_wait_for_visual(args: &Value) -> Value {
         .get("poll_interval_ms")
         .and_then(|v| v.as_u64())
         .unwrap_or(500);
+    let monitor = args.get("monitor").and_then(Value::as_u64).unwrap_or(0);
 
     if text.is_none() && template.is_none() {
         return json!({"success": false, "error": "Provide 'text' or 'template_path'"});
@@ -983,7 +1034,11 @@ async fn handle_wait_for_visual(args: &Value) -> Value {
         }
 
         if let Some(search_text) = text {
-            let ocr = meta::vision_cache::cached_execute("vision_screenshot_ocr", &json!({})).await;
+            let ocr = meta::vision_cache::cached_execute(
+                "vision_screenshot_ocr",
+                &json!({"monitor": monitor}),
+            )
+            .await;
             if let Some(ocr_text) = ocr.get("text").and_then(|v| v.as_str()) {
                 if ocr_text
                     .to_lowercase()
@@ -1004,7 +1059,8 @@ async fn handle_wait_for_visual(args: &Value) -> Value {
             let result = vision_core::execute(
                 "vision_find_template",
                 &json!({
-                    "template_path": tmpl
+                    "template_path": tmpl,
+                    "monitor": monitor
                 }),
             )
             .await;
@@ -1035,6 +1091,7 @@ async fn handle_window_screenshot(args: &Value) -> Value {
         .get("behind")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let monitor = args.get("monitor").and_then(Value::as_u64).unwrap_or(0);
 
     if behind {
         // PrintWindow path: capture window content even if obscured
@@ -1059,22 +1116,27 @@ async fn handle_window_screenshot(args: &Value) -> Value {
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
     if do_ocr {
-        let mut ocr_args = json!({});
+        let mut ocr_args = json!({"monitor": monitor});
         if let Some(path) = save_path {
             ocr_args
                 .as_object_mut()
                 .unwrap()
-                .insert("save_path".to_string(), json!(path));
+                .insert("save_screenshot".to_string(), json!(path));
         }
         let result = meta::vision_cache::cached_execute("vision_screenshot_ocr", &ocr_args).await;
+        let success = result.get("error").is_none()
+            && result
+                .get("success")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
         json!({
-            "success": true,
+            "success": success,
             "window": title,
             "focused": focus_result.get("focused"),
             "ocr_result": result
         })
     } else {
-        let mut ss_args = json!({});
+        let mut ss_args = json!({"monitor": monitor});
         if let Some(path) = save_path {
             ss_args
                 .as_object_mut()
@@ -1082,8 +1144,13 @@ async fn handle_window_screenshot(args: &Value) -> Value {
                 .insert("save_path".to_string(), json!(path));
         }
         let result = vision_core::execute("vision_screenshot", &ss_args).await;
+        let success = result.get("error").is_none()
+            && result
+                .get("success")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
         json!({
-            "success": true,
+            "success": success,
             "window": title,
             "focused": focus_result.get("focused"),
             "screenshot_result": result
@@ -1239,10 +1306,7 @@ async fn handle_window_screenshot_behind(
 
     let output_path = match save_path {
         Some(p) => p.to_string(),
-        None => {
-            let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
-            format!("C:\\temp\\window_behind_{}.png", ts)
-        }
+        None => monitor_scope::unique_capture_path("window_behind", "png", false),
     };
 
     // Ensure parent dir exists
@@ -1520,6 +1584,9 @@ fn handle_uia_window_resize(args: &Value) -> Value {
         Ok(rect) => rect,
         Err(error) => return error,
     };
+    if let Err(error) = monitor_scope::validate_target_rect(rect.left, rect.top, width, height) {
+        return error;
+    }
     if let Err(error) = set_window_geometry(
         hwnd,
         0,
@@ -1563,6 +1630,18 @@ fn handle_uia_window_move(args: &Value) -> Value {
     };
 
     restore_window(hwnd);
+    let before = match current_window_rect(hwnd) {
+        Ok(rect) => rect,
+        Err(error) => return error,
+    };
+    if let Err(error) = monitor_scope::validate_target_rect(
+        x,
+        y,
+        before.right - before.left,
+        before.bottom - before.top,
+    ) {
+        return error;
+    }
     if let Err(error) = set_window_geometry(
         hwnd,
         x,
@@ -1663,9 +1742,21 @@ fn handle_uia_window_snap(args: &Value) -> Value {
     };
 
     restore_window(hwnd);
-    let work_area = match monitor_work_area(hwnd) {
-        Ok(rect) => rect,
-        Err(error) => return error,
+    let work_area = if let Some(index) = args.get("monitor").and_then(Value::as_u64) {
+        match monitor_scope::work_area_for_index(index as usize) {
+            Ok((left, top, right, bottom)) => RECT {
+                left,
+                top,
+                right,
+                bottom,
+            },
+            Err(error) => return error,
+        }
+    } else {
+        match monitor_work_area(hwnd) {
+            Ok(rect) => rect,
+            Err(error) => return error,
+        }
     };
     let work_width = (work_area.right - work_area.left).max(1);
     let work_height = (work_area.bottom - work_area.top).max(1);
@@ -1687,6 +1778,13 @@ fn handle_uia_window_snap(args: &Value) -> Value {
             work_width - half_width,
             half_height,
         ),
+        "top" => (work_area.left, work_area.top, work_width, half_height),
+        "bottom" => (
+            work_area.left,
+            work_area.top + half_height,
+            work_width,
+            work_height - half_height,
+        ),
         "center" => {
             let width = ((work_width * 3) / 5).max(320).min(work_width);
             let height = ((work_height * 3) / 5).max(240).min(work_height);
@@ -1700,10 +1798,14 @@ fn handle_uia_window_snap(args: &Value) -> Value {
         _ => {
             return json!({
                 "success": false,
-                "error": "position must be one of: left, right, top-left, top-right, center"
+                "error": "position must be one of: left, right, top, bottom, top-left, top-right, center"
             })
         }
     };
+
+    if let Err(error) = monitor_scope::validate_target_rect(x, y, width, height) {
+        return error;
+    }
 
     if let Err(error) = set_window_geometry(
         hwnd,
@@ -1932,6 +2034,11 @@ pub(crate) async fn handle_accessibility_snapshot(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let max_depth = args.get("max_depth").and_then(|v| v.as_u64()).unwrap_or(10);
+    let max_nodes = args
+        .get("max_nodes")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(200)
+        .max(1);
     let incremental = args
         .get("incremental")
         .and_then(|v| v.as_bool())
@@ -1943,8 +2050,10 @@ pub(crate) async fn handle_accessibility_snapshot(
         r#"
     (() => {{
         const MAX_DEPTH = {max_depth};
+        const MAX_NODES = {max_nodes};
         const INCLUDE_IGNORED = {include_ignored};
         const ROOT_SELECTOR = "{root_selector_escaped}";
+        let semanticNodeCount = 0;
 
         // Map HTML tags to implicit ARIA roles
         const TAG_ROLE_MAP = {{
@@ -2159,6 +2268,9 @@ pub(crate) async fn handle_accessibility_snapshot(
 
             const role = getRole(el);
             const name = getAccessibleName(el);
+            const isSemantic = Boolean(role || name);
+            if (isSemantic && semanticNodeCount >= MAX_NODES) return null;
+            if (isSemantic) semanticNodeCount += 1;
             const states = getStates(el);
             const props = getProperties(el);
 
@@ -2220,6 +2332,7 @@ pub(crate) async fn handle_accessibility_snapshot(
     }})()
     "#,
         max_depth = max_depth,
+        max_nodes = max_nodes,
         include_ignored = if include_ignored { "true" } else { "false" },
         root_selector_escaped = root_selector.replace('\\', "\\\\").replace('"', "\\\""),
     );
@@ -2601,7 +2714,7 @@ async fn handle_get_network_log(
     }
 }
 
-fn handle_a11y_find(args: &Value) -> Value {
+async fn handle_a11y_find(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
     let role_filter = args
         .get("role")
         .and_then(|v| v.as_str())
@@ -2610,9 +2723,38 @@ fn handle_a11y_find(args: &Value) -> Value {
         .get("name")
         .and_then(|v| v.as_str())
         .map(|s| s.to_lowercase());
+    let exact = args.get("exact").and_then(|v| v.as_bool()).unwrap_or(false);
+    let refresh = args
+        .get("refresh")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let max_nodes = args
+        .get("max_nodes")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(200)
+        .max(1) as usize;
 
     if role_filter.is_none() && name_filter.is_none() {
         return json!({"error": "Provide at least one of 'role' or 'name' to search for."});
+    }
+
+    if refresh {
+        let snapshot = handle_accessibility_snapshot(
+            &json!({"max_nodes": max_nodes, "incremental": false}),
+            browser,
+        )
+        .await;
+        if snapshot
+            .get("success")
+            .and_then(Value::as_bool)
+            .is_some_and(|success| !success)
+            || snapshot.get("error").is_some()
+        {
+            return json!({
+                "error": "Could not refresh accessibility snapshot before search",
+                "refresh_result": snapshot
+            });
+        }
     }
 
     let snapshot = match a11y_cache::get_snapshot() {
@@ -2627,14 +2769,19 @@ fn handle_a11y_find(args: &Value) -> Value {
         node: &Value,
         role_filter: &Option<String>,
         name_filter: &Option<String>,
+        exact: bool,
+        max_nodes: usize,
         results: &mut Vec<Value>,
     ) {
-        if node.is_null() {
+        if node.is_null() || results.len() >= max_nodes {
             return;
         }
         if let Some(arr) = node.as_array() {
             for child in arr {
-                search_nodes(child, role_filter, name_filter, results);
+                search_nodes(child, role_filter, name_filter, exact, max_nodes, results);
+                if results.len() >= max_nodes {
+                    break;
+                }
             }
             return;
         }
@@ -2646,9 +2793,14 @@ fn handle_a11y_find(args: &Value) -> Value {
             let role_match = role_filter
                 .as_ref()
                 .is_none_or(|f| role.to_lowercase() == *f);
-            let name_match = name_filter
-                .as_ref()
-                .is_none_or(|f| name.to_lowercase().contains(f.as_str()));
+            let name_match = name_filter.as_ref().is_none_or(|f| {
+                let candidate = name.to_lowercase();
+                if exact {
+                    candidate == *f
+                } else {
+                    candidate.contains(f.as_str())
+                }
+            });
 
             if role_match && name_match && !ref_id.is_empty() {
                 results.push(serde_json::json!({
@@ -2660,18 +2812,30 @@ fn handle_a11y_find(args: &Value) -> Value {
 
             if let Some(children) = obj.get("children").and_then(|v| v.as_array()) {
                 for child in children {
-                    search_nodes(child, role_filter, name_filter, results);
+                    search_nodes(child, role_filter, name_filter, exact, max_nodes, results);
+                    if results.len() >= max_nodes {
+                        break;
+                    }
                 }
             }
         }
     }
 
     let mut results = Vec::new();
-    search_nodes(&snapshot, &role_filter, &name_filter, &mut results);
+    search_nodes(
+        &snapshot,
+        &role_filter,
+        &name_filter,
+        exact,
+        max_nodes,
+        &mut results,
+    );
 
     json!({
         "matches": results,
         "count": results.len(),
+        "exact": exact,
+        "refreshed": refresh,
     })
 }
 
@@ -2856,32 +3020,33 @@ async fn handle_element_drag(args: &Value, browser: &browser_mcp::browser::Share
     handle_drag(&drag_args)
 }
 
-fn handle_hands_status() -> Value {
-    let uia_ok = {
-        let result = uia_lib::handle_tool_call("uia_list_windows", &json!({}));
-        result
-            .get("success")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-            || result.get("windows").is_some()
-    };
-
-    json!({
-        "server": "hands",
-        "version": "0.1.0",
-        "subsystems": {
-            "browser": "available (call browser_launch or browser_attach first)",
-            "uia": if uia_ok { "active" } else { "unavailable (Windows only)" },
-            "vision": "available (screenshot + OCR + template matching)"
-        },
-        "tool_count": get_all_tool_definitions().len(),
-        "categories": {
-            "browser": "Token-saving web: smart_browse, http_scrape, bulk_extract, etc.",
-            "uia": "Desktop automation: click, type, focus, shortcuts, element inspection",
-            "vision": "Screen reading: screenshot, OCR, diff, template matching",
-            "combo": "Multi-system: find_and_click, read_screen_text, wait_for_visual, etc."
-        }
-    })
+fn handle_unified_health() -> Value {
+    let mut health = meta::health::hands_health();
+    let subsystem_summary = json!({
+        "browser": health.pointer("/browser/status").cloned().unwrap_or(json!("unknown")),
+        "uia": health.pointer("/uia/status").cloned().unwrap_or(json!("unknown")),
+        "vision": health.pointer("/vision/status").cloned().unwrap_or(json!("unknown"))
+    });
+    if let Some(object) = health.as_object_mut() {
+        object.insert("version".to_string(), json!(env!("CARGO_PKG_VERSION")));
+        object.insert(
+            "tool_count".to_string(),
+            json!(get_all_tool_definitions().len()),
+        );
+        object.insert("tool_surface".to_string(), canonical::health_tool_surface());
+        object.insert("subsystems".to_string(), subsystem_summary);
+        object.insert("monitor_scope".to_string(), monitor_scope::status());
+        object.insert(
+            "categories".to_string(),
+            json!({
+                "browser": "Web sessions, retrieval, DOM interaction, network evidence, and verification",
+                "uia": "Desktop automation, windows, input, and control inspection",
+                "vision": "Screen capture, OCR, diff, template matching, and visual analysis",
+                "unified": "Cross-surface find, click, type, capture, and verification"
+            }),
+        );
+    }
+    health
 }
 
 async fn get_browser_url(browser: &browser_mcp::browser::SharedBrowser) -> Option<String> {
@@ -3452,6 +3617,27 @@ fn resolve_step_refs(value: &Value, results: &[Value]) -> Value {
     }
 }
 
+fn batch_entry_succeeded(entry: &Value) -> bool {
+    entry
+        .get("success")
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            entry
+                .get("result")
+                .and_then(|result| result.get("success"))
+                .and_then(Value::as_bool)
+        })
+        .unwrap_or(false)
+}
+
+fn batch_outcome(total: usize, results: &[Value]) -> (bool, usize) {
+    let failures = results
+        .iter()
+        .filter(|result| !batch_entry_succeeded(result))
+        .count();
+    (failures == 0 && results.len() == total, failures)
+}
+
 async fn handle_browser_batch(
     args: &Value,
     browser: &browser_mcp::browser::SharedBrowser,
@@ -3537,7 +3723,14 @@ async fn handle_browser_batch(
         }
     }
 
-    json!({"success": true, "results": results, "total": actions.len(), "executed": results.len()})
+    let (success, failures) = batch_outcome(actions.len(), &results);
+    json!({
+        "success": success,
+        "failures": failures,
+        "results": results,
+        "total": actions.len(),
+        "executed": results.len()
+    })
 }
 
 fn handle_uia_batch(args: &Value) -> Value {
@@ -3604,7 +3797,7 @@ fn handle_uia_batch(args: &Value) -> Value {
         let success = result
             .get("success")
             .and_then(|v| v.as_bool())
-            .unwrap_or(true)
+            .unwrap_or(false)
             && result.get("error").is_none();
 
         let val = json!({"index": i, "type": action_type, "result": result});
@@ -3616,16 +3809,31 @@ fn handle_uia_batch(args: &Value) -> Value {
         }
     }
 
-    json!({"success": true, "results": results, "total": actions.len(), "executed": results.len()})
+    let (success, failures) = batch_outcome(actions.len(), &results);
+    json!({
+        "success": success,
+        "failures": failures,
+        "results": results,
+        "total": actions.len(),
+        "executed": results.len()
+    })
 }
 
 fn dispatch_uia_tool(name: &str, args: &Value) -> Value {
-    match name {
-        "uia_get_state" => uia::handle_get_state(args),
-        "uia_click" => uia::handle_click(args),
-        "uia_type" | "uia_type_text" => uia::handle_type(args),
-        _ => uia_lib::handle_tool_call(name, args),
+    let scoped = match monitor_scope::prepare_call(name, args) {
+        Ok(scoped) => scoped,
+        Err(error) => return error,
+    };
+    if let Err(error) = monitor_scope::validate_scoped_ref(&scoped) {
+        return error;
     }
+    let result = match name {
+        "uia_get_state" => uia::handle_get_state(&scoped),
+        "uia_click" => uia::handle_click(&scoped),
+        "uia_type" | "uia_type_text" => uia::handle_type(&scoped),
+        _ => return uia_lib::handle_tool_call(name, &scoped),
+    };
+    monitor_scope::filter_uia_result(name, result)
 }
 
 // ============ TOOL DISPATCH ============
@@ -3637,8 +3845,16 @@ pub(crate) async fn handle_tool_call(
     session: &meta::SessionHandle,
 ) -> Value {
     let _dispatch_start = std::time::Instant::now();
-    let _result = handle_tool_call_inner(name, args, browser, session).await;
-    dashboard_endpoint::record_action(name, args, _dispatch_start.elapsed().as_millis() as u64);
+    let scoped_args = match monitor_scope::prepare_call(name, args) {
+        Ok(scoped) => scoped,
+        Err(blocked) => return blocked,
+    };
+    let _result = handle_tool_call_inner(name, &scoped_args, browser, session).await;
+    dashboard_endpoint::record_action(
+        name,
+        &scoped_args,
+        _dispatch_start.elapsed().as_millis() as u64,
+    );
     _result
 }
 
@@ -3648,6 +3864,22 @@ async fn handle_tool_call_inner(
     browser: &browser_mcp::browser::SharedBrowser,
     session: &meta::SessionHandle,
 ) -> Value {
+    if name == canonical::CATALOG_TOOL_NAME {
+        return canonical::catalog_response(args);
+    }
+
+    if name == monitor_scope::TOOL_NAME {
+        return monitor_scope::handle_tool(args);
+    }
+
+    if let Some(blocked) = canonical::blocked_call_response(name) {
+        return blocked;
+    }
+
+    if name == "vision_ocr" {
+        return meta::ocr_fast::handle_ocr_canonical(args).await;
+    }
+
     // Phase A v2 Meta-tools (checked first — highest priority)
     // Phase C fix1: catch_unwind boundary — meta-tool panics must never crash hands.exe
     let meta_result =
@@ -3703,15 +3935,11 @@ async fn handle_tool_call_inner(
         }
         "type_into_window" => return handle_type_into_window(args),
         "drag" => return handle_drag(args),
-        "uia_window_resize" => return handle_uia_window_resize(args),
-        "uia_window_move" => return handle_uia_window_move(args),
-        "uia_window_state" => return handle_uia_window_state(args),
-        "uia_window_snap" => return handle_uia_window_snap(args),
-        "uia_app_launch" => return handle_uia_app_launch(args),
+        "uia_window_resize" | "uia_window_move" | "uia_window_state" | "uia_window_snap"
+        | "uia_app_launch" => return uia_lib::handle_tool_call(name, args),
         "retry_click" => return handle_retry_click(args, browser).await,
         "file_upload" => return handle_file_upload(args, browser).await,
-        "status" | "hands_status" => return handle_hands_status(),
-        "hands_health" => return meta::health::hands_health(),
+        "status" | "hands_status" | "hands_health" => return handle_unified_health(),
         "hands_summarize_run" => return meta::summarize_run::handle(args),
         "vision_cache_stats" => return meta::vision_cache::handle_stats(args),
         "vision_ocr_capabilities" => return meta::ocr_fast::handle_capabilities(args),
@@ -3722,23 +3950,13 @@ async fn handle_tool_call_inner(
         "hands_plugin_load" => return plugin_load_handler(args),
         "hands_plugin_call" => return plugin_call_handler(args),
         "hands_plugin_unload" => return plugin_unload_handler(args),
-        // Phase D — self-record / replay loop (plan-not-action: returns workflow:* call plans)
-        "hands_self_record_start" => {
-            return meta::self_record::handle_self_record_start(args).await
-        }
-        "hands_self_record_lookup" => {
-            return meta::self_record::handle_self_record_lookup(args).await
-        }
-        "hands_self_record_stop_and_optimize" => {
-            return meta::self_record::handle_self_record_stop_and_optimize(args).await
-        }
         "browser_a11y_snapshot" | "browser_accessibility_snapshot" => {
             return handle_accessibility_snapshot(args, browser).await
         }
         "browser_get_performance_log" => return handle_get_network_log(args, browser).await,
         "element_drag" => return handle_element_drag(args, browser).await,
         "browser_batch" => return handle_browser_batch(args, browser).await,
-        "browser_a11y_find" => return handle_a11y_find(args),
+        "browser_a11y_find" => return handle_a11y_find(args, browser).await,
         "browser_get_all_network" => return handle_get_all_network(args, browser).await,
         "browser_learn_api" => return handle_learn_api(args, browser).await,
         "uia_batch" => return handle_uia_batch(args),
@@ -3787,8 +4005,50 @@ async fn handle_tool_call_inner(
             obj.remove("stealth");
         }
 
+        let automatic_attach_port = if browser_tool == "attach" {
+            let port = resolved_args
+                .get("port")
+                .and_then(Value::as_u64)
+                .unwrap_or(9222);
+            if !(1..=u16::MAX as u64).contains(&port) {
+                return json!({
+                    "success": false,
+                    "error": "browser_attach port must be between 1 and 65535"
+                });
+            }
+            Some(port as u16)
+        } else {
+            None
+        };
+        let automatic_attach_lock = if let Some(port) = automatic_attach_port {
+            match meta::attach_lock::auto_acquire_for_attach(port) {
+                Ok(state) => Some(state),
+                Err(lock_error) => {
+                    return json!({
+                        "success": false,
+                        "error": "Could not acquire the automatic browser attach lock",
+                        "port": port,
+                        "attach_lock": lock_error
+                    });
+                }
+            }
+        } else {
+            None
+        };
+
         let saved_args = resolved_args.clone();
         let result = browser_mcp::tools::handle_tool(browser, browser_tool, resolved_args).await;
+
+        if result.is_error && automatic_attach_lock == Some("acquired") {
+            if let Some(port) = automatic_attach_port {
+                let _ = meta::attach_lock::auto_release_for_port(port);
+            }
+        }
+        let automatic_close_release = if browser_tool == "close" {
+            Some(meta::attach_lock::auto_release_all())
+        } else {
+            None
+        };
 
         // Auto-retry with temp profile on Chrome profile lock (exit code 21)
         if result.is_error && browser_tool == "launch" {
@@ -3934,6 +4194,24 @@ async fn handle_tool_call_inner(
                     obj.insert("stealth".into(), json!(true));
                 }
             }
+            if let Some(obj) = val.as_object_mut() {
+                if let (Some(port), Some(lock_state)) =
+                    (automatic_attach_port, automatic_attach_lock)
+                {
+                    obj.insert(
+                        "attach_lock".into(),
+                        json!({
+                            "mode": "automatic",
+                            "port": port,
+                            "state": lock_state,
+                            "held_until": "browser_close"
+                        }),
+                    );
+                }
+                if let Some(release) = automatic_close_release {
+                    obj.insert("attach_lock_release".into(), release);
+                }
+            }
             val
         };
     }
@@ -3976,8 +4254,8 @@ fn handle_request(
                 "capabilities": { "tools": {} },
                 "serverInfo": {
                     "name": "hands",
-                    "version": "0.1.0",
-                    "description": "Unified interaction: browser + UIA + vision"
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "description": "Unified canonical interaction template: browser + UIA + vision"
                 }
             })),
             error: None,
@@ -4078,5 +4356,44 @@ fn main() {
             let _ = writeln!(out, "{}", response_str);
             let _ = out.flush();
         }
+    }
+}
+
+#[cfg(test)]
+mod unified_template_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn raw_template_definitions_are_already_unique() {
+        let definitions = get_all_tool_definitions_raw();
+        let names: Vec<&str> = definitions
+            .iter()
+            .filter_map(|definition| definition.get("name").and_then(Value::as_str))
+            .collect();
+        let unique: HashSet<&str> = names.iter().copied().collect();
+        assert_eq!(names.len(), 143);
+        assert_eq!(unique.len(), names.len());
+    }
+
+    #[test]
+    fn package_and_template_versions_are_one_identity() {
+        assert_eq!(canonical::TEMPLATE_VERSION, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn batch_outcome_propagates_nested_policy_failures() {
+        let results = vec![json!({
+            "index": 0,
+            "result": {
+                "success": false,
+                "monitor_scope": {"code": "unscopable_global_ability"}
+            }
+        })];
+        assert_eq!(batch_outcome(1, &results), (false, 1));
+
+        let successful = vec![json!({"index": 0, "success": true})];
+        assert_eq!(batch_outcome(1, &successful), (true, 0));
+        assert_eq!(batch_outcome(2, &successful), (false, 0));
     }
 }

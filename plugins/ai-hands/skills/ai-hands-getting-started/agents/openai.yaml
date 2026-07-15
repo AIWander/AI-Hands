@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI-Hands Getting Started"
+  short_description: "Install and verify AI-Hands safely"
+  default_prompt: "Use $ai-hands-getting-started to connect AI-Hands and verify a safe monitor scope."
+
+policy:
+  allow_implicit_invocation: true

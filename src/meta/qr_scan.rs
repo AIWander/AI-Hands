@@ -13,6 +13,7 @@ use super::instrumentation;
 use super::response::{MetaToolResult, Reversibility, RungAttempt};
 use super::session::SharedSession;
 use crate::atomic::browser as browser_atoms;
+use crate::vision_core;
 
 /// Decode a QR code from raw image bytes (PNG/JPEG/BMP).
 /// Returns the decoded string content.
@@ -161,8 +162,9 @@ pub async fn handle(
         .and_then(|v| v.as_str())
         .unwrap_or("screen");
     let region = args.get("region");
+    let monitor = args.get("monitor").and_then(Value::as_u64).unwrap_or(0) as usize;
 
-    let ctx = json!({"source": source, "region": region});
+    let ctx = json!({"source": source, "region": region, "monitor": monitor});
     let mut rungs: Vec<RungAttempt> = Vec::new();
 
     // Rung 1: Capture image (get base64 data, then decode to bytes)
@@ -314,9 +316,9 @@ pub async fn handle(
                 let y = r.get("y").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                 let w = r.get("width").and_then(|v| v.as_u64()).unwrap_or(800) as u32;
                 let h = r.get("height").and_then(|v| v.as_u64()).unwrap_or(600) as u32;
-                vision_core::take_screenshot_region(None, 0, x, y, w, h, 100)
+                vision_core::take_screenshot_region(None, monitor, x, y, w, h, 100)
             } else {
-                vision_core::take_screenshot(None, 0, 100)
+                vision_core::take_screenshot(None, monitor, 100)
             };
 
             let rung_ms = rung_start.elapsed().as_millis() as u64;

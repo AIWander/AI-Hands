@@ -11,6 +11,7 @@
 //! return_type="ref" short-circuits after rung 3 (subsequent rungs can't produce refs).
 //! Adaptive timeout budget per rung using existing helper in response.rs.
 
+use crate::vision_core;
 use serde_json::{json, Value};
 use std::time::Instant;
 
@@ -83,10 +84,12 @@ pub async fn handle(
         .get("timeout_ms")
         .and_then(|v| v.as_u64())
         .unwrap_or(10_000);
+    let monitor = args.get("monitor").and_then(Value::as_u64).unwrap_or(0) as usize;
     let ctx = json!({
         "target": &target,
         "scope": scope,
         "return_type": return_type,
+        "monitor": monitor,
     });
 
     let mut rungs_tried = Vec::new();
@@ -379,7 +382,8 @@ pub async fn handle(
     if use_desktop || scope == "screen" {
         let rung_start = Instant::now();
 
-        let ocr_result = vision_core::execute("vision_screenshot_ocr", &json!({})).await;
+        let ocr_result =
+            vision_core::execute("vision_screenshot_ocr", &json!({"monitor": monitor})).await;
         let ocr_text = ocr_result
             .get("text")
             .and_then(|v| v.as_str())
@@ -387,49 +391,54 @@ pub async fn handle(
 
         if ocr_text.to_lowercase().contains(&target.to_lowercase()) {
             // Get word positions for coordinate extraction
-            let screenshot_path = vision_core::take_screenshot(None, 0, 80).unwrap_or_default();
+            let screenshot_path =
+                vision_core::take_screenshot(None, monitor, 80).unwrap_or_default();
             if !screenshot_path.is_empty() {
                 if let Ok(words) = vision_core::ocr_image_with_positions(&screenshot_path).await {
                     let _ = std::fs::remove_file(&screenshot_path);
                     if let Some((x, y)) = find_text_in_ocr_words(&words, &target) {
-                        let rung_ms = rung_start.elapsed().as_millis() as u64;
-                        // OCR confidence based on text match quality
-                        let confidence = if ocr_text.to_lowercase().contains(&target.to_lowercase())
+                        if let Ok((global_x, global_y)) =
+                            crate::monitor_scope::globalize_local_point(x, y, monitor)
                         {
-                            0.6
-                        } else {
-                            0.5
-                        };
+                            let rung_ms = rung_start.elapsed().as_millis() as u64;
+                            // OCR confidence based on text match quality
+                            let confidence =
+                                if ocr_text.to_lowercase().contains(&target.to_lowercase()) {
+                                    0.6
+                                } else {
+                                    0.5
+                                };
 
-                        let attempt = RungAttempt::ok("ocr", rung_ms);
-                        instrumentation::log_rung_attempt(
-                            "hands_find",
-                            &call_id,
-                            "ocr",
-                            true,
-                            rung_ms,
-                            Some(confidence),
-                            &ctx,
-                        );
-                        rungs_tried.push(attempt);
+                            let attempt = RungAttempt::ok("ocr", rung_ms);
+                            instrumentation::log_rung_attempt(
+                                "hands_find",
+                                &call_id,
+                                "ocr",
+                                true,
+                                rung_ms,
+                                Some(confidence),
+                                &ctx,
+                            );
+                            rungs_tried.push(attempt);
 
-                        let elapsed = start.elapsed().as_millis() as u64;
-                        return make_success(
-                            "ocr",
-                            rungs_tried,
-                            confidence,
-                            make_find_result(
-                                "coords",
-                                None,
-                                None,
-                                Some((x, y)),
-                                Some(&target),
-                                Some(0),
-                            ),
-                            elapsed,
-                            &call_id,
-                        )
-                        .to_value();
+                            let elapsed = start.elapsed().as_millis() as u64;
+                            return make_success(
+                                "ocr",
+                                rungs_tried,
+                                confidence,
+                                make_find_result(
+                                    "coords",
+                                    None,
+                                    None,
+                                    Some((global_x, global_y)),
+                                    Some(&target),
+                                    Some(monitor as i32),
+                                ),
+                                elapsed,
+                                &call_id,
+                            )
+                            .to_value();
+                        }
                     }
                 }
             }
@@ -458,6 +467,7 @@ pub async fn handle(
             let find_args = json!({
                 "template_path": tpl_path,
                 "threshold": args.get("template_threshold").and_then(|v| v.as_f64()).unwrap_or(0.8),
+                "monitor": monitor,
             });
             let template_result = vision_core::execute("vision_find_template", &find_args).await;
             let rung_ms = rung_start.elapsed().as_millis() as u64;
@@ -480,28 +490,39 @@ pub async fn handle(
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.7) as f32;
 
-                let attempt = RungAttempt::ok("template_match", rung_ms);
-                instrumentation::log_rung_attempt(
-                    "hands_find",
-                    &call_id,
-                    "template_match",
-                    true,
-                    rung_ms,
-                    Some(confidence),
-                    &ctx,
-                );
-                rungs_tried.push(attempt);
+                if let Ok((global_x, global_y)) =
+                    crate::monitor_scope::globalize_local_point(tx, ty, monitor)
+                {
+                    let attempt = RungAttempt::ok("template_match", rung_ms);
+                    instrumentation::log_rung_attempt(
+                        "hands_find",
+                        &call_id,
+                        "template_match",
+                        true,
+                        rung_ms,
+                        Some(confidence),
+                        &ctx,
+                    );
+                    rungs_tried.push(attempt);
 
-                let elapsed = start.elapsed().as_millis() as u64;
-                return make_success(
-                    "template_match",
-                    rungs_tried,
-                    confidence,
-                    make_find_result("coords", None, None, Some((tx, ty)), Some(&target), None),
-                    elapsed,
-                    &call_id,
-                )
-                .to_value();
+                    let elapsed = start.elapsed().as_millis() as u64;
+                    return make_success(
+                        "template_match",
+                        rungs_tried,
+                        confidence,
+                        make_find_result(
+                            "coords",
+                            None,
+                            None,
+                            Some((global_x, global_y)),
+                            Some(&target),
+                            Some(monitor as i32),
+                        ),
+                        elapsed,
+                        &call_id,
+                    )
+                    .to_value();
+                }
             }
 
             rungs_tried.push(RungAttempt::failed(

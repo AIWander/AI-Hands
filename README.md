@@ -14,9 +14,22 @@ See the [`examples/`](examples/) directory for sample configurations and walkthr
 
 AIWander tools are local, user-authorized MCP capability surfaces. They do not grant an AI new permissions by themselves. They expose tools the user explicitly installs and enables. Sensitive actions should be confirmed by the user, credentials should stay in the OS keyring or local vault, and demos should use mock data.
 
-## What's New in v1.0.1
+## What's New in v1.1.0-unified.1 (preview)
 
-- **Security: 3 Dependabot alerts resolved** — `openssl` 0.10.78 → 0.10.79 (fixes [GHSA-xp3w-r5p5-63rr](https://github.com/advisories/GHSA-xp3w-r5p5-63rr) HIGH OCSP UB and [GHSA-xv59-967r-8726](https://github.com/advisories/GHSA-xv59-967r-8726) MODERATE AES key-wrap heap overflow); `lru` 0.12.5 → 0.16.4 (fixes [GHSA-rhfx-m35p-ff5j](https://github.com/advisories/GHSA-rhfx-m35p-ff5j) LOW IterMut Stacked Borrows) via `rqrr` 0.7 → 0.10. Binary size: x64 22.55 MB (−1.10 MB vs v1.0.0), ARM64 19.01 MB (−0.94 MB vs v1.0.0).
+- **Ability-first union:** the public and locally proven Hands surfaces are merged by capability, not by keeping every historical name. The default profile exposes 132 operational tools plus `hands_capability_catalog`; strict, full, and compatibility profiles are available through `HANDS_TOOL_PROFILE`.
+- **Central monitor boundary:** `hands_monitor_scope` lists displays and applies one fail-closed scope across coordinate, UIA, browser-binding, screenshot, OCR, QR, and plugin paths. A locked physical stable ID is the recommended unattended setting.
+- **Collision-resistant screenshots:** automatic filenames include sub-second time, process ID, and a per-process sequence so same-second and concurrent captures do not overwrite one another.
+- **Optional plugin package:** Codex and Claude-compatible manifests, ability-routed skills, per-host instructions, and inert opt-in hook templates live under [`plugins/ai-hands/`](plugins/ai-hands/). They do not silently edit host configuration.
+- **Windows installer source:** the Inno package stages the matching Rust binary, plugin, skills, and guide. PATH is selectable; AI and hook configuration remains user-controlled.
+
+The machine-readable capability inventory and replacement map are in [`manifest/unified_hands_manifest.json`](manifest/unified_hands_manifest.json).
+
+<details>
+<summary>v1.0.1 — security dependency update</summary>
+
+- `openssl` 0.10.78 to 0.10.79 resolved GHSA-xp3w-r5p5-63rr and GHSA-xv59-967r-8726. `rqrr` 0.7 to 0.10 brought `lru` 0.16.4 and resolved GHSA-rhfx-m35p-ff5j.
+
+</details>
 
 <details>
 <summary>v1.0.0 — AI-Hands launch</summary>
@@ -77,7 +90,18 @@ The entries below are pre-rename `AIWander/hands` lineage notes kept for context
 
 > **winget submission pending.** The `microsoft/winget-pkgs` PR is in flight — once it merges, `winget install AIWander.AI-Hands` works against the published index. Until then, [`installers/winget/manifests/`](installers/winget/manifests/) in this repo is the source of truth (use the `--manifest` form below). The manual download path is unaffected.
 
-### Option A — winget (recommended once the PR lands)
+### Option A — optional plugin installer (v1.1 preview)
+
+Use the installer asset that matches your architecture, or compile it from source after building `hands.exe`:
+
+```bat
+installers\inno\build-installer.bat C:\path\to\hands.exe arm64
+rem For x64, use x64compatible as the second argument.
+```
+
+The interactive installer stages `hands.exe`, the plugin, skills, opt-in hook templates, prerequisites, and a per-AI application guide. It offers current-user PATH setup but does not edit Codex, Claude, Grok, ChatGPT, MCP, or hook configuration. It attempts to copy the guide to the clipboard and reports success or directs you to the installed file if Windows denies clipboard access. Chrome or Chromium remains a separate prerequisite for the browser layer. See [`installers/inno/PREREQUISITES.txt`](installers/inno/PREREQUISITES.txt).
+
+### Option B — winget (recommended once the PR lands)
 
 ```powershell
 winget install AIWander.AI-Hands
@@ -90,7 +114,7 @@ winget install AIWander.AI-Hands
 
 Open a new shell after the install so winget's portable-shim directory (`%LOCALAPPDATA%\Microsoft\WinGet\Links`) is on PATH, then run the registration script. See [`installers/README.md`](installers/README.md) for `-Force` / `-DryRun` flags and rollback.
 
-### Option B — Scoop
+### Option C — Scoop
 
 ```powershell
 # Direct URL (no bucket required):
@@ -100,7 +124,7 @@ scoop install https://raw.githubusercontent.com/AIWander/AI-Hands/main/installer
 .\installers\scripts\register-hands.ps1
 ```
 
-### Option C — Manual download (always works)
+### Option D — Manual download (always works)
 
 1. Download from the [latest release](https://github.com/AIWander/AI-Hands/releases/latest):
    - **Windows x64** → `hands-vX.Y.Z-x64.exe`
@@ -127,6 +151,7 @@ scoop install https://raw.githubusercontent.com/AIWander/AI-Hands/main/installer
 - Windows 10/11 (x64 or ARM64)
 - Chrome installed normally (any recent version). AI-Hands does not download or manage browser binaries — it talks to your existing Chrome over CDP.
 - Claude Desktop or any MCP-compatible client
+- Optional `browser_js_extract` parser only: Node.js plus `linkedom` or `jsdom`; normal CDP browser tools do not require Node.js.
 
 For full per-machine setup (paths, skills, credentials), see [`docs/per_machine_setup.md`](./docs/per_machine_setup.md).
 
@@ -159,12 +184,12 @@ AI-Hands is a **capability surface** — a local MCP server that lets your chose
 | RAM per session (measured) | **~184 MB** | **~320 MB** (5.83× heavier full-stack) |
 | Browser control | CDP attach to your existing Chrome | Spawns its own Chromium |
 | Persistent auth | YOUR logins, YOUR cookies | Fresh browser each session |
-| DOM access | ✓ via CDP | ✓ via Playwright API |
-| Native Windows UIA | ✓ | ✗ |
-| Vision/OCR (local) | ✓ Tesseract | ✗ DOM only |
-| `file://` protocol | ✓ | ✗ blocked by default |
+| DOM access | Yes, via CDP | Yes, via Playwright API |
+| Native Windows UIA | Yes | No |
+| Vision/OCR (local) | Yes, local OCR | No, DOM only |
+| `file://` protocol | Yes | No, blocked by default |
 | Screenshot save path | any | restricted to `.playwright-mcp` and `C:\` |
-| Smart cross-tier routers | ✓ `hands_click` runs a 7-rung ladder (a11y → fuzzy → CSS → snapshot refresh → clickables → UIA → OCR) under one tool entrypoint | ✗ pick the primitive yourself |
+| Smart cross-tier routers | Yes; `hands_click` runs a 7-rung ladder (a11y → fuzzy → CSS → snapshot refresh → clickables → UIA → OCR) under one tool entrypoint | No; pick the primitive yourself |
 | Chain depth | Claude → `hands.exe` → Chrome (2 hops) | Claude → Node MCP → Playwright API → Chrome (3 hops) |
 
 *Per-session memory measured side-by-side loading example.com with the same Chrome attached.*
@@ -178,13 +203,13 @@ These bundle a specific AI model with their own UI surface. AI-Hands does neithe
 | **Surface** | Your Chrome + your Windows apps | Anthropic-hosted VM or your container | OpenAI-hosted browser sandbox | Chrome extension in your browser | Standalone Chromium-based browser |
 | **Cost (May 2026)** | ~$0 marginal (BYOM) | API or Claude subscription | ChatGPT Pro **$200/mo**, or API $3/$12 per 1M tokens (research preview, tiers 3-5) | Free w/ Google account (Mariner-standalone shut down May 4, 2026; capabilities folded into Gemini Agent) | Free since Mar 18, 2026; Comet Plus +$5/mo |
 | **Privacy** | All local; your model provider sees what you send it | Anthropic sees screen pixels | OpenAI sees screen pixels | Google sees browser actions; you stay logged in | Perplexity sees pages; you stay logged in |
-| **DOM access** | ✓ | ✗ (pixel only) | ✗ (pixel only) | ✓ (extension API) | ✓ (native) |
-| **Native app / UIA** | ✓ Windows | ✓ (full OS sandbox) | ✗ (browser only) | ✗ (browser only) | ✗ (browser only) |
-| **Vision/OCR** | ✓ local Tesseract | implicit (vision model) | implicit (vision model) | implicit | implicit |
+| **DOM access** | Yes | No (pixel only) | No (pixel only) | Yes (extension API) | Yes (native) |
+| **Native app / UIA** | Yes, Windows | Yes (full OS sandbox) | No (browser only) | No (browser only) | No (browser only) |
+| **Vision/OCR** | Yes, local OCR | implicit (vision model) | implicit (vision model) | implicit | implicit |
 | **Element identification** | CSS, XPath, UIA names, a11y tree, OCR text, template match | Screenshot → guess coordinates | Screenshot → guess coordinates | DOM + screenshot | DOM + screenshot |
 | **Persistent auth** | YOUR Chrome cookies (via debug-port attach) | sandbox VM cookies | sandbox VM cookies | YOUR Chrome | OWN browser, OWN profile |
 | **Local memory** | ~184 MB | 0 (remote) | 0 (remote) | ~50-100 MB ext + browser | 500+ MB (full browser app) |
-| **Bring your own model** | ✓ any | ✗ Claude only | ✗ OpenAI only | ✗ Gemini only | ✗ Perplexity model stack |
+| **Bring your own model** | Yes, any | No, Claude only | No, OpenAI only | No, Gemini only | No, Perplexity model stack |
 | **OSWorld benchmark** | n/a (capability layer) | varies by Claude model | 38.1% (CUA in research preview) | n/a post-shutdown | n/a (browser-only) |
 | **Public availability** | v1.0.1 (this repo) | GA | Research preview API; ChatGPT Pro UI | Standalone shut down May 4 2026; lives inside Gemini Agent / Chrome Auto-Browse | Public, free, Windows + macOS |
 
@@ -194,22 +219,28 @@ These bundle a specific AI model with their own UI surface. AI-Hands does neithe
 - **Bundled-AI products win on plug-and-play onboarding** (no model selection, no setup) but lock you into one provider and surrender screen contents to them.
 - **If you already pay for a Claude / GPT / Gemini API subscription**, AI-Hands lets you reuse that model with full DOM + native-app reach for ~$0 marginal cost.
 
-## 117 Tools
+## Ability profiles and collections
 
-### Browser Automation (67 tools)
-Navigate, click, type, screenshot, extract content, fill forms, eval JS, manage tabs/contexts, intercept network, scroll-and-collect, accessibility snapshots, smart browse with auto-retry, batch operations, API discovery from traffic.
+The default profile exposes 132 operational tools plus `hands_capability_catalog` (133 `tools/list` entries). `full` exposes 134 plus the catalog, `strict` exposes 136 plus the catalog, and `compatibility` exposes all 143 canonical union tools plus the catalog. Exact duplicate registrations and three Workflow-owned recording front doors are not retained.
 
-### Windows UIA (18 tools)
-Find elements by name/type/automation ID, click, type, read values, get state, window management (snap, move, resize), app launch, keyboard shortcuts, batch operations, event watching.
+| Ability collection | Default operational tools |
+|---|---:|
+| Browser sessions, navigation, and contexts | 21 |
+| DOM and page-state discovery | 10 |
+| Browser interaction and forms | 11 |
+| Web retrieval, crawling, and page artifacts | 11 |
+| API and network intelligence | 12 |
+| Browser evaluation, waits, traces, and evidence | 11 |
+| Browser scripting, planning, and agentic execution | 5 |
+| Desktop apps, windows, input, and UIA | 20 |
+| Vision, OCR, and visual perception | 15 |
+| Unified cross-surface actions and verification | 8 |
+| Workflow scripting, run, and telemetry | 2 |
+| Monitor scope and topology | 1 |
+| Extensions, runtime, and health | 5 |
+| **Operational total** | **132** |
 
-### Vision (9 tools)
-Screenshot (full/window/region), OCR, template matching, image diff, visual analysis, screenshot+OCR combo.
-
-### Meta-Tools (12 tools)
-Smart orchestration layer: reads page, clicks, navigates, captures, finds, types, fills forms, verifies, handles authorized setup flows, launches apps, runs scripts, recovers login flows — picks the right tier automatically.
-
-### Combo & Utility (11 tools)
-Cross-tier tools: find-and-click (OCR→UIA), read screen text, wait for visual, window screenshot, type into window, drag, element drag, retry click, file upload, status, health check.
+Set `HANDS_TOOL_PROFILE` to `default`, `full`, `strict`, or `compatibility`. Use `hands_capability_catalog` to inspect replacements and profile membership without guessing from legacy names.
 
 ## Capabilities Beyond the Basics
 
@@ -299,7 +330,7 @@ Host clients: Claude Desktop, Claude Code, OpenAI Codex CLI, Gemini CLI, or any 
 
 ### First-run tip for Claude clients
 
-`hands` exposes 117 tools spanning browser, UIA, and vision. Enable **tools always loaded** in your Claude client's tool settings before the first call — a lazy-loaded client sometimes misses layers on initial discovery and you'll get "tool not found" surprises mid-session.
+The default profile exposes 133 entries spanning browser, UIA, vision, monitor scope, extensions, and the capability catalog. Enable **tools always loaded** in your Claude client's tool settings before the first call — a lazy-loaded client can miss layers on initial discovery and produce "tool not found" errors mid-session.
 
 ## Architecture
 

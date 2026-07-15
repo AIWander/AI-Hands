@@ -10,6 +10,7 @@
 //!   - Per-step and overall timeout_ms
 //!   - Verbose mode with full MetaToolResult per step
 
+use crate::{monitor_scope, uia_lib, vision_core};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -317,6 +318,7 @@ pub async fn handle(
                         "index": sr.index,
                         "label": sr.label,
                         "error": sr.error,
+                        "result": sr.result.clone(),
                     }));
                 }
             }
@@ -524,8 +526,16 @@ async fn dispatch_underlying_tool(
     args: &Value,
     browser: &browser_mcp::browser::SharedBrowser,
 ) -> Option<Value> {
+    let scoped_args = match monitor_scope::prepare_call(tool, args) {
+        Ok(scoped) => scoped,
+        Err(blocked) => return Some(blocked),
+    };
+
     if tool.starts_with("uia_") {
-        let result = uia_lib::handle_tool_call(tool, args);
+        if let Err(blocked) = monitor_scope::validate_scoped_ref(&scoped_args) {
+            return Some(blocked);
+        }
+        let result = uia_lib::handle_tool_call(tool, &scoped_args);
         // Check if uia_lib recognized the tool (vs returning "Unknown tool")
         if result
             .get("error")
@@ -535,15 +545,15 @@ async fn dispatch_underlying_tool(
         {
             return None;
         }
-        return Some(result);
+        return Some(monitor_scope::filter_uia_result(tool, result));
     }
     if tool.starts_with("vision_") {
-        let result = vision_core::execute(tool, args).await;
+        let result = vision_core::execute(tool, &scoped_args).await;
         return Some(result);
     }
     if tool.starts_with("browser_") {
         if let Some(browser_tool) = tool.strip_prefix("browser_") {
-            let result = browser_mcp::tools::handle_tool(browser, browser_tool, args.clone()).await;
+            let result = browser_mcp::tools::handle_tool(browser, browser_tool, scoped_args).await;
             let (_, val) = super::browser_result_to_value(result);
             return Some(val);
         }

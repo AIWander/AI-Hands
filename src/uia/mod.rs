@@ -3,9 +3,9 @@
 
 use std::{collections::HashMap, thread, time::Duration};
 
+use crate::uia_lib::{self, Point, Rect};
 use serde::Serialize;
 use serde_json::{json, Value};
-use uia_lib::{Point, Rect};
 
 #[cfg(windows)]
 mod ref_cache;

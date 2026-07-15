@@ -1,0 +1,29 @@
+[package]
+name = "uia-mcp"
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/AIWander/uia-mcp"
+description = "Windows UI Automation shared library for CPC servers (element inspection, focus, input)"
+
+[lib]
+name = "uia_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "uia-mcp"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_Accessibility",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_Com",
+    "Win32_Graphics_Gdi"
+]}

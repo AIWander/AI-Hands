@@ -15,6 +15,7 @@
 //! Cache reads and writes are short critical sections — they touch a HashMap
 //! and increment counters; no async work happens under the lock.
 
+use crate::vision_core;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Mutex;

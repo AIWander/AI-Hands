@@ -1,0 +1,32 @@
+AI-HANDS PREREQUISITES AND INSTALL BOUNDARY
+============================================
+
+Required:
+- Windows 10 version 1809 or newer, or Windows 11
+- An x64 or ARM64 build matching the machine architecture
+- An MCP-compatible AI host for tool discovery and calls
+
+Browser layer:
+- Google Chrome or Chromium must be installed separately for browser/CDP automation.
+- The installer does not download, manage, or silently install a browser.
+- If no supported browser is detected, setup reports that limitation. Windows UIA and vision abilities may still be usable.
+- The optional browser_js_extract parser requires Node.js plus linkedom or jsdom. AI-Hands searches for node.exe on PATH and the bundled helper next to hands.exe. AIHANDS_NODE_EXE, AIHANDS_JS_EXTRACT_SCRIPT, and AIHANDS_NODE_PATH can override those locations. Normal CDP browser tools do not require Node.js.
+
+Windows desktop and vision layers:
+- UI Automation uses Windows UIA APIs.
+- Screenshot and OCR behavior depends on the Windows graphics, display, and capture APIs available to the signed-in interactive user.
+- Secure desktops, elevated windows, remote sessions, games, protected media, and custom-drawn applications can limit capture or UIA visibility.
+
+AI host boundary:
+- Setup stages hands.exe, the optional plugin, skills, instructions, and opt-in hook templates.
+- Setup adds only the AI-Hands bin directory to the current user's PATH.
+- Setup does not edit Codex, Claude, Grok, ChatGPT, MCP, or hook configuration.
+- The per-AI application guide is copied to the clipboard during an interactive install and a popup explains the next step.
+- Hooks remain inert until the host owner reviews and applies them. Only a trusted, blocking, runtime-proven hook is enforcement.
+
+Monitor boundary:
+- Primary scope is suitable for interactive work that follows the Windows primary display.
+- A fixed physical stable ID with locking is the safer default for unattended automation.
+- A separate Windows session or virtual machine is required for a security-grade isolation boundary.
+
+This installer is not a claim that every browser or desktop prerequisite exists on a fresh machine.

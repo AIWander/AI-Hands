@@ -24,7 +24,7 @@ use super::save_dialog::{self, parse_save_dialog_action, SaveDialogAction};
 use super::session::SharedSession;
 use super::window_match::{
     find_single_window, parse_match_mode, parse_monitor, parse_window_match, MatchMode, Monitor,
-    WindowMatch,
+    WindowMatch, WindowMatchResult,
 };
 use crate::atomic::{
     AtomicTool, UiaClick, UiaFind, UiaFocusWindow, UiaGetState, UiaKeyPress, UiaListWindow,
@@ -67,12 +67,46 @@ fn launch_application(spec: &str) -> Value {
         });
     }
 
+    match crate::monitor_scope::active_monitor() {
+        Err(error) => return error,
+        Ok(Some(monitor)) => {
+            return json!({
+                "success": false,
+                "error": "ShellExecuteW failed and the Start-menu keyboard fallback is disabled under a strict monitor fence",
+                "shell_execute_code": shell_result.0 as usize,
+                "monitor": monitor.index
+            })
+        }
+        Ok(None) => {}
+    }
+
     // Fallback: open Start menu, type app name, press Enter
-    let _ = UiaKeyPress.call(&json!({"keys": "win"}));
+    let open_start = UiaKeyPress.call(&json!({"keys": "win"}));
+    if !open_start
+        .get("success")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return json!({"success": false, "error": "Could not open Start menu", "detail": open_start});
+    }
     std::thread::sleep(Duration::from_millis(300));
-    let _ = UiaTypeText.call(&json!({"text": spec}));
+    let type_result = UiaTypeText.call(&json!({"text": spec}));
+    if !type_result
+        .get("success")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return json!({"success": false, "error": "Could not type into Start search", "detail": type_result});
+    }
     std::thread::sleep(Duration::from_millis(150));
-    let _ = UiaKeyPress.call(&json!({"keys": "enter"}));
+    let enter_result = UiaKeyPress.call(&json!({"keys": "enter"}));
+    if !enter_result
+        .get("success")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return json!({"success": false, "error": "Could not submit Start search", "detail": enter_result});
+    }
 
     json!({
         "success": true,
@@ -100,6 +134,54 @@ const VALID_ACTIONS: &[&str] = &[
     "snap_top",
     "snap_bottom",
 ];
+
+fn resolve_monitor_index(monitor: &Option<Monitor>) -> Result<Option<usize>, MetaError> {
+    match monitor {
+        Some(Monitor::Index(index)) if *index >= 0 => Ok(Some(*index as usize)),
+        Some(Monitor::Index(index)) => Err(MetaError::other(format!(
+            "Monitor index must be non-negative, got {index}"
+        ))),
+        Some(Monitor::Primary) => crate::monitor_scope::list_monitors()
+            .map_err(MetaError::other)?
+            .into_iter()
+            .find(|monitor| monitor.is_primary)
+            .map(|monitor| Some(monitor.index))
+            .ok_or_else(|| MetaError::other("No primary monitor is available")),
+        Some(Monitor::Current | Monitor::Owning) | None => Ok(None),
+    }
+}
+
+fn find_launched_window(
+    window_match: &Option<WindowMatch>,
+    launch_spec: &str,
+    match_mode: &MatchMode,
+) -> Result<WindowMatchResult, MetaError> {
+    let windows = list_windows();
+    if let Some(criteria) = window_match {
+        return find_single_window(&windows, criteria, match_mode);
+    }
+
+    let title_match = WindowMatch {
+        title: Some(launch_spec.to_string()),
+        process: None,
+        automation_id: None,
+    };
+    if let Ok(window) = find_single_window(&windows, &title_match, match_mode) {
+        return Ok(window);
+    }
+
+    let process = std::path::Path::new(launch_spec)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(launch_spec)
+        .to_string();
+    let process_match = WindowMatch {
+        title: None,
+        process: Some(process),
+        automation_id: None,
+    };
+    find_single_window(&windows, &process_match, match_mode)
+}
 
 pub async fn handle(
     args: &Value,
@@ -159,7 +241,7 @@ pub async fn handle(
     let on_save_dialog =
         parse_save_dialog_action(args.get("on_save_dialog").and_then(|v| v.as_str()));
     let monitor = parse_monitor(args);
-    let _wait_ready = args
+    let wait_ready = args
         .get("wait_ready")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
@@ -186,7 +268,9 @@ pub async fn handle(
             handle_open(
                 &launch_spec,
                 &window_match_parsed,
+                &match_mode,
                 &monitor,
+                wait_ready,
                 timeout_ms,
                 &call_id,
                 &ctx,
@@ -294,8 +378,10 @@ pub async fn handle(
 async fn handle_open(
     launch_spec: &Option<String>,
     window_match: &Option<WindowMatch>,
+    match_mode: &MatchMode,
     monitor: &Option<Monitor>,
-    _timeout_ms: u64,
+    wait_ready: bool,
+    timeout_ms: u64,
     call_id: &str,
     ctx: &Value,
     rungs: &mut Vec<RungAttempt>,
@@ -351,30 +437,76 @@ async fn handle_open(
         )));
     }
 
-    // Wait for window to appear and verify foreground
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Wait for a concrete window instead of treating process launch as proof.
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms.max(250));
+    let launched_window = loop {
+        if let Ok(target) = find_launched_window(window_match, spec, match_mode) {
+            break target;
+        }
+        if Instant::now() >= deadline {
+            return Err(MetaError::other(format!(
+                "Application '{}' launched, but no matching window appeared within {} ms",
+                spec, timeout_ms
+            )));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
 
-    let verify_result = verify_foreground_window(window_match, spec);
+    let requested_monitor = resolve_monitor_index(monitor)?;
+    let placement_result = if let Some(index) = requested_monitor {
+        let placement = crate::monitor_scope::place_window(&launched_window.title, index);
+        if !placement
+            .get("success")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            return Err(MetaError::other(format!(
+                "Application '{}' opened but could not be fenced to monitor {}: {}",
+                spec,
+                index,
+                serde_json::to_string(&placement).unwrap_or_default()
+            )));
+        }
+        Some(placement)
+    } else {
+        None
+    };
+
+    let focus_result = UiaFocusWindow.call(&json!({"title": &launched_window.title}));
+    let focus_ok = focus_result
+        .get("success")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let verify_result = if focus_ok {
+        verify_foreground_window(window_match, &launched_window.title)
+    } else {
+        Err(MetaError::other("Opened window could not be focused"))
+    };
+    if wait_ready {
+        if let Err(error) = &verify_result {
+            return Err(MetaError::other(format!(
+                "Application '{}' opened but did not become interaction-ready: {}",
+                spec, error
+            )));
+        }
+    }
 
     // Record monitor stickiness
-    if let Some(ref wm) = window_match {
-        let title = wm.title.as_deref().unwrap_or(spec);
-        let monitor_idx = monitor
-            .as_ref()
-            .map(|m| match m {
-                Monitor::Index(i) => *i,
-                _ => 0,
-            })
-            .unwrap_or(0);
-
-        let mut s = session.write().unwrap_or_else(|e| e.into_inner());
-        s.record_window_monitor(title, monitor_idx, 1.0);
-    }
+    let monitor_idx = requested_monitor
+        .map(|index| index as i32)
+        .or(launched_window.monitor_index)
+        .unwrap_or(0);
+    let mut s = session.write().unwrap_or_else(|e| e.into_inner());
+    s.record_window_monitor(&launched_window.title, monitor_idx, 1.0);
 
     Ok(json!({
         "action": "open",
         "launch_spec": spec,
         "launched": true,
+        "window_found": true,
+        "window_title": launched_window.title,
+        "monitor_index": monitor_idx,
+        "monitor_placement": placement_result,
         "foreground_verified": verify_result.is_ok(),
         "launch_detail": launch_result,
     }))
@@ -621,7 +753,7 @@ async fn handle_focus(
     let rung_start = Instant::now();
     let (focus_result, used_hwnd) = if let Some(ref hwnd) = target.hwnd {
         let r = UiaFocusWindow.call(&json!({"hwnd": hwnd}));
-        let ok = r.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+        let ok = r.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
         if ok {
             (r, true)
         } else {
@@ -638,7 +770,7 @@ async fn handle_focus(
     let focus_ok = focus_result
         .get("success")
         .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+        .unwrap_or(false);
     if focus_ok {
         let method = if used_hwnd {
             "uia_focus_window(hwnd)"
@@ -731,7 +863,7 @@ async fn handle_window_state(
     let state_ok = state_result
         .get("success")
         .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+        .unwrap_or(false);
     if state_ok {
         rungs.push(RungAttempt::ok("uia_window_state", rung_ms));
         instrumentation::log_rung_attempt(
@@ -817,17 +949,13 @@ async fn handle_snap(
             let s = session.read().unwrap_or_else(|e| e.into_inner());
             s.get_window_monitor(&target_title).map(|r| r.monitor_index)
         }
-        Some(Monitor::Primary) => Some(0),
+        Some(Monitor::Primary) => resolve_monitor_index(monitor)?.map(|index| index as i32),
         Some(Monitor::Current) => target.monitor_index,
         None => target.monitor_index,
     };
 
     let rung_start = Instant::now();
-    let mut snap_args = if let Some(ref hwnd) = target.hwnd {
-        json!({"hwnd": hwnd, "direction": direction})
-    } else {
-        json!({"title": &target_title, "direction": direction})
-    };
+    let mut snap_args = json!({"title": &target_title, "direction": direction});
     if let Some(idx) = monitor_idx {
         snap_args
             .as_object_mut()
@@ -841,7 +969,7 @@ async fn handle_snap(
     let snap_ok = snap_result
         .get("success")
         .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+        .unwrap_or(false);
     if snap_ok {
         rungs.push(RungAttempt::ok("uia_window_snap", rung_ms));
         instrumentation::log_rung_attempt(

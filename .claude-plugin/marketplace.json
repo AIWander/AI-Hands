@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "aiwander-ai-hands",
+  "description": "Optional AI-Hands MCP server and agent skills.",
+  "owner": {
+    "name": "AIWander"
+  },
+  "plugins": [
+    {
+      "name": "ai-hands",
+      "description": "Current-state browser, Windows UIA, vision, monitor scope, and live network automation.",
+      "author": {
+        "name": "AIWander"
+      },
+      "category": "productivity",
+      "source": "./plugins/ai-hands",
+      "homepage": "https://github.com/AIWander/AI-Hands"
+    }
+  ]
+}

@@ -53,6 +53,7 @@ pub struct LockRecord {
 /// consulted on release. Backed by a Mutex<Option<…>> so we don't pay the
 /// HashMap allocation cost on cold start.
 static HELD_LOCKS: Mutex<Option<HashMap<String, PathBuf>>> = Mutex::new(None);
+static AUTO_ATTACH_LOCKS: Mutex<Option<HashMap<u16, String>>> = Mutex::new(None);
 
 fn with_held_locks<F, R>(f: F) -> R
 where
@@ -63,6 +64,29 @@ where
         *guard = Some(HashMap::new());
     }
     f(guard.as_mut().expect("HELD_LOCKS just initialized"))
+}
+
+fn with_auto_attach_locks<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HashMap<u16, String>) -> R,
+{
+    let mut guard = AUTO_ATTACH_LOCKS
+        .lock()
+        .expect("attach_lock AUTO_ATTACH_LOCKS poisoned");
+    if guard.is_none() {
+        *guard = Some(HashMap::new());
+    }
+    f(guard.as_mut().expect("AUTO_ATTACH_LOCKS just initialized"))
+}
+
+fn held_lock_id_for_port(port: u16) -> Option<String> {
+    with_held_locks(|locks| {
+        locks.iter().find_map(|(lock_id, path)| {
+            read_lock_if_exists(path)
+                .filter(|record| record.port == port && record.pid == std::process::id())
+                .map(|_| lock_id.clone())
+        })
+    })
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -253,6 +277,85 @@ pub fn handle_acquire(args: &Value) -> Value {
     };
 
     acquire_inner(&dir, port, timeout_ms, stale_after_ms)
+}
+
+/// Acquire and retain the debug-port lock used by the canonical
+/// `browser_attach` path. The lock remains held until `browser_close` or a
+/// failed attach releases it. An existing manual lock held by this process is
+/// respected and is not taken over by automatic lifecycle management.
+pub fn auto_acquire_for_attach(port: u16) -> Result<&'static str, Value> {
+    let dir = default_lock_dir().map_err(|error| json!({"ok": false, "error": error}))?;
+    auto_acquire_inner(&dir, port, DEFAULT_TIMEOUT_MS, DEFAULT_STALE_AFTER_MS)
+}
+
+fn auto_acquire_inner(
+    dir: &Path,
+    port: u16,
+    timeout_ms: u64,
+    stale_after_ms: u64,
+) -> Result<&'static str, Value> {
+    if with_auto_attach_locks(|locks| locks.contains_key(&port)) {
+        return Ok("already_automatic");
+    }
+    if held_lock_id_for_port(port).is_some() {
+        return Ok("manual_lock_already_held");
+    }
+
+    let acquired = acquire_inner(dir, port, timeout_ms, stale_after_ms);
+    if acquired.get("ok").and_then(Value::as_bool) != Some(true) {
+        return Err(acquired);
+    }
+    let Some(lock_id) = acquired
+        .get("lock_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+    else {
+        return Err(json!({
+            "ok": false,
+            "error": "automatic attach lock acquired without a lock_id"
+        }));
+    };
+    with_auto_attach_locks(|locks| locks.insert(port, lock_id));
+    Ok("acquired")
+}
+
+/// Release an automatically managed lock for one debug port.
+pub fn auto_release_for_port(port: u16) -> Value {
+    let dir = match default_lock_dir() {
+        Ok(dir) => dir,
+        Err(error) => return json!({"ok": false, "error": error}),
+    };
+    auto_release_inner(&dir, port)
+}
+
+fn auto_release_inner(dir: &Path, port: u16) -> Value {
+    let lock_id = with_auto_attach_locks(|locks| locks.remove(&port));
+    match lock_id {
+        Some(lock_id) => release_inner(dir, &lock_id),
+        None => json!({
+            "ok": true,
+            "released": false,
+            "port": port,
+            "note": "no automatically managed attach lock was held"
+        }),
+    }
+}
+
+/// Release every automatically managed debug-port lock after browser close.
+pub fn auto_release_all() -> Value {
+    let dir = match default_lock_dir() {
+        Ok(dir) => dir,
+        Err(error) => return json!({"ok": false, "error": error}),
+    };
+    let held: Vec<(u16, String)> = with_auto_attach_locks(|locks| locks.drain().collect());
+    let releases: Vec<Value> = held
+        .into_iter()
+        .map(|(port, lock_id)| {
+            let result = release_inner(&dir, &lock_id);
+            json!({"port": port, "result": result})
+        })
+        .collect();
+    json!({"ok": true, "releases": releases})
 }
 
 /// Testable inner with injected `dir`.
@@ -811,5 +914,23 @@ mod tests {
         assert_eq!(parse_port_from_filename("not_a_lock.txt"), None);
         assert_eq!(parse_port_from_filename("chrome_attach_99999.lock"), None);
         assert_eq!(parse_port_from_filename("chrome_attach_abc.lock"), None);
+    }
+
+    #[test]
+    fn automatic_attach_lock_lifecycle_holds_until_release() {
+        let dir = TempDir::new().unwrap();
+        with_auto_attach_locks(|locks| locks.clear());
+
+        let state = auto_acquire_inner(dir.path(), 9309, 1_000, 60_000).unwrap();
+        assert_eq!(state, "acquired");
+        assert!(lock_path_in(dir.path(), 9309).exists());
+
+        let repeated = auto_acquire_inner(dir.path(), 9309, 1_000, 60_000).unwrap();
+        assert_eq!(repeated, "already_automatic");
+
+        let released = auto_release_inner(dir.path(), 9309);
+        assert_eq!(released["ok"], json!(true));
+        assert_eq!(released["released"], json!(true));
+        assert!(!lock_path_in(dir.path(), 9309).exists());
     }
 }
