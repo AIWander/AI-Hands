@@ -1,7 +1,7 @@
 AI-HANDS OPTIONAL PLUGIN - APPLY TO YOUR AI
 ===========================================
 
-The installer placed hands.exe on your user PATH and staged this marketplace at:
+The installer staged hands.exe under %LOCALAPPDATA%\AIWander\AIHands\bin. If you kept the selected Add to PATH option, that bin directory is also on your user PATH. The marketplace is staged at:
 %LOCALAPPDATA%\AIWander\AIHands\marketplace
 
 The plugin files and skills are installed locally, but no AI configuration or hook file was edited for you. Choose the UI you use, run its supported install command, then start a fresh AI session.
