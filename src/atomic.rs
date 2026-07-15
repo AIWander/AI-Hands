@@ -37,6 +37,7 @@
 //! ```
 //! That's it. The type is then usable anywhere as `UiaNewTool.call(args)`.
 
+use crate::uia_lib;
 use serde_json::Value;
 
 // ══════════════════════════════════════════════════════════════

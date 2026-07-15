@@ -3,8 +3,8 @@
 //! Runs a list of expectations after a flow completes and reports per-expectation
 //! pass/fail with polling, predicates, and tolerance.
 //!
-//! Pairs with `hands_self_record`: a saved flow can have implicit expectations
-//! (final state matches first successful run).
+//! Workflow owns durable recording and replay. This Hands-side harness checks a
+//! replay against current browser, screen, and desktop evidence before trusting it.
 //!
 //! Supported check_tools (whitelist):
 //!   - `browser_get_text` — DOM text content of a CSS selector
@@ -16,6 +16,7 @@
 //! gt, lt, in_range. String predicates support a tolerance.string_distance
 //! (Levenshtein) for fuzzy matching.
 
+use crate::vision_core;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 

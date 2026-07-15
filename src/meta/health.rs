@@ -171,7 +171,7 @@ pub fn hands_health() -> serde_json::Value {
 
     serde_json::json!({
         "server": "hands",
-        "version": "1.3.0-dev",
+        "version": env!("CARGO_PKG_VERSION"),
         "paths": paths,
         "browser": {
             "status": browser_str,

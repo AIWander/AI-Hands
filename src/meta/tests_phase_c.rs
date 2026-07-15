@@ -1142,8 +1142,9 @@ fn test_hands_health_shape() {
     // Top-level required fields
     assert_eq!(result["server"], "hands", "server field must be 'hands'");
     assert_eq!(
-        result["version"], "1.3.0-dev",
-        "version field must be '1.3.0-dev'"
+        result["version"],
+        env!("CARGO_PKG_VERSION"),
+        "health version must match the package version"
     );
     assert!(result.get("paths").is_some(), "paths field must be present");
     assert!(

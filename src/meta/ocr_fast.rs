@@ -48,6 +48,15 @@ pub async fn handle_ocr_fast(
     _browser: &browser_mcp::browser::SharedBrowser,
     _session: &SharedSession,
 ) -> Value {
+    handle_ocr_canonical(args).await
+}
+
+/// Canonical OCR path used by `vision_ocr`.
+///
+/// Caching and backend metadata used to live only behind `vision_ocr_fast`.
+/// Keeping them here makes the canonical name a no-loss replacement while the
+/// old fast name remains available only in the compatibility profile.
+pub async fn handle_ocr_canonical(args: &Value) -> Value {
     let caps = get_capabilities_cached();
     let gpu_detected = caps
         .get("gpu")
@@ -61,11 +70,11 @@ pub async fn handle_ocr_fast(
 
     let backend_metadata = json!({
         "backend": "windows_ocr",
-        "phase": "phase_1_stub",
+        "cache_enabled": true,
         "gpu_detected": gpu_detected,
-        "future_backend": "PaddleOCR-ONNX (vision-core v0.2.0, behind --features onnx — experimental, NOT enabled in this build)",
+        "optional_future_backend": "PaddleOCR-ONNX (experimental and not enabled in this build)",
         "speedup_potential": "cross-platform OCR for macOS/Linux where Windows.Media.Ocr is unavailable; incremental accuracy gain on Windows",
-        "note": "Backend today is Windows.Media.Ocr (OS built-in). Callers can adopt vision_ocr_fast now; the PaddleOCR-ONNX path ships in vision-core v0.2.0 behind --features onnx (opt-in, not compiled into this default build)."
+        "note": "The canonical vision_ocr path uses the OS OCR backend and returns cached/backend metadata."
     });
 
     annotate_with_backend_metadata(raw, backend_metadata)

@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__hands__.*|hands__.*|AI-Hands__.*|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.11 \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event PreToolUse",
+            "timeout": 5,
+            "statusMessage": "AI-Hands safety policy"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__hands__.*|hands__.*|AI-Hands__.*|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py -3.11 \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event PostToolUse",
+            "timeout": 5,
+            "statusMessage": "AI-Hands redacted audit"
+          }
+        ]
+      }
+    ]
+  }
+}

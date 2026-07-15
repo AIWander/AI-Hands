@@ -1,0 +1,27 @@
+[package]
+name = "browser-mcp"
+version = "0.1.1"
+edition = "2021"
+license = "Apache-2.0"
+description = "Shared browser automation library for CPC servers (chromiumoxide + CDP)"
+repository = "https://github.com/AIWander/browser-mcp"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chromiumoxide = { version = "0.5", features = ["tokio-runtime"], default-features = false }
+futures = "0.3"
+base64 = "0.21"
+reqwest = { version = "0.11", features = ["native-tls", "json"], default-features = false }
+scraper = "0.18"
+image = { version = "0.24", default-features = false, features = ["jpeg"] }
+
+# Vision (shared library - local tools only)
+vision-core = { path = "../vision-core" }
+
+# Web Bot Auth (RFC 9421 HTTP Message Signatures) — outbound request signing
+web-bot-auth = "0.7"
+indexmap = "2"
+ed25519-dalek = { version = "2", features = ["pkcs8", "pem"] }
+rand = "0.8"

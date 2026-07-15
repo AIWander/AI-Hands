@@ -73,9 +73,6 @@ pub mod templates;
 pub mod verify;
 pub mod verify_expectations;
 
-// ── Phase D — Self-improvement ──
-pub mod self_record;
-
 // ── Phase E — Caching ──
 pub mod vision_cache;
 
@@ -365,6 +362,11 @@ pub fn meta_tool_definitions() -> Vec<Value> {
                     },
                     "double_click": { "type": "boolean", "default": false },
                     "right_click": { "type": "boolean", "default": false },
+                    "monitor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Display index for desktop/OCR fallback. An active hands_monitor_scope overrides this and rejects mismatches."
+                    },
                     "strict": {
                         "type": "boolean",
                         "default": false,
@@ -450,6 +452,11 @@ pub fn meta_tool_definitions() -> Vec<Value> {
                     "window_title": {
                         "type": "string",
                         "description": "Optional: focus this window via UIA (~200ms settle) before capture. Orthogonal to `target` — works with target='screen' or target='browser'. For window-only capture, set this AND target=<same title>."
+                    },
+                    "monitor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Display index for screen/window capture. An active hands_monitor_scope overrides this and rejects mismatches."
                     }
                 }
             }
@@ -482,6 +489,11 @@ pub fn meta_tool_definitions() -> Vec<Value> {
                         "type": "integer",
                         "default": 10000,
                         "description": "Overall timeout budget in ms"
+                    },
+                    "monitor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Display index for OCR/template fallback. An active hands_monitor_scope overrides this and rejects mismatches."
                     }
                 },
                 "required": ["target"]
@@ -634,6 +646,11 @@ pub fn meta_tool_definitions() -> Vec<Value> {
                             "width": { "type": "integer" },
                             "height": { "type": "integer" }
                         }
+                    },
+                    "monitor": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Display index for screen capture. An active hands_monitor_scope overrides this and rejects mismatches."
                     }
                 }
             }
@@ -818,60 +835,6 @@ pub fn meta_tool_definitions() -> Vec<Value> {
                 "required": ["url"]
             }
         }),
-        // ── Phase D — Self-improvement tools ──
-        json!({
-            "name": "hands_self_record_start",
-            "description": "Begin a self-recording session: generate a deterministic flow_name from `task_description`, persist intent metadata to the local index, and return a call plan for workflow:flow_record_start. The caller invokes the returned plan, performs the task, then closes with hands_self_record_stop_and_optimize. Plan-not-action: hands itself does not call workflow:* tools.",
-            "recommended_for": ["self-recording", "automation memory", "replay loop", "learn from session"],
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "task_description": {
-                        "type": "string",
-                        "description": "Natural-language description of the task being recorded. Used both as the workflow flow description and as the cosine-similarity index key for future lookups."
-                    }
-                },
-                "required": ["task_description"]
-            }
-        }),
-        json!({
-            "name": "hands_self_record_lookup",
-            "description": "Search the local self-record index for prior recordings similar to `task_description` (cosine similarity over token-frequency vectors with English-stopword filtering). Returns matching candidates with replay_call_plan stubs. Use BEFORE hands_self_record_start to check if a replay already exists.",
-            "recommended_for": ["replay lookup", "automation memory", "find prior recording", "self-record search"],
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "task_description": {
-                        "type": "string",
-                        "description": "Natural-language description of the task to search for."
-                    },
-                    "threshold": {
-                        "type": "number",
-                        "default": 0.7,
-                        "description": "Minimum cosine similarity (0.0–1.0) required for a record to be returned as a candidate."
-                    }
-                },
-                "required": ["task_description"]
-            }
-        }),
-        json!({
-            "name": "hands_self_record_stop_and_optimize",
-            "description": "Two-stage orchestrator that closes a self-recording, replays it (dry_run) to get the captured steps, prunes obvious noise (consecutive scrolls, failed-then-success clicks, unreferenced screenshots, instant wait_for), and decides whether to replace a longer existing flow with the shorter pruned one. Stage 1 (no recorded_steps) returns an orchestration_plan to invoke workflow:flow_record_stop + workflow:flow_replay; Stage 2 (recorded_steps populated) returns a replace_plan or 'keep' decision. Plan-not-action: hands itself does not call workflow:* tools.",
-            "recommended_for": ["self-recording", "flow optimization", "replay pruning"],
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Flow name returned earlier by hands_self_record_start."
-                    },
-                    "recorded_steps": {
-                        "description": "OPTIONAL on first call. After running the Stage-1 orchestration_plan, re-invoke this tool with `recorded_steps` set to the `steps` array from the workflow:flow_replay response."
-                    }
-                },
-                "required": ["name"]
-            }
-        }),
         // ── Phase H — Network event streaming (poll-based) ──
         json!({
             "name": "hands_network_subscribe",
@@ -977,7 +940,7 @@ pub fn meta_tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "hands_verify_expectations",
-            "description": "Run a list of post-flow expectations and report per-expectation pass/fail with polling, predicates (equals/contains/not_contains/not_equals/regex/gt/lt/in_range), and tolerance (polls, interval_ms, timeout_per_check_ms, string_distance for fuzzy match via Levenshtein). Pairs with hands_self_record: a saved flow has implicit expectations (final state matches first successful run). Supported check_tools: browser_get_text, browser_exists, vision_ocr_text_contains, uia_text_exists.",
+            "description": "Run a list of post-flow expectations and report per-expectation pass/fail with polling, predicates (equals/contains/not_contains/not_equals/regex/gt/lt/in_range), and tolerance (polls, interval_ms, timeout_per_check_ms, string_distance for fuzzy match via Levenshtein). Workflow owns durable recording/replay; use this Hands tool to revalidate a replay against current browser, screen, or desktop evidence. Supported check_tools: browser_get_text, browser_exists, vision_ocr_text_contains, uia_text_exists.",
             "recommended_for": ["verify expectations", "post-flow assert", "validate replay", "test harness", "regression check"],
             "inputSchema": {
                 "type": "object",

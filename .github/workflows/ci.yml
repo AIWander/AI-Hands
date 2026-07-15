@@ -178,8 +178,8 @@ jobs:
           try:
               with open('README.md', 'r') as f:
                   readme = f.read()
-              # Look for "What's New in vX.Y.Z" pattern
-              m = re.search(r"What's New in v([0-9]+\.[0-9]+\.[0-9]+)", readme)
+              # Accept release and SemVer prerelease headers.
+              m = re.search(r"What's New in v([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)", readme)
               if m:
                   readme_version = m.group(1)
                   if readme_version != cargo_version:
@@ -190,7 +190,7 @@ jobs:
                   else:
                       print(f"README version matches: v{readme_version}")
               else:
-                  print("No 'What's New in vX.Y.Z' header found in README — skipping README check")
+                  print("No 'What's New in vX.Y.Z[-prerelease]' header found in README — skipping README check")
           except FileNotFoundError:
               print("No README.md found — skipping README check")
 
@@ -198,8 +198,8 @@ jobs:
           try:
               with open('CHANGELOG.md', 'r') as f:
                   changelog = f.read()
-              # Look for first version header: ## [X.Y.Z] or ## X.Y.Z or [X.Y.Z]
-              m = re.search(r'##?\s*\[?v?([0-9]+\.[0-9]+\.[0-9]+)\]?', changelog)
+              # Look for the first release or SemVer prerelease header.
+              m = re.search(r'##?\s*\[?v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\]?', changelog)
               if m:
                   cl_version = m.group(1)
                   if cl_version != cargo_version:

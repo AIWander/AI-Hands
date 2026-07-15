@@ -1,0 +1,47 @@
+[package]
+name = "vision-core"
+version = "0.2.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "OCR and image analysis library for CPC servers (Windows OCR + template matching; experimental PaddleOCR-ONNX backend)"
+repository = "https://github.com/AIWander/vision-core"
+readme = "README.md"
+
+[lib]
+name = "vision_core"
+path = "src/lib.rs"
+
+[features]
+default = []
+# Experimental cross-platform OCR backend (PaddleOCR PP-OCRv4 via ONNX Runtime).
+# Pulls in `ort` + `ndarray`. The DEFAULT build (no features) stays Windows.Media.Ocr only.
+onnx = ["dep:ort", "dep:ndarray"]
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+screenshots = "0.8"
+image = "0.24"
+windows = { version = "0.58", features = [
+    "Media_Ocr",
+    "Graphics_Imaging",
+    "Storage_Streams",
+    "Foundation",
+    "Foundation_Collections",
+] }
+reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22"
+chrono = "0.4"
+
+# --- ONNX OCR backend (optional, gated on `onnx` feature) ---
+# `download-binaries` lets ort fetch the ONNX Runtime at build time, so
+# `--features onnx` compiles without a preinstalled runtime.
+# NOTE: ort 2.x ships only as pre-releases (latest 2.0.0-rc.12). Cargo requires
+# a pre-release to be named explicitly — `version = "2"` will NOT match an `-rc`,
+# so we pin the exact rc. Bump when ort cuts a stable 2.x.
+ort = { version = "=2.0.0-rc.12", optional = true, features = ["download-binaries"] }
+# NOTE: ort 2.x's default `ndarray` feature pins ndarray 0.17; we must match
+# that version so Tensor::from_array / try_extract_array unify on one ndarray
+# crate. (Spec suggested 0.16 — bumped to 0.17 to match ort. See CHANGELOG.)
+ndarray = { version = "0.17", optional = true }

@@ -20,6 +20,7 @@ use super::instrumentation;
 use super::response::{Confidence, MetaToolResult, Reversibility, RungAttempt};
 use super::session::SharedSession;
 use crate::atomic::{AtomicTool, UiaFocusWindow};
+use crate::vision_core;
 
 pub async fn handle(
     args: &Value,
@@ -52,6 +53,7 @@ pub async fn handle(
         .get("detailed_ocr")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let monitor = args.get("monitor").and_then(Value::as_u64).unwrap_or(0) as usize;
     // Optional window_title: if provided, focus the named window via UIA and sleep ~200ms
     // before performing the target's normal routing. This is the cross-surface place to
     // handle window focusing — vision-core has no UIA, and the dispatcher is the wrong
@@ -68,8 +70,13 @@ pub async fn handle(
         }
     }
 
-    let ctx =
-        json!({"target": target, "ocr": do_ocr, "verify": &verify, "window_title": &window_title});
+    let ctx = json!({
+        "target": target,
+        "ocr": do_ocr,
+        "verify": &verify,
+        "window_title": &window_title,
+        "monitor": monitor
+    });
 
     let result = match target {
         "browser" => {
@@ -83,7 +90,9 @@ pub async fn handle(
             )
             .await
         }
-        "screen" | "" => capture_screen(&verify, save_path.as_deref(), &call_id, &ctx).await,
+        "screen" | "" => {
+            capture_screen(&verify, save_path.as_deref(), monitor, &call_id, &ctx).await
+        }
         t if is_css_selector(t) => {
             capture_browser_selector(
                 browser,
@@ -101,6 +110,7 @@ pub async fn handle(
                 window_title,
                 &verify,
                 save_path.as_deref(),
+                monitor,
                 session,
                 &call_id,
                 &ctx,
@@ -336,6 +346,7 @@ async fn capture_window(
     title: &str,
     verify: &Option<String>,
     save_path: Option<&str>,
+    monitor: usize,
     session: &SharedSession,
     call_id: &str,
     ctx: &Value,
@@ -360,7 +371,7 @@ async fn capture_window(
         }
     }
 
-    let mut shot_args = json!({});
+    let mut shot_args = json!({"monitor": monitor});
     if let Some(path) = save_path {
         shot_args["save_screenshot"] = json!(path);
     }
@@ -397,12 +408,13 @@ async fn capture_window(
 async fn capture_screen(
     verify: &Option<String>,
     save_path: Option<&str>,
+    monitor: usize,
     call_id: &str,
     ctx: &Value,
 ) -> CaptureOutcome {
     let rung_start = Instant::now();
 
-    let mut shot_args = json!({});
+    let mut shot_args = json!({"monitor": monitor});
     if let Some(path) = save_path {
         shot_args["save_screenshot"] = json!(path);
     }

@@ -1,6 +1,6 @@
 [package]
 name = "hands"
-version = "1.0.1"
+version = "1.1.0-unified.1"
 edition = "2021"
 description = "AI-Hands MCP server — browser automation + Windows UIA + vision/OCR."
 license = "Apache-2.0"
@@ -23,13 +23,14 @@ anyhow = "1.0"
 chrono = "0.4"
 
 # Browser lib (CDP, scraping, smart_browse, etc.)
-browser-mcp = { git = "https://github.com/AIWander/browser-mcp", tag = "v0.1.1" }
+browser-mcp = { path = "vendor/browser-mcp" }
 
 # Vision (shared library - screenshot, OCR, diff, template match)
-vision-core = { git = "https://github.com/AIWander/vision-core", tag = "v0.2.0" }
+vision-core-lib = { package = "vision-core", path = "vendor/vision-core" }
+screenshots = "0.8"
 
 # UIA (UI Automation - Windows native element inspection + input)
-uia-mcp = { git = "https://github.com/AIWander/uia-mcp", tag = "v1.0.0" }
+uia-lib-backend = { package = "uia-mcp", path = "vendor/uia-mcp" }
 
 # Image processing (for PrintWindow capture)
 image = "0.24"

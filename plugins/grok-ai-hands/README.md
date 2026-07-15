@@ -1,5 +1,7 @@
 # grok-ai-hands
 
+> Legacy compatibility package. New installs should use [`../ai-hands/`](../ai-hands/), which provides the same AI-Hands ability owner across Codex, Claude-compatible hosts, and Grok. Do not load both packages in one host.
+
 Grok (and Claude Code–compatible) **plugin** that packages the AI-Hands agent skill set and safety/audit hooks.
 
 This is **not** the MCP server binary. Install [AI-Hands](https://github.com/AIWander/AI-Hands) (`hands.exe`) separately, then install this plugin so agents know how to drive it safely.

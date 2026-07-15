@@ -2,8 +2,9 @@
 
 Installable agent harness packages for AI-Hands.
 
-| Plugin | Path | Install (Grok) |
-|--------|------|----------------|
-| **grok-ai-hands** | [`grok-ai-hands/`](./grok-ai-hands/) | `grok plugin install AIWander/AI-Hands#plugins/grok-ai-hands --trust` |
+| Plugin | Status | Purpose |
+|--------|--------|---------|
+| [`ai-hands/`](./ai-hands/) | Canonical | Cross-host Codex and Claude-compatible manifests, MCP registration, concise ability-owned skills, universal instructions, and opt-in hooks |
+| [`grok-ai-hands/`](./grok-ai-hands/) | Legacy compatibility | Original Grok-oriented package retained for existing installations |
 
-See each plugin README for skills, hooks, and MCP notes.
+Install only one AI-Hands plugin package in a host. The canonical `ai-hands` package is the recommended path for new installs; loading both duplicates guidance without adding tools.

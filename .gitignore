@@ -1,9 +1,15 @@
 # Build artifacts
 /target/
+/dist/
+/test-results/
 **/*.rs.bk
 
 # Debug symbols
 *.pdb
+
+# Python caches
+__pycache__/
+*.py[cod]
 
 # Editor and IDE
 .vscode/
