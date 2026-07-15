@@ -8,8 +8,8 @@ This report identifies the exact local publication artifacts prepared for source
 - Source-exact unsigned SHA-256 before signing: `F3C8C8A83A36E89BD19C64076EBB0432B2534922C9DB521BDB9322AA11900529`
 - Final signed SHA-256: `CD218D6356830AE7A926CD2E78760E726A5BF8B5F1381457124ED19A485B99C4`
 - Final signed size: 21,768,976 bytes
-- Signature state: Valid; signer `Joseph Wander`
-- Embedded-string checks: no workstation-specific username path, private user path, old live-binary hash, private coverage filename, hardcoded Node executable, or private JavaScript-helper path. Generic CPC/Drive fallback strings from the public `cpc-paths` dependency remain by design.
+- Signature state: Valid and timestamped
+- Embedded-string checks: no workstation-specific username path, private user path, old live-binary hash, private coverage filename, hardcoded Node executable, or private JavaScript-helper path. Generic, non-user-specific fallback strings from the public path-discovery dependency remain by design.
 - Dependency check: one vendored `vision-core` package is shared by Hands and the vendored browser library
 
 ## Four-monitor acceptance
