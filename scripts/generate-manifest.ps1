@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)]
     [string] $InputPath,
     [string] $OutputPath = '',
-    [string] $CandidateVersion = '1.1.0-unified.1'
+    [string] $CandidateVersion = '1.1.0-unified.2'
 )
 
 $ErrorActionPreference = 'Stop'

@@ -358,7 +358,7 @@ fn uia_type_text(args: &Value) -> Value {
 
     json!({
         "success": true,
-        "typed": text,
+        "typed": true,
         "length": text.len()
     })
 }

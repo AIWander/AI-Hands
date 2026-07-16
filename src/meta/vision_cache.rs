@@ -213,6 +213,12 @@ pub fn handle_stats(args: &Value) -> Value {
 mod tests {
     use super::*;
 
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
     /// Reset cache between tests — tests share process-global state.
     fn reset_for_test() {
         with_cache(|c| {
@@ -267,6 +273,7 @@ mod tests {
 
     #[test]
     fn handle_stats_returns_zero_initial_state() {
+        let _guard = test_guard();
         reset_for_test();
         let out = handle_stats(&json!({}));
         assert_eq!(out["ok"], json!(true));
@@ -284,6 +291,7 @@ mod tests {
 
     #[test]
     fn handle_stats_reset_clears_counters() {
+        let _guard = test_guard();
         reset_for_test();
         // Seed some state directly so we don't depend on vision_core.
         with_cache(|c| {
@@ -322,6 +330,7 @@ mod tests {
 
     #[test]
     fn invalidate_all_clears_entries_and_tracks_count() {
+        let _guard = test_guard();
         reset_for_test();
         with_cache(|c| {
             for i in 0..3 {

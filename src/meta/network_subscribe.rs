@@ -51,7 +51,10 @@
 //! Empty `methods: []` = match all (same as omitted).
 //!
 //! Glob: minimal `*` matcher implemented inline (matches any sequence including
-//! empty). `**` collapses to `*`. Anchored: whole-string match.
+//! empty). `**` collapses to `*`. Anchored: whole-string match. To avoid keeping
+//! credentials or user identifiers in process-global state, `url_glob` accepts
+//! wildcard/static route shapes such as `**/api/*/orders/**`, not an origin,
+//! query string, fragment, or arbitrary literal path value.
 //!
 //! ## State
 //!
@@ -76,6 +79,16 @@ const DEFAULT_HISTORY_CAPACITY: usize = 256;
 /// Default `max_events` per `hands_network_poll` call (still capped by
 /// the subscription's `history_capacity`).
 const DEFAULT_MAX_EVENTS_PER_POLL: usize = 256;
+const SAFE_ROUTE_LITERALS: &[&str] = &[
+    "api", "rest", "rpc", "graphql", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "auth",
+    "oauth", "login", "logout", "callback", "users", "user", "accounts", "account", "orders",
+    "order", "events", "webhooks", "health", "status", "assets", "static",
+];
+const SAFE_QUERY_KEYS: &[&str] = &[
+    "page", "limit", "offset", "sort", "order", "filter", "q", "query", "search", "cursor",
+    "after", "before", "fields", "include", "expand", "lang", "locale", "format", "version", "id",
+    "code", "state", "token", "key",
+];
 
 // ── Public types ──────────────────────────────────────────────────────
 
@@ -219,6 +232,270 @@ fn parse_filter(v: Option<&Value>) -> Filter {
     }
 }
 
+fn validate_filter_for_storage(filter: &Filter) -> Result<(), String> {
+    if let Some(pattern) = filter.url_glob.as_deref() {
+        let trimmed = pattern.trim();
+        if trimmed.len() > 2_048 {
+            return Err("filter.url_glob is too long (maximum 2048 characters)".to_string());
+        }
+        if trimmed.chars().any(|c| c.is_control()) {
+            return Err("filter.url_glob must not contain control characters".to_string());
+        }
+
+        let lower = trimmed.to_ascii_lowercase();
+        let forbidden_marker = ['?', '#', '@', '\\', '=', '&', ';']
+            .into_iter()
+            .any(|marker| trimmed.contains(marker))
+            || [
+                "authorization",
+                "bearer ",
+                "basic ",
+                "password",
+                "passwd",
+                "secret",
+                "token",
+                "api_key",
+                "api-key",
+                "apikey",
+                "cookie",
+                "session",
+                "credential",
+                "one-time-code",
+                "otp",
+            ]
+            .iter()
+            .any(|marker| lower.contains(marker));
+        if forbidden_marker {
+            return Err(
+                "filter.url_glob must be credential-free and may contain only an origin/path glob; query strings, fragments, user-info, assignments, and credential markers are rejected"
+                    .to_string(),
+            );
+        }
+
+        if lower.contains("://") || lower.contains(':') {
+            return Err(
+                "filter.url_glob must be a path-shape glob, not an origin or scheme; use a leading ** wildcard"
+                    .to_string(),
+            );
+        }
+
+        if trimmed.split('/').any(|component| {
+            let literal = component.trim();
+            !literal.is_empty()
+                && !literal.chars().all(|c| c == '*')
+                && !SAFE_ROUTE_LITERALS.contains(&literal.to_ascii_lowercase().as_str())
+        }) {
+            return Err(
+                "filter.url_glob contains an arbitrary literal path value; replace unknown or dynamic segments with *"
+                    .to_string(),
+            );
+        }
+    }
+
+    if let Some(methods) = filter.methods.as_deref() {
+        if methods.len() > 32
+            || methods.iter().any(|method| {
+                method.is_empty()
+                    || method.len() > 32
+                    || !method.chars().all(|c| c.is_ascii_uppercase() || c == '-')
+            })
+        {
+            return Err("filter.methods contains an invalid HTTP method token".to_string());
+        }
+    }
+
+    if let Some(mime) = filter.mime_contains.as_deref() {
+        if mime.is_empty()
+            || mime.len() > 128
+            || !mime.chars().all(|c| {
+                c.is_ascii_alphanumeric()
+                    || matches!(
+                        c,
+                        '!' | '#' | '$' | '&' | '^' | '_' | '.' | '+' | '-' | '*' | '/'
+                    )
+            })
+        {
+            return Err("filter.mime_contains must be a short MIME-type fragment".to_string());
+        }
+    }
+
+    Ok(())
+}
+
+fn project_route_url(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.len() > 8_192 || raw.chars().any(char::is_control) {
+        return "[URL_WITHHELD]".to_string();
+    }
+    let (without_fragment, had_fragment) = raw
+        .split_once('#')
+        .map(|(base, _)| (base, true))
+        .unwrap_or((raw, false));
+    let (base, query) = without_fragment
+        .split_once('?')
+        .map(|(base, query)| (base, Some(query)))
+        .unwrap_or((without_fragment, None));
+
+    let path = if let Some(scheme_end) = base.find("://") {
+        let after_authority = &base[scheme_end + 3..];
+        after_authority
+            .find('/')
+            .map(|offset| &after_authority[offset..])
+            .unwrap_or("/")
+    } else if let Some(after_authority) = base.strip_prefix("//") {
+        after_authority
+            .find('/')
+            .map(|offset| &after_authority[offset..])
+            .unwrap_or("/")
+    } else if base.starts_with('/') {
+        base
+    } else {
+        return "[URL_WITHHELD]".to_string();
+    };
+
+    let mut safe_path = path
+        .split('/')
+        .map(|segment| {
+            if segment.is_empty() {
+                String::new()
+            } else if segment == "{segment}" || segment == "*" {
+                "{segment}".to_string()
+            } else {
+                let normalized = segment.to_ascii_lowercase();
+                if SAFE_ROUTE_LITERALS.contains(&normalized.as_str()) {
+                    normalized
+                } else {
+                    "{segment}".to_string()
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    if safe_path.is_empty() {
+        safe_path.push('/');
+    }
+
+    if let Some(query) = query {
+        let mut keys = Vec::new();
+        for part in query.split('&').filter(|part| !part.is_empty()) {
+            let raw_key = part.split_once('=').map(|(key, _)| key).unwrap_or("");
+            let normalized = raw_key.to_ascii_lowercase();
+            let safe_key = if SAFE_QUERY_KEYS.contains(&normalized.as_str()) {
+                normalized
+            } else {
+                "parameter".to_string()
+            };
+            if !keys.contains(&safe_key) {
+                keys.push(safe_key);
+            }
+        }
+        if !keys.is_empty() {
+            safe_path.push('?');
+            safe_path.push_str(
+                &keys
+                    .iter()
+                    .map(|key| format!("{key}=[REDACTED]"))
+                    .collect::<Vec<_>>()
+                    .join("&"),
+            );
+        }
+    }
+    if had_fragment {
+        safe_path.push_str("#[REDACTED]");
+    }
+    safe_path
+}
+
+fn safe_http_method(raw: &str) -> &'static str {
+    match raw.trim().to_ascii_uppercase().as_str() {
+        "GET" => "GET",
+        "HEAD" => "HEAD",
+        "POST" => "POST",
+        "PUT" => "PUT",
+        "PATCH" => "PATCH",
+        "DELETE" => "DELETE",
+        "OPTIONS" => "OPTIONS",
+        "CONNECT" => "CONNECT",
+        "TRACE" => "TRACE",
+        _ => "[METHOD_WITHHELD]",
+    }
+}
+
+fn safe_mime(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()
+        && trimmed.len() <= 128
+        && trimmed.chars().all(|ch| {
+            ch.is_ascii_alphanumeric()
+                || matches!(
+                    ch,
+                    '!' | '#' | '$' | '&' | '^' | '_' | '.' | '+' | '-' | '*' | '/'
+                )
+        }))
+    .then(|| trimmed.to_ascii_lowercase())
+}
+
+/// Closed-schema projection for page-owned network events. The page can
+/// replace or populate its JavaScript array, so every field is selected and
+/// validated by Rust before filtering, returning, or persisting it.
+pub(crate) fn project_network_event(event: &Value) -> Value {
+    let Some(map) = event.as_object() else {
+        return json!({"url": "[URL_WITHHELD]", "method": "[METHOD_WITHHELD]"});
+    };
+    let mut safe = serde_json::Map::new();
+    safe.insert(
+        "url".into(),
+        Value::String(
+            map.get("url")
+                .and_then(Value::as_str)
+                .map(project_route_url)
+                .unwrap_or_else(|| "[URL_WITHHELD]".to_string()),
+        ),
+    );
+    safe.insert(
+        "method".into(),
+        Value::String(
+            map.get("method")
+                .and_then(Value::as_str)
+                .map(safe_http_method)
+                .unwrap_or("[METHOD_WITHHELD]")
+                .to_string(),
+        ),
+    );
+    for key in ["time", "status", "request_id", "id"] {
+        if let Some(number) = map.get(key).filter(|item| item.is_number()) {
+            safe.insert(key.into(), number.clone());
+        }
+    }
+    if let Some(action) = map
+        .get("action")
+        .and_then(Value::as_str)
+        .map(str::to_ascii_lowercase)
+        .filter(|action| matches!(action.as_str(), "log" | "block" | "mock"))
+    {
+        safe.insert("action".into(), Value::String(action));
+    }
+    for key in ["mime_type", "content_type"] {
+        if let Some(mime) = map.get(key).and_then(Value::as_str).and_then(safe_mime) {
+            safe.insert(key.into(), Value::String(mime));
+        }
+    }
+    Value::Object(safe)
+}
+
+pub(crate) fn project_network_log_value(value: &Value) -> Value {
+    let entries = value
+        .as_array()
+        .or_else(|| value.get("entries").and_then(Value::as_array))
+        .or_else(|| value.get("requests").and_then(Value::as_array))
+        .map(|items| items.iter().map(project_network_event).collect::<Vec<_>>())
+        .unwrap_or_default();
+    json!({
+        "entries": entries,
+        "count": entries.len(),
+    })
+}
+
 /// Minimal `*`-glob matcher. `**` collapses to `*`. Anchored to the whole
 /// string. Empty pattern = match only empty input. `*` alone matches everything.
 fn glob_match(pattern: &str, input: &str) -> bool {
@@ -358,6 +635,13 @@ pub async fn handle_subscribe(
     _session: &SharedSession,
 ) -> Value {
     let filter = parse_filter(args.get("filter"));
+    if let Err(error) = validate_filter_for_storage(&filter) {
+        return json!({
+            "ok": false,
+            "error": error,
+            "stored": false,
+        });
+    }
     let history_capacity = args
         .get("history_capacity")
         .and_then(|v| v.as_u64())
@@ -442,12 +726,13 @@ pub fn poll_inner(subscription_id: &str, events: Vec<Value>, max_events: usize) 
         // Apply cursor: keep events whose id >= cursor.
         let mut out: Vec<Value> = Vec::new();
         let mut new_cursor = sub.cursor;
-        for (idx, event) in events.iter().enumerate() {
-            let eid = event_id_for(event, idx as u64);
+        for (idx, raw_event) in events.iter().enumerate() {
+            let event = project_network_event(raw_event);
+            let eid = event_id_for(&event, idx as u64);
             if eid < sub.cursor {
                 continue;
             }
-            if !event_matches_filter(event, &sub.filter) {
+            if !event_matches_filter(&event, &sub.filter) {
                 // Filter rejects, but still advance cursor past it so we
                 // don't re-evaluate stale entries forever.
                 if eid + 1 > new_cursor {
@@ -455,7 +740,11 @@ pub fn poll_inner(subscription_id: &str, events: Vec<Value>, max_events: usize) 
                 }
                 continue;
             }
-            out.push(event.clone());
+            // Keep the raw event only in this poll's local vector long enough
+            // to evaluate the validated route-shape filter. Subscription state
+            // stores no events, and every matched event is redacted before it
+            // can enter the returned collection.
+            out.push(crate::network_redaction::redact_network_value(&event));
             if eid + 1 > new_cursor {
                 new_cursor = eid + 1;
             }
@@ -606,18 +895,18 @@ async fn fetch_network_events(
     //   - JSON-encoded string of either above (sometimes the eval-result is
     //     double-stringified).
     if let Some(arr) = parsed.as_array() {
-        return arr.clone();
+        return arr.iter().map(project_network_event).collect();
     }
     if let Some(entries) = parsed.get("entries").and_then(|v| v.as_array()) {
-        return entries.clone();
+        return entries.iter().map(project_network_event).collect();
     }
     if let Some(s) = parsed.as_str() {
         if let Ok(inner) = serde_json::from_str::<Value>(s) {
             if let Some(arr) = inner.as_array() {
-                return arr.clone();
+                return arr.iter().map(project_network_event).collect();
             }
             if let Some(entries) = inner.get("entries").and_then(|v| v.as_array()) {
-                return entries.clone();
+                return entries.iter().map(project_network_event).collect();
             }
         }
     }
@@ -711,10 +1000,38 @@ mod tests {
             parsed.methods.as_ref().unwrap(),
             &vec!["GET".to_string(), "POST".to_string()]
         );
-        let r = parsed.status_range.unwrap();
+        let r = parsed.status_range.as_ref().unwrap();
         assert_eq!(r.min, 200);
         assert_eq!(r.max, 299);
         assert_eq!(parsed.mime_contains.as_deref(), Some("json"));
+        assert!(validate_filter_for_storage(&parsed).is_ok());
+    }
+
+    #[test]
+    fn subscription_filter_rejects_credential_bearing_or_opaque_urls() {
+        for url_glob in [
+            "https://user:pass@example.test/api/**",
+            "https://example.test/api?token=SUBSCRIPTION_SENTINEL",
+            "https://example.test/reset/abcdefghijklmnopqrstuvwxyz1234567890",
+            "**/api/**#private",
+            "**/reset/123456",
+            "**/reset/abcdef",
+        ] {
+            let filter = Filter {
+                url_glob: Some(url_glob.to_string()),
+                ..Filter::default()
+            };
+            let error = validate_filter_for_storage(&filter).expect_err(url_glob);
+            assert!(!error.contains("SUBSCRIPTION_SENTINEL"));
+        }
+
+        let safe = Filter {
+            url_glob: Some("**/api/*/orders/**".to_string()),
+            methods: Some(vec!["GET".to_string(), "POST".to_string()]),
+            mime_contains: Some("application/json".to_string()),
+            ..Filter::default()
+        };
+        assert!(validate_filter_for_storage(&safe).is_ok());
     }
 
     // ── Glob matcher ───────────────────────────────────────────────────
@@ -952,7 +1269,7 @@ mod tests {
             .iter()
             .map(|e| e["url"].as_str().unwrap())
             .collect();
-        assert_eq!(urls, vec!["/d", "/e"]);
+        assert_eq!(urls, vec!["/{segment}", "/{segment}"]);
         assert_eq!(out2["new_cursor"], json!(5));
     }
 
@@ -977,7 +1294,7 @@ mod tests {
             .iter()
             .map(|e| e["url"].as_str().unwrap())
             .collect();
-        assert_eq!(urls, vec!["/a", "/b"]);
+        assert_eq!(urls, vec!["/{segment}", "/{segment}"]);
 
         // max_events cap also independently bounds (here: smaller than capacity).
         let sub_id2 = make_sub(Filter::default(), 10);
@@ -1015,6 +1332,95 @@ mod tests {
         let _ = poll_inner(&sub_id, events2, 100);
         let after2 = with_subs(|m| m.get(&sub_id).unwrap().clone());
         assert_eq!(after2.events_seen, 3);
+    }
+
+    #[test]
+    fn poll_filters_transient_route_values_then_returns_only_redacted_events() {
+        let _g = test_guard();
+        reset_subs();
+        let sub_id = make_sub(
+            Filter {
+                url_glob: Some("**/api/*/orders/**".to_string()),
+                ..Filter::default()
+            },
+            10,
+        );
+        let sentinel = "TRANSIENT_NETWORK_SECRET";
+        let events = vec![json!({
+            "url": format!(
+                "https://user:{sentinel}@example.test/api/123456/orders/abcdef?token={sentinel}#private"
+            ),
+            "method": "GET"
+        })];
+
+        let out = poll_inner(&sub_id, events, 10);
+        assert_eq!(out["events_returned"], json!(1));
+        let serialized = out.to_string();
+        assert!(!serialized.contains(sentinel));
+        assert!(!serialized.contains("user:"));
+        assert!(!serialized.contains("123456"));
+        assert!(!serialized.contains("abcdef"));
+        assert!(serialized.contains("token=[REDACTED]"));
+    }
+
+    #[test]
+    fn strict_network_projection_drops_hostile_page_fields_before_return() {
+        let _g = test_guard();
+        reset_subs();
+        let sub_id = make_sub(
+            Filter {
+                url_glob: Some("**/api/*/orders/**".to_string()),
+                ..Filter::default()
+            },
+            10,
+        );
+        let events = vec![json!({
+            "url": "https://user:pass@example.test/api/123456/orders/abcdef?BARE_PRIVATE_CODE=SECRET#private",
+            "method": "COOKIE_SENTINEL",
+            "time": 123,
+            "action": "log",
+            "arbitrary": "ARBITRARY_SECRET",
+            "headers": {"cookie": "COOKIE_SECRET"},
+            "note": "NOTE_SECRET"
+        })];
+
+        let out = poll_inner(&sub_id, events, 10);
+        assert_eq!(out["events_returned"], json!(1));
+        let text = out.to_string();
+        for sentinel in [
+            "user:pass",
+            "123456",
+            "abcdef",
+            "BARE_PRIVATE_CODE",
+            "SECRET",
+            "COOKIE_SENTINEL",
+            "ARBITRARY_SECRET",
+            "COOKIE_SECRET",
+            "NOTE_SECRET",
+        ] {
+            assert!(!text.contains(sentinel), "leaked sentinel: {sentinel}");
+        }
+        assert_eq!(out["events"][0]["method"], json!("[METHOD_WITHHELD]"));
+        assert_eq!(
+            out["events"][0]["url"],
+            json!("/{segment}/{segment}/{segment}/{segment}?parameter=[REDACTED]#[REDACTED]")
+        );
+        assert!(out["events"][0].get("arbitrary").is_none());
+    }
+
+    #[test]
+    fn network_log_projection_accepts_array_or_entries_and_recounts() {
+        let hostile = json!({
+            "count": 999,
+            "note": "TOP_SECRET",
+            "entries": [{"url": "/api/private", "method": "GET", "extra": "SECRET"}]
+        });
+        let projected = project_network_log_value(&hostile);
+        assert_eq!(projected["count"], json!(1));
+        assert_eq!(projected["entries"][0]["url"], json!("/api/{segment}"));
+        let text = projected.to_string();
+        assert!(!text.contains("TOP_SECRET"));
+        assert!(!text.contains("SECRET"));
     }
 
     #[test]
@@ -1127,7 +1533,7 @@ mod tests {
         ];
         let out2 = poll_inner(&sub_id, events2, 100);
         assert_eq!(out2["events_returned"], json!(1));
-        assert_eq!(out2["events"][0]["url"], json!("/d"));
+        assert_eq!(out2["events"][0]["url"], json!("/{segment}"));
         assert_eq!(out2["new_cursor"], json!(21));
     }
 }

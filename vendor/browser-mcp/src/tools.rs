@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 static A11Y_REF_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static TEMP_IMAGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-fn unique_temp_image_path(prefix: &str) -> String {
+fn unique_temp_artifact_path(prefix: &str, extension: &str) -> String {
     let counter = TEMP_IMAGE_COUNTER.fetch_add(1, Ordering::Relaxed);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -21,16 +21,23 @@ fn unique_temp_image_path(prefix: &str) -> String {
         .unwrap_or(0);
     let directory = std::env::temp_dir().join("hands-browser-captures");
     let _ = std::fs::create_dir_all(&directory);
+    let stem = format!("{}_{}_{}_{}", prefix, nanos, std::process::id(), counter);
+    let filename = if extension.is_empty() {
+        stem
+    } else {
+        format!("{}.{}", stem, extension.trim_start_matches('.'))
+    };
+    directory.join(filename).to_string_lossy().into_owned()
+}
+
+fn unique_temp_image_path(prefix: &str) -> String {
+    unique_temp_artifact_path(prefix, "png")
+}
+
+fn unique_temp_directory(prefix: &str) -> String {
+    let directory = unique_temp_artifact_path(prefix, "");
+    let _ = std::fs::create_dir_all(&directory);
     directory
-        .join(format!(
-            "{}_{}_{}_{}.png",
-            prefix,
-            nanos,
-            std::process::id(),
-            counter
-        ))
-        .to_string_lossy()
-        .into_owned()
 }
 
 pub fn list_tools() -> Vec<ToolInfo> {
@@ -452,7 +459,7 @@ pub fn list_tools() -> Vec<ToolInfo> {
                     }
                 },
                 "headless": {"type": "boolean", "default": true},
-                "save_screenshots": {"type": "boolean", "default": false, "description": "Save screenshot after each step to C:/temp/agent_run/"},
+                "save_screenshots": {"type": "boolean", "default": false, "description": "Save each step screenshot to a collision-safe temporary artifact path"},
                 "profile_path": {"type": "string", "description": "Chrome profile path for persistent sessions"}
             },
             "required": ["url", "steps"]
@@ -517,33 +524,33 @@ pub fn list_tools() -> Vec<ToolInfo> {
         })),
 
         // P1: Network Interception
-        tool("route", "Add a network interception route. Intercepts fetch() and XHR requests matching the URL pattern.", json!({
+        tool("route", "Add a validated, noncredential path-shape glob for fetch/XHR block, mock, or minimized logging. Disabled while a strict monitor fence is active because the page-resident route cannot revalidate the bound window for every later request.", json!({
             "type": "object",
             "properties": {
-                "pattern": {"type": "string", "description": "URL substring or regex pattern to match"},
+                "pattern": {"type": "string", "description": "Path-shape glob such as /api/*/orders/** or **/api/*. Schemes, authorities, query strings, fragments, credentials, and arbitrary literal segments are rejected."},
                 "action": {"type": "string", "enum": ["block", "mock", "log"], "default": "log", "description": "block=reject request, mock=return fake response, log=passthrough+record"},
                 "mock_status": {"type": "integer", "default": 200, "description": "HTTP status for mock responses"},
                 "mock_content_type": {"type": "string", "default": "application/json", "description": "Content-Type for mock responses"},
-                "mock_body": {"type": "string", "description": "Response body for mock action"}
+                "mock_body": {"type": "string", "description": "Response body for mock action, limited to 1 MiB and never returned by route_list"}
             },
             "required": ["pattern"]
         })),
-        tool("route_remove", "Remove a network interception route by pattern", json!({
+        tool("route_remove", "Remove one validated path-shape route and synchronize the current page. Cleanup remains available under a strict monitor fence.", json!({
             "type": "object",
             "properties": {
                 "pattern": {"type": "string", "description": "Pattern to remove"}
             },
             "required": ["pattern"]
         })),
-        tool("route_list", "List all active network interception routes", json!({
+        tool("route_list", "List only validated route shapes and action metadata; mock bodies are never returned", json!({
             "type": "object",
             "properties": {}
         })),
-        tool("route_clear", "Disable all network interception and restore normal fetch/XHR", json!({
+        tool("route_clear", "Clear all routes and leave one pass-through fetch/XHR wrapper to prevent double wrapping. Cleanup remains available under a strict monitor fence.", json!({
             "type": "object",
             "properties": {}
         })),
-        tool("get_network_log", "Get intercepted/logged network requests captured by routes", json!({
+        tool("get_network_log", "Get strictly projected, minimized request metadata captured by routes. Page-owned fields are untrusted and discarded unless present in the closed Rust schema.", json!({
             "type": "object",
             "properties": {
                 "clear": {"type": "boolean", "default": false, "description": "Clear the log after reading"}
@@ -579,11 +586,11 @@ pub fn list_tools() -> Vec<ToolInfo> {
         })),
 
         // P2: Trace Recording
-        tool("trace_start", "Start recording a browser trace. Captures navigation, clicks, resource loading, paint timing, and URL changes.", json!({
+        tool("trace_start", "Compatibility/debug trace start for navigation, click coordinates, resource timing, and paint timing. Disabled under a strict monitor fence; prefer bounded screenshots and explicit state verification.", json!({
             "type": "object",
             "properties": {}
         })),
-        tool("trace_stop", "Stop trace recording and return all captured entries as JSON", json!({
+        tool("trace_stop", "Stop tracing and return only the strict Rust trace schema. Cleanup remains available under a strict monitor fence.", json!({
             "type": "object",
             "properties": {}
         })),
@@ -932,15 +939,8 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
     s.chars().take(max_chars).collect()
 }
 
-fn now_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::from_millis(0))
-        .as_millis()
-}
-
 fn default_artifact_dir(prefix: &str) -> String {
-    format!("C:/temp/{}_{}", prefix, now_millis())
+    unique_temp_directory(prefix)
 }
 
 fn write_json_file(path: &str, value: &serde_json::Value) -> Result<String, String> {
@@ -1012,7 +1012,6 @@ fn build_a11y_snapshot_script(max_nodes: usize, root_selector: Option<&str>) -> 
                 el.getAttribute('title') ||
                 el.getAttribute('placeholder') ||
                 el.innerText ||
-                el.value ||
                 ''
             ).trim().replace(/\s+/g, ' ');
             const candidates = Array.from(root.querySelectorAll(
@@ -1136,7 +1135,7 @@ fn build_page_dump_script(max_text_length: usize) -> String {
                 href: a.href
             }}));
             const buttons = Array.from(document.querySelectorAll('button,[role=button],input[type=button],input[type=submit]')).slice(0, 160).map(b => ({{
-                text: trim(b.innerText || b.value || b.getAttribute('aria-label')),
+                text: trim(b.innerText || b.getAttribute('aria-label') || b.getAttribute('name') || b.getAttribute('type')),
                 disabled: !!b.disabled || b.getAttribute('aria-disabled') === 'true'
             }}));
             const forms = Array.from(document.forms).slice(0, 50).map((f, i) => ({{
@@ -1402,7 +1401,7 @@ async fn handle_verify_state(
     if b("ocr", false) || screenshot_path.is_some() {
         let path = screenshot_path
             .clone()
-            .unwrap_or_else(|| format!("C:/temp/browser_verify_{}.jpg", now_millis()));
+            .unwrap_or_else(|| unique_temp_artifact_path("browser_verify", "jpg"));
         browser
             .read()
             .await
@@ -2169,11 +2168,11 @@ async fn handle_tool_inner(
             if let Some(xpath) = p("xpath").and_then(|v| v.as_str()) {
                 let script = format!(
                     r#"(() => {{
-                        const result = document.evaluate("{}", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                        const result = document.evaluate({}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
                         const el = result.singleNodeValue;
                         return el ? el.outerHTML : null;
                     }})()"#,
-                    xpath.replace('"', r#"\""#)
+                    js_string(xpath)
                 );
                 let val = bm.evaluate(&script).await.map_err(|e| e.to_string())?;
                 let html = val.as_str().unwrap_or("Element not found");
@@ -2697,15 +2696,11 @@ async fn handle_tool_inner(
         "wait_stable" => {
             let interval_ms = i("interval_ms", 500).max(1) as u64;
             let max_attempts = i("max_attempts", 10).max(1) as usize;
-            std::fs::create_dir_all("C:/temp").map_err(|e| format!("create temp dir: {}", e))?;
 
             let mut last_size: Option<u64> = None;
             for attempt in 1..=max_attempts {
-                let millis = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::from_millis(0))
-                    .as_millis();
-                let path = format!("C:/temp/browser_stable_{}_{}.jpg", millis, attempt);
+                let path =
+                    unique_temp_artifact_path(&format!("browser_stable_attempt_{attempt}"), "jpg");
                 browser
                     .read()
                     .await
@@ -2789,10 +2784,6 @@ async fn handle_tool_inner(
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
-
-            if save_screenshots {
-                std::fs::create_dir_all("C:/temp/agent_run").ok();
-            }
 
             let mut log: Vec<String> = Vec::new();
 
@@ -2920,8 +2911,8 @@ async fn handle_tool_inner(
                             // Submit
                             let br2 = browser.read().await;
                             let _submit_result = br2.evaluate(&format!(
-                                "document.querySelector('{}')?.submit() || document.querySelector('button[type=submit], input[type=submit], button')?.click()",
-                                form_sel.replace("'", "\'")
+                                "document.querySelector({})?.submit() || document.querySelector('button[type=submit], input[type=submit], button')?.click()",
+                                js_string(&form_sel)
                             )).await;
                             drop(br2);
 
@@ -2980,8 +2971,9 @@ async fn handle_tool_inner(
                                         return {
                                             tag: el.tagName.toLowerCase(),
                                             text: (el.innerText || '').trim().slice(0, 100),
-                                            value: el.value || '',
                                             aria: el.getAttribute('aria-label') || '',
+                                            label: el.labels && el.labels.length ? (el.labels[0].innerText || '').trim().slice(0, 100) : '',
+                                            placeholder: el.getAttribute('placeholder') || '',
                                             title: el.getAttribute('title') || '',
                                             href: el.getAttribute('href') || '',
                                             id: el.id || '',
@@ -3008,7 +3000,14 @@ async fn handle_tool_inner(
                             if let Some(arr) = elements.as_array() {
                                 for el in arr {
                                     let fields: Vec<String> = [
-                                        "text", "aria", "title", "value", "href", "id", "name",
+                                        "text",
+                                        "aria",
+                                        "label",
+                                        "placeholder",
+                                        "title",
+                                        "href",
+                                        "id",
+                                        "name",
                                         "cls",
                                     ]
                                     .iter()
@@ -3020,13 +3019,13 @@ async fn handle_tool_inner(
                                     })
                                     .collect();
 
-                                    let [text, aria, title, value, href, id, name, cls] =
-                                        <[String; 8]>::try_from(fields).unwrap_or_default();
+                                    let [text, aria, label, placeholder, title, href, id, name, cls] =
+                                        <[String; 9]>::try_from(fields).unwrap_or_default();
 
                                     // Tiered scoring: exact > contains-primary > contains-secondary > word-match
                                     let score = if text == match_lower
                                         || aria == match_lower
-                                        || value == match_lower
+                                        || label == match_lower
                                     {
                                         100
                                     } else if text.starts_with(&match_lower)
@@ -3036,6 +3035,8 @@ async fn handle_tool_inner(
                                     } else if text.contains(&match_lower) {
                                         80
                                     } else if aria.contains(&match_lower)
+                                        || label.contains(&match_lower)
+                                        || placeholder.contains(&match_lower)
                                         || title.contains(&match_lower)
                                     {
                                         70
@@ -3149,15 +3150,16 @@ async fn handle_tool_inner(
                             // Find select element containing option with match text
                             let script = format!(
                                 r#"(() => {{
+                                    const target = {};
                                     const opts = Array.from(document.querySelectorAll('option'));
-                                    const match = opts.find(o => o.text.toLowerCase().includes('{}'));
+                                    const match = opts.find(o => o.text.toLowerCase().includes(target));
                                     if (match) {{
                                         const sel = match.closest('select');
                                         if (sel) {{ sel.value = match.value; sel.dispatchEvent(new Event('change')); return 'Selected: ' + match.text; }}
                                     }}
                                     return null;
                                 }})()"#,
-                                match_text.to_lowercase().replace("'", "\'")
+                                js_string(&match_text.to_lowercase())
                             );
                             let result = browser
                                 .read()
@@ -3214,15 +3216,16 @@ async fn handle_tool_inner(
                             // Extract visible text matching the pattern
                             let script = format!(
                                 r#"(() => {{
+                                    const target = {};
                                     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
                                     const matches = [];
                                     while (walker.nextNode()) {{
                                         const t = walker.currentNode.textContent.trim();
-                                        if (t.toLowerCase().includes('{}')) matches.push(t);
+                                        if (t.toLowerCase().includes(target)) matches.push(t);
                                     }}
                                     return matches.slice(0, 20);
                                 }})()"#,
-                                match_text.to_lowercase().replace("'", "\'")
+                                js_string(&match_text.to_lowercase())
                             );
                             let result = br.evaluate(&script).await.map_err(|e| e.to_string())?;
                             Ok(format!(
@@ -3240,7 +3243,10 @@ async fn handle_tool_inner(
                         log.push(format!("âœ“ {} â†’ {}", step_label, msg));
 
                         if save_screenshots {
-                            let path = format!("C:/temp/agent_run/step_{:02}.jpg", step_idx + 1);
+                            let path = unique_temp_artifact_path(
+                                &format!("agent_step_{:02}", step_idx + 1),
+                                "jpg",
+                            );
                             browser
                                 .read()
                                 .await
@@ -3253,9 +3259,10 @@ async fn handle_tool_inner(
                         log.push(format!("âœ— {} â†’ ERROR: {}", step_label, e));
 
                         // Save failure screenshot
-                        let fail_path =
-                            format!("C:/temp/agent_run/fail_step_{:02}.jpg", step_idx + 1);
-                        std::fs::create_dir_all("C:/temp/agent_run").ok();
+                        let fail_path = unique_temp_artifact_path(
+                            &format!("agent_fail_step_{:02}", step_idx + 1),
+                            "jpg",
+                        );
                         browser
                             .read()
                             .await
@@ -3492,10 +3499,14 @@ async fn handle_tool_inner(
                 // Trace logging if active
                 {
                     let mut bm_trace = browser.write().await;
+                    let parameter_keys = resolved_params
+                        .as_object()
+                        .map(|object| object.keys().cloned().collect::<Vec<_>>())
+                        .unwrap_or_default();
                     bm_trace.trace_log(
                         "script_step",
                         tool_name,
-                        Some(json!({"step": step_idx + 1, "params": &resolved_params})),
+                        Some(json!({"step": step_idx + 1, "parameter_keys": parameter_keys})),
                     );
                 }
 
@@ -3530,9 +3541,10 @@ async fn handle_tool_inner(
                         }));
                         if stop_on_error {
                             // Save failure screenshot
-                            let fail_path =
-                                format!("C:/temp/script_run/fail_step_{:02}.jpg", step_idx + 1);
-                            std::fs::create_dir_all("C:/temp/script_run").ok();
+                            let fail_path = unique_temp_artifact_path(
+                                &format!("script_fail_step_{:02}", step_idx + 1),
+                                "jpg",
+                            );
                             browser
                                 .read()
                                 .await
@@ -3619,6 +3631,7 @@ async fn handle_tool_inner(
                 .write()
                 .await
                 .remove_route(pattern)
+                .await
                 .map_err(|e| e.to_string())?;
             Ok(vec![text(&result)])
         }
@@ -3737,11 +3750,7 @@ async fn handle_tool_inner(
             let eval_start = Instant::now();
 
             // Create evidence directory
-            let ts = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            let evidence_dir = format!("C:/temp/eval_{}", ts);
+            let evidence_dir = unique_temp_directory("eval");
             if evidence {
                 std::fs::create_dir_all(&evidence_dir).ok();
             }
@@ -4328,3 +4337,22 @@ fn text(s: &str) -> ToolContent {
 //   text: 3245-3247
 //
 // === END FILE NAVIGATION ===
+
+#[cfg(test)]
+mod unique_artifact_tests {
+    use super::*;
+
+    #[test]
+    fn automatic_capture_and_bundle_paths_do_not_collide() {
+        let first_capture = unique_temp_artifact_path("browser_verify", "jpg");
+        let second_capture = unique_temp_artifact_path("browser_verify", "jpg");
+        let first_bundle = unique_temp_directory("browser_page_capture");
+        let second_bundle = unique_temp_directory("browser_page_capture");
+
+        assert_ne!(first_capture, second_capture);
+        assert_ne!(first_bundle, second_bundle);
+        assert!(first_capture.ends_with(".jpg"));
+        assert!(std::path::Path::new(&first_bundle).is_dir());
+        assert!(std::path::Path::new(&second_bundle).is_dir());
+    }
+}

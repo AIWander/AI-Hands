@@ -14,14 +14,18 @@ This is **not** the MCP server binary. Install [AI-Hands](https://github.com/AIW
 |-------|-----------------|---------|
 | `ai-hands` | `/ai-hands` | Meta-tool routing: prefer `hands_*` over raw browser/UIA/vision |
 | `ai-hands-safety` | `/ai-hands-safety` | Real-click safety, confirmation gates, injection hygiene |
-| `ai-hands-workflows` | `/ai-hands-workflows` | Multi-step recipes (`hands_script`, login, forms, desktop) |
+| `ai-hands-workflows` | `/ai-hands-workflows` | Safe visible-browser, fixed-batch, login, form, and desktop recipes |
+
+The legacy package follows the same profile boundary as the current plugin: `default`, `full`, and `strict` are safe-advertised; `compatibility` is an unsafe debug escape hatch whose raw/direct-fetch/native-plugin tools require the profile, matching process environment gate, and matching per-call acknowledgement. The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call.
+
+Before enabling a monitor fence, clear browser routes and stop any active trace; fence activation refuses while either persistent state is active. Under an active fence, `browser_route` and `browser_trace_start` fail closed, while `browser_route_remove`, `browser_route_clear`, and `browser_trace_stop` remain available so cleanup cannot be trapped.
 
 ### Hooks
 
 | Event | Script | Behavior |
 |-------|--------|----------|
 | `PreToolUse` | `hooks/bin/ai_hands_pre_safety.py` | Deny destructive-looking targets without `allow_destructive`; soft rate-limit `uia_list_window` |
-| `PostToolUse` / `PostToolUseFailure` | `hooks/bin/ai_hands_post_audit.py` | Redacted JSONL audit of AI-Hands tool calls |
+| `PostToolUse` / `PostToolUseFailure` | `hooks/bin/ai_hands_post_audit.py` | Minimized JSONL audit with best-effort pattern redaction |
 
 Logs default to the plugin data dir (`GROK_PLUGIN_DATA` / `CLAUDE_PLUGIN_DATA`) under `logs/`, or `~/.grok/plugin-data/grok-ai-hands/logs`.
 

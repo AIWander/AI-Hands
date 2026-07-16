@@ -5,11 +5,12 @@
 //!   2. cpc_paths::data_path("hands") — fresh installs
 //! One line per rung attempt, one aggregate line per call.
 //! Rotate daily at midnight, keep 7 days.
-//! Redaction: scrub 6-digit codes from args matching code|otp|2fa|verification fields.
+//! Persistence is an allowlisted telemetry projection. Raw arguments, URLs,
+//! selectors, typed text, bodies, headers, cookies, and paths never enter JSONL.
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -71,14 +72,239 @@ fn rotated_path(date: &str) -> PathBuf {
 /// Write a single JSON line to the instrumentation log.
 /// Creates the log directory if it doesn't exist.
 fn write_line(line: &Value) {
-    // Best-effort logging — never panic on log failure
-    let _ = fs::create_dir_all(log_dir());
-    let path = log_path();
+    // Best-effort logging — never panic on log failure.
+    let _ = append_safe_line(&log_path(), line);
+}
 
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
-        let serialized = serde_json::to_string(line).unwrap_or_default();
-        let _ = writeln!(file, "{}", serialized);
+/// Final persistence boundary. The central network redactor runs before the
+/// strict telemetry projection, so a future caller cannot bypass the sink by
+/// adding a new raw field to an event.
+fn append_safe_line(path: &Path, line: &Value) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
     }
+
+    let recursively_redacted = crate::network_redaction::redact_network_value(line);
+    let projected = project_telemetry_line(&recursively_redacted);
+    let serialized = serde_json::to_string(&projected)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    writeln!(file, "{}", serialized)
+}
+
+fn safe_identifier(raw: &str, max_len: usize) -> String {
+    if raw.is_empty() {
+        return String::new();
+    }
+    if raw.len() <= max_len
+        && raw
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | ':'))
+    {
+        raw.to_string()
+    } else {
+        "[REDACTED]".to_string()
+    }
+}
+
+fn safe_tool_name(raw: &str) -> String {
+    let candidate = safe_identifier(raw, 64);
+    if candidate.starts_with("hands_") {
+        candidate
+    } else {
+        "unknown_tool".to_string()
+    }
+}
+
+fn safe_call_id(raw: &str) -> String {
+    let candidate = safe_identifier(raw, 80);
+    if candidate.starts_with("call_") {
+        candidate
+    } else {
+        "[REDACTED]".to_string()
+    }
+}
+
+fn tool_category(tool: &str) -> &'static str {
+    match tool {
+        "hands_navigate" => "navigation",
+        "hands_click" | "hands_type" | "hands_fill_form" | "hands_app_action" => "interaction",
+        "hands_read_page" | "hands_find" | "hands_capture" | "hands_verify" | "hands_qr_scan" => {
+            "observation"
+        }
+        "hands_script" => "automation",
+        _ => "meta_tool",
+    }
+}
+
+fn safe_timestamp(value: Option<&Value>) -> Value {
+    value
+        .and_then(Value::as_str)
+        .and_then(|raw| chrono::DateTime::parse_from_rfc3339(raw).ok())
+        .map(|parsed| Value::String(parsed.with_timezone(&chrono::Utc).to_rfc3339()))
+        .unwrap_or(Value::Null)
+}
+
+/// Keep only low-risk aggregate context. String values are intentionally not
+/// copied: even an innocent-looking label can hold a selector, typed text,
+/// bearer token, URL, or local path.
+fn project_context(context: &Value) -> Value {
+    const SAFE_BOOL_KEYS: &[&str] = &[
+        "auto_submit",
+        "clear_first",
+        "double_click",
+        "fast_set",
+        "force_close",
+        "negated",
+        "ocr",
+        "offset_active",
+        "strict",
+        "submit",
+        "verify_focus",
+        "visible",
+    ];
+    const SAFE_NUMBER_KEYS: &[&str] = &[
+        "attempt_count",
+        "candidate_count",
+        "field_count",
+        "item_count",
+        "match_count",
+        "monitor",
+        "result_count",
+        "step_count",
+        "text_len",
+        "timeout_ms",
+    ];
+
+    let redacted = crate::network_redaction::redact_network_value(context);
+    let mut projected = Map::new();
+    projected.insert("redacted".to_string(), Value::Bool(true));
+
+    if let Some(object) = redacted.as_object() {
+        for (key, value) in object {
+            if (SAFE_BOOL_KEYS.contains(&key.as_str()) && value.is_boolean())
+                || (SAFE_NUMBER_KEYS.contains(&key.as_str()) && value.is_number())
+            {
+                projected.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
+    Value::Object(projected)
+}
+
+fn classify_error(value: &Value) -> &'static str {
+    let redacted = crate::network_redaction::redact_network_value(value);
+    let normalized = redacted.to_string().to_ascii_lowercase();
+
+    if normalized.contains("confirm") {
+        "requires_confirmation"
+    } else if normalized.contains("permission")
+        || normalized.contains("denied")
+        || normalized.contains("forbidden")
+        || normalized.contains("unauthor")
+    {
+        "permission_denied"
+    } else if normalized.contains("timeout") || normalized.contains("timed out") {
+        "timeout"
+    } else if normalized.contains("not found")
+        || normalized.contains("not_found")
+        || normalized.contains("no match")
+    {
+        "not_found"
+    } else if normalized.contains("no browser") || normalized.contains("browser unavailable") {
+        "no_browser"
+    } else if normalized.contains("launch") || normalized.contains("attach") {
+        "browser_startup"
+    } else if normalized.contains("invalid")
+        || normalized.contains("missing")
+        || normalized.contains("argument")
+        || normalized.contains("parameter")
+    {
+        "invalid_input"
+    } else if normalized.contains("unsupported") {
+        "unsupported"
+    } else if normalized.contains("cancel") {
+        "cancelled"
+    } else if normalized.contains("security") || normalized.contains("policy") {
+        "security_policy"
+    } else if normalized.contains("network")
+        || normalized.contains("dns")
+        || normalized.contains("connect")
+        || normalized.contains("http")
+    {
+        "network"
+    } else if normalized.contains("block") {
+        "blocked"
+    } else {
+        "operation_failed"
+    }
+}
+
+fn project_error(error: &Value) -> Value {
+    if error.is_null() {
+        Value::Null
+    } else {
+        json!({"category": classify_error(error)})
+    }
+}
+
+/// Project an event onto the fields consumed by `hands_summarize_run` plus
+/// bounded aggregate telemetry. Unknown fields are dropped at the sink.
+fn project_telemetry_line(line: &Value) -> Value {
+    let object = match line.as_object() {
+        Some(object) => object,
+        None => return json!({"error": {"category": "invalid_telemetry_event"}}),
+    };
+
+    let tool = object
+        .get("tool")
+        .and_then(Value::as_str)
+        .map(safe_tool_name)
+        .unwrap_or_else(|| "unknown_tool".to_string());
+    let mut projected = Map::new();
+    projected.insert("ts".to_string(), safe_timestamp(object.get("ts")));
+    projected.insert("category".to_string(), json!(tool_category(&tool)));
+    projected.insert("tool".to_string(), Value::String(tool));
+    projected.insert(
+        "call_id".to_string(),
+        Value::String(
+            object
+                .get("call_id")
+                .and_then(Value::as_str)
+                .map(safe_call_id)
+                .unwrap_or_else(|| "[REDACTED]".to_string()),
+        ),
+    );
+
+    for key in ["aggregate", "success"] {
+        if let Some(value) = object.get(key).and_then(Value::as_bool) {
+            projected.insert(key.to_string(), Value::Bool(value));
+        }
+    }
+    for key in ["elapsed_ms", "rungs_tried"] {
+        if let Some(value) = object.get(key).and_then(Value::as_u64) {
+            projected.insert(key.to_string(), json!(value));
+        }
+    }
+    if let Some(value) = object.get("confidence").filter(|value| value.is_number()) {
+        projected.insert("confidence".to_string(), value.clone());
+    } else if object.contains_key("confidence") {
+        projected.insert("confidence".to_string(), Value::Null);
+    }
+    for key in ["rung", "method"] {
+        if let Some(value) = object.get(key).and_then(Value::as_str) {
+            projected.insert(key.to_string(), Value::String(safe_identifier(value, 64)));
+        }
+    }
+    if let Some(error) = object.get("error") {
+        projected.insert("error".to_string(), project_error(error));
+    }
+    if let Some(context) = object.get("context") {
+        projected.insert("context".to_string(), project_context(context));
+    }
+
+    Value::Object(projected)
 }
 
 /// Log a single rung attempt.
@@ -92,8 +318,7 @@ pub fn log_rung_attempt(
     context: &Value,
 ) {
     let ts = chrono::Utc::now().to_rfc3339();
-    let mut ctx = context.clone();
-    redact_sensitive_fields(&mut ctx);
+    let ctx = project_context(context);
 
     let line = json!({
         "ts": ts,
@@ -175,8 +400,7 @@ fn build_aggregate_line(
     context: Option<&Value>,
 ) -> Value {
     let ts = chrono::Utc::now().to_rfc3339();
-    let mut error = error.unwrap_or(Value::Null);
-    redact_sensitive_fields(&mut error);
+    let error = error.as_ref().map(project_error).unwrap_or(Value::Null);
 
     let mut line = json!({
         "ts": ts,
@@ -192,56 +416,12 @@ fn build_aggregate_line(
     });
 
     if let Some(context) = context {
-        let mut ctx = context.clone();
-        redact_sensitive_fields(&mut ctx);
         if let Some(obj) = line.as_object_mut() {
-            obj.insert("context".to_string(), ctx);
+            obj.insert("context".to_string(), project_context(context));
         }
     }
 
     line
-}
-
-/// Redact sensitive fields from instrumentation context.
-/// Scrubs 6-digit codes from args with field names matching code|otp|2fa|verification.
-fn redact_sensitive_fields(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            let sensitive_keys: Vec<String> = map
-                .keys()
-                .filter(|k| {
-                    let lower = k.to_lowercase();
-                    lower.contains("code")
-                        || lower.contains("otp")
-                        || lower.contains("2fa")
-                        || lower.contains("verification")
-                        || lower.contains("password")
-                        || lower.contains("secret")
-                        || lower.contains("token")
-                })
-                .cloned()
-                .collect();
-
-            for key in sensitive_keys {
-                map.insert(key, Value::String("[REDACTED]".into()));
-            }
-
-            // Recurse into remaining values
-            for v in map.values_mut() {
-                redact_sensitive_fields(v);
-            }
-        }
-        Value::Array(arr) => {
-            for v in arr.iter_mut() {
-                redact_sensitive_fields(v);
-            }
-        }
-        Value::String(s) if s.len() == 6 && s.chars().all(|c| c.is_ascii_digit()) => {
-            // Redact inline 6-digit codes that look like OTPs
-            *s = "[REDACTED-OTP]".into();
-        }
-        _ => {}
-    }
 }
 
 /// Rotate the log file if it's from a previous day.
@@ -345,37 +525,27 @@ mod tests {
     }
 
     #[test]
-    fn test_redact_otp_field() {
-        let mut ctx = json!({
+    fn test_context_projection_keeps_only_bounded_aggregates() {
+        let ctx = json!({
             "target": "Sign In",
-            "verification_code": "123456",
-            "otp": "789012"
+            "url": "https://example.test/?token=QUERY_SENTINEL",
+            "selector": "#password",
+            "typed_text": "PASSWORD_SENTINEL",
+            "headers": {"Authorization": "Bearer BEARER_SENTINEL"},
+            "cookie": "session=COOKIE_SENTINEL",
+            "path": "C:\\Users\\josep\\Private\\secret.txt",
+            "otp": "654321",
+            "monitor": 2,
+            "text_len": 17,
+            "visible": true
         });
-        redact_sensitive_fields(&mut ctx);
-        assert_eq!(ctx["verification_code"], "[REDACTED]");
-        assert_eq!(ctx["otp"], "[REDACTED]");
-        assert_eq!(ctx["target"], "Sign In");
-    }
 
-    #[test]
-    fn test_redact_inline_6digit() {
-        let mut ctx = json!(["Submit", "123456", "button"]);
-        redact_sensitive_fields(&mut ctx);
-        assert_eq!(ctx[1], "[REDACTED-OTP]");
-        assert_eq!(ctx[0], "Submit");
-    }
-
-    #[test]
-    fn test_redact_nested() {
-        let mut ctx = json!({
-            "args": {
-                "password": "secret123",
-                "label": "Email"
-            }
-        });
-        redact_sensitive_fields(&mut ctx);
-        assert_eq!(ctx["args"]["password"], "[REDACTED]");
-        assert_eq!(ctx["args"]["label"], "Email");
+        let projected = project_context(&ctx);
+        assert_eq!(projected["redacted"], true);
+        assert_eq!(projected["monitor"], 2);
+        assert_eq!(projected["text_len"], 17);
+        assert_eq!(projected["visible"], true);
+        assert_eq!(projected.as_object().unwrap().len(), 4);
     }
 
     #[test]
@@ -407,7 +577,79 @@ mod tests {
         assert_eq!(line["rungs_tried"], 0);
         assert_eq!(line["method"], "");
         assert_eq!(line["error"]["category"], "requires_confirmation");
-        assert_eq!(line["context"]["target"], "Delete Account");
-        assert_eq!(line["context"]["otp"], "[REDACTED]");
+        assert_eq!(line["context"]["redacted"], true);
+        assert!(line["context"].get("target").is_none());
+        assert!(line["context"].get("otp").is_none());
+    }
+
+    #[test]
+    fn test_actual_jsonl_sink_contains_no_secret_url_or_private_path_sentinels() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hands_meta.jsonl");
+        let raw_event = json!({
+            "ts": "2026-07-15T12:00:00Z",
+            "tool": "hands_navigate",
+            "call_id": "call_000001",
+            "aggregate": true,
+            "success": false,
+            "method": "navigate",
+            "rungs_tried": 1,
+            "elapsed_ms": 9,
+            "confidence": null,
+            "error": {
+                "category": "network",
+                "detail": "Bearer BEARER_SENTINEL at https://example.test/?token=QUERY_SENTINEL from C:\\Users\\josep\\Private"
+            },
+            "context": {
+                "url": "https://alice:password@example.test/reset?token=QUERY_SENTINEL",
+                "selector": "#password",
+                "typed_text": "PASSWORD_SENTINEL",
+                "password": "hunter2",
+                "otp": "654321",
+                "headers": {
+                    "Authorization": "Bearer BEARER_SENTINEL",
+                    "Cookie": "session=COOKIE_SENTINEL"
+                },
+                "cookie": "session=COOKIE_SENTINEL",
+                "path": "C:\\Users\\josep\\Private\\secret.txt",
+                "monitor": 2,
+                "text_len": 17,
+                "visible": true
+            },
+            "future_raw_field": "Bearer FUTURE_FIELD_SENTINEL"
+        });
+
+        append_safe_line(&path, &raw_event).unwrap();
+        let serialized = std::fs::read_to_string(&path).unwrap();
+        for forbidden in [
+            "BEARER_SENTINEL",
+            "COOKIE_SENTINEL",
+            "PASSWORD_SENTINEL",
+            "QUERY_SENTINEL",
+            "FUTURE_FIELD_SENTINEL",
+            "654321",
+            "hunter2",
+            "C:\\\\Users\\\\josep",
+            "example.test",
+            "#password",
+            "alice",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "serialized JSONL leaked sentinel {forbidden}: {serialized}"
+            );
+        }
+
+        let persisted: Value = serde_json::from_str(serialized.trim()).unwrap();
+        assert_eq!(persisted["category"], "navigation");
+        assert_eq!(persisted["tool"], "hands_navigate");
+        assert_eq!(persisted["call_id"], "call_000001");
+        assert_eq!(persisted["method"], "navigate");
+        assert_eq!(persisted["error"]["category"], "network");
+        assert_eq!(persisted["context"]["monitor"], 2);
+        assert_eq!(persisted["context"]["text_len"], 17);
+        assert_eq!(persisted["context"]["visible"], true);
+        assert!(persisted.get("future_raw_field").is_none());
+        assert_eq!(persisted["context"].as_object().unwrap().len(), 4);
     }
 }

@@ -1,5 +1,5 @@
 #define MyAppName "AI-Hands"
-#define MyAppVersion "1.1.0-unified.1"
+#define MyAppVersion "1.1.0-unified.2"
 #define MyAppPublisher "AIWander"
 #define MyAppURL "https://github.com/AIWander/AI-Hands"
 
@@ -46,9 +46,10 @@ Name: "addtopath"; Description: "Add AI-Hands to the current user's PATH"; Flags
 [Files]
 Source: "{#BinaryPath}"; DestDir: "{app}\bin"; DestName: "hands.exe"; Flags: ignoreversion
 Source: "..\..\scripts\js_extract.js"; DestDir: "{app}\bin\helpers"; Flags: ignoreversion
-Source: "..\..\plugins\ai-hands\*"; DestDir: "{app}\marketplace\plugins\ai-hands"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\plugins\ai-hands\*"; DestDir: "{app}\marketplace\plugins\ai-hands"; Excludes: "__pycache__,__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs
 Source: "..\..\.agents\plugins\marketplace.json"; DestDir: "{app}\marketplace\.agents\plugins"; Flags: ignoreversion
 Source: "..\..\.claude-plugin\marketplace.json"; DestDir: "{app}\marketplace\.claude-plugin"; Flags: ignoreversion
+Source: "..\scripts\Finalize-InstalledPlugin.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "PREREQUISITES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
@@ -98,6 +99,30 @@ external 'GetLastError@kernel32.dll stdcall';
 
 var
   ClipboardSucceeded: Boolean;
+  FinalizeSucceeded: Boolean;
+
+function FinalizeInstalledPlugin(): Boolean;
+var
+  ResultCode: Integer;
+  Params: String;
+begin
+  Params :=
+    '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
+    '"' + ExpandConstant('{app}\installer\Finalize-InstalledPlugin.ps1') + '" ' +
+    '-AppDir "' + ExpandConstant('{app}') + '"';
+  Result := Exec(
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    Params,
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  ) and (ResultCode = 0);
+  if Result then
+    Log('Plugin finalization: absolute hands.exe registration rendered successfully.')
+  else
+    Log(Format('Plugin finalization failed with helper result %d.', [ResultCode]));
+end;
 
 function PathContains(const Haystack, Needle: String): Boolean;
 begin
@@ -273,6 +298,22 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    FinalizeSucceeded := FinalizeInstalledPlugin();
+    if not FinalizeSucceeded then
+    begin
+      SaveStringToFile(
+        ExpandConstant('{app}\install-result.json'),
+        '{"schema":"ai-hands-plugin-install-v1","success":false,"error":"plugin finalization helper failed","client_configs_changed":false,"hooks_enabled":false,"server_started":false}' + #13#10,
+        False
+      );
+      MessageText :=
+        'AI-Hands plugin registration could not be finalized, so setup cannot report success.' + #13#10 + #13#10 +
+        'Failure details: ' + ExpandConstant('{app}\install-result.json');
+      if not WizardSilent then
+        MsgBox(MessageText, mbError, MB_OK);
+      RaiseException('AI-Hands plugin finalization failed; see install-result.json.');
+    end;
+
     ClipboardSucceeded := False;
     if not WizardSilent then
       CopyGuideToClipboard();
@@ -281,6 +322,9 @@ begin
       'AI-Hands, its optional plugin, and its skills are staged locally.' + #13#10 + #13#10 +
       'No Codex, Claude, Grok, ChatGPT, MCP, or hook configuration was edited.' + #13#10 +
       'Use the per-AI guide to apply the plugin through each host''s supported UI or CLI.';
+
+    MessageText := MessageText + #13#10 + #13#10 +
+      'The installed plugin registration uses the absolute hands.exe path and does not depend on PATH.';
 
     if ClipboardSucceeded then
       MessageText := MessageText + #13#10 + #13#10 +
@@ -297,3 +341,7 @@ begin
       MsgBox(MessageText, mbInformation, MB_OK);
   end;
 end;
+
+[UninstallDelete]
+Type: files; Name: "{app}\install-result.json"
+Type: filesandordirs; Name: "{app}\installer"

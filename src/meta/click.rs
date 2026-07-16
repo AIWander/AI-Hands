@@ -768,10 +768,10 @@ async fn click_browser_with_offset(
     button: &str,
     double_click: bool,
 ) -> (bool, Value) {
-    let escaped = selector.replace('\\', "\\\\").replace('"', "\\\"");
+    let selector_js = serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_string());
     let script = format!(
         r#"(() => {{
-            const el = document.querySelector("{}");
+            const el = document.querySelector({});
             if (!el) return JSON.stringify({{error: 'not found'}});
             const r = el.getBoundingClientRect();
             return JSON.stringify({{
@@ -781,7 +781,7 @@ async fn click_browser_with_offset(
                 h: Math.round(r.height)
             }});
         }})()"#,
-        escaped,
+        selector_js,
     );
 
     let eval_result =
@@ -855,10 +855,10 @@ async fn match_text_bbox_center(
     target: &str,
 ) -> Option<(i64, i64)> {
     let target_lower = target.to_lowercase();
-    let escaped = target_lower.replace('\\', "\\\\").replace('"', "\\\"");
+    let target_js = serde_json::to_string(&target_lower).unwrap_or_else(|_| "\"\"".to_string());
     let script = format!(
         r#"(() => {{
-            const target = "{}";
+            const target = {};
             const candidates = document.querySelectorAll('a, button, input, [role="button"], [role="link"], [onclick], [tabindex]');
             let best = null;
             let bestScore = 0;
@@ -886,7 +886,7 @@ async fn match_text_bbox_center(
             }}
             return JSON.stringify(best || {{}});
         }})()"#,
-        escaped,
+        target_js,
     );
 
     let eval_result =

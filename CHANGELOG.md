@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v1.1.0-unified.2 - 2026-07-16 - Security and monitor-scope release candidate
+
+### Security
+
+- Treats page-owned network, performance, and trace buffers as untrusted input and projects them through closed Rust schemas before filtering, returning, or writing.
+- JSON-serializes user-controlled selectors, XPath expressions, text, file metadata, and route values before embedding them in browser JavaScript.
+- Requires both raw-output and direct-fetch acknowledgements for arbitrary browser evaluation and script injection compatibility tools.
+- Rejects credential-bearing or opaque network-route patterns and never returns mock response bodies from route listings.
+
+### Fixed
+
+- Refuses monitor-fence activation while browser routes or tracing are already active, blocks persistent route/trace starts under a strict fence, and keeps cleanup calls available.
+- Synchronizes route removal with the page, safely reinjects routes after explicit navigation, and avoids duplicate fetch/XHR wrapper installation.
+- Generates collision-resistant automatic screenshot and browser-artifact paths with nanoseconds, process ID, and an atomic counter.
+
 ## v1.1.0-unified.1 - 2026-07-15 - Unified preview
 
 ### Added

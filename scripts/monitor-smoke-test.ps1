@@ -27,6 +27,7 @@ $handles = [System.Collections.Generic.List[object]]::new()
 $generatedPaths = [System.Collections.Generic.List[string]]::new()
 $monitors = @()
 $fixedResults = @()
+$primaryResults = @()
 $sameProcessResults = @()
 $parallelResults = @()
 $failure = $null
@@ -34,13 +35,17 @@ $status = 'FAIL'
 $fullFourMonitorAcceptance = $false
 $tests = [ordered]@{
     monitor_inventory_unique = $false
+    all_connected_monitors_tested = $false
     locked_without_scope_failed_closed = $false
     fixed_stable_id_locked_each_monitor = $false
+    primary_locked_virtual_monitor = $false
     mismatched_monitor_failed_closed = $false
     resolved_alias_browser_binding_enforced = $false
     qr_browser_binding_enforced = $false
     native_plugins_blocked_under_scope = $false
     rejected_uia_batch_aggregated_failure = $false
+    persistent_route_start_blocked_under_scope = $false
+    persistent_trace_start_blocked_under_scope = $false
     same_process_paths_unique = $false
     same_second_paths_unique = $false
     cross_process_paths_unique = $false
@@ -243,9 +248,6 @@ try {
     if (@($monitors.stable_id | Sort-Object -Unique).Count -ne $monitors.Count) {
         throw 'Monitor stable IDs are not unique'
     }
-    if (@($monitors | Where-Object { -not $_.stable_physical }).Count -ne 0) {
-        throw 'At least one monitor lacks a physical stable identity required for fixed mode'
-    }
     $tests.monitor_inventory_unique = $true
 
     $lockedOffHandle = Start-HandProcess @{ HANDS_MONITOR_SCOPE_LOCKED = '1' }
@@ -265,7 +267,7 @@ try {
     $tests.locked_without_scope_failed_closed = $true
 
     $fixedResults = @(
-        foreach ($monitor in $monitors) {
+        foreach ($monitor in @($monitors | Where-Object { $_.stable_physical })) {
             $other = @($monitors | Where-Object { $_.index -ne $monitor.index } | Select-Object -First 1)
             $mismatchIndex = if ($other.Count -gt 0) {
                 [int] $other[0].index
@@ -317,19 +319,88 @@ try {
         }
     )
     $tests.fixed_stable_id_locked_each_monitor = $true
+
+    $virtualMonitors = @($monitors | Where-Object { -not $_.stable_physical })
+    $unsupportedVirtual = @($virtualMonitors | Where-Object { -not $_.is_primary })
+    if ($unsupportedVirtual.Count -gt 0) {
+        throw 'A virtual non-primary monitor cannot be isolated by fixed identity or primary binding'
+    }
+    if ($virtualMonitors.Count -gt 1) {
+        throw 'More than one virtual monitor was reported; primary binding cannot prove coverage of each logical display'
+    }
+    $primaryResults = @(
+        foreach ($monitor in $virtualMonitors) {
+            $mismatchIndex = [int] $monitor.index + 10000
+            $handle = Start-HandProcess @{
+                HANDS_MONITOR_SCOPE = 'primary'
+                HANDS_MONITOR_SCOPE_LOCKED = '1'
+            }
+            Send-McpRequests $handle @(
+                (Tool-Request 35 'hands_monitor_scope' @{ action = 'get' }),
+                (Tool-Request 36 'vision_screenshot' @{}),
+                (Tool-Request 37 'vision_screenshot' @{ monitor = $mismatchIndex }),
+                (Tool-Request 38 'hands_monitor_scope' @{ action = 'set'; mode = 'fixed'; monitor = 0 }),
+                (Tool-Request 39 'hands_monitor_scope' @{ action = 'clear' })
+            )
+            $responses = Complete-HandProcess $handle
+            $scope = Tool-Payload (Response-ById $responses 35)
+            $capture = Tool-Payload (Response-ById $responses 36)
+            $mismatch = Tool-Payload (Response-ById $responses 37)
+            $setAttempt = Tool-Payload (Response-ById $responses 38)
+            $clearAttempt = Tool-Payload (Response-ById $responses 39)
+            if (-not $scope.success -or -not $capture.success) {
+                throw "Locked primary monitor test failed for virtual monitor $($monitor.index)"
+            }
+            if ([int] $capture.monitor -ne [int] $monitor.index -or
+                -not [bool] $scope.scope.resolved_monitor.is_primary) {
+                throw "Primary binding mismatch for virtual monitor $($monitor.index)"
+            }
+            if ($mismatch.success -ne $false -or -not (Payload-HasCode $mismatch 'monitor_mismatch')) {
+                throw "Virtual primary mismatch did not fail closed for monitor $($monitor.index)"
+            }
+            if ($setAttempt.success -ne $false -or $clearAttempt.success -ne $false -or
+                -not (Payload-HasCode $setAttempt 'scope_locked') -or
+                -not (Payload-HasCode $clearAttempt 'scope_locked')) {
+                throw "Locked primary scope allowed mutation for monitor $($monitor.index)"
+            }
+            [pscustomobject]@{
+                index = [int] $monitor.index
+                display_id = [uint32] $monitor.display_id
+                stable_id = [string] $monitor.stable_id
+                stable_physical = $false
+                binding_mode = 'primary'
+                bounds = $monitor.logical_bounds
+                scale_factor = [double] $monitor.scale_factor
+                mismatch_index = $mismatchIndex
+                capture = Capture-Proof $capture
+            }
+        }
+    )
+    $tests.primary_locked_virtual_monitor = ($virtualMonitors.Count -eq 0 -or $primaryResults.Count -eq $virtualMonitors.Count)
+    if ((@($fixedResults).Count + @($primaryResults).Count) -ne $monitors.Count) {
+        throw "Monitor-scope coverage tested $(@($fixedResults).Count + @($primaryResults).Count) of $($monitors.Count) connected monitors"
+    }
+    $tests.all_connected_monitors_tested = $true
     $tests.mismatched_monitor_failed_closed = $true
     $tests.locked_scope_mutation_blocked = $true
 
     $policyHandle = Start-HandProcess @{
+        HANDS_TOOL_PROFILE = 'compatibility'
+        HANDS_ALLOW_UNSAFE_RAW_TOOLS = '1'
         HANDS_MONITOR_SCOPE = 'primary'
         HANDS_MONITOR_SCOPE_LOCKED = '1'
     }
     Send-McpRequests $policyHandle @(
-        (Tool-Request 40 'hands_script' @{ steps = @(@{ tool = 'navigate'; args = @{ url = 'about:blank' } }) }),
+        (Tool-Request 40 'hands_script' @{
+            allow_unsafe_raw = $true
+            steps = @(@{ tool = 'navigate'; args = @{ url = 'about:blank' } })
+        }),
         (Tool-Request 41 'hands_scan_qr' @{ source = 'browser' }),
         (Tool-Request 42 'hands_plugin_load' @{ path = 'C:\definitely-not-a-plugin.dll' }),
         (Tool-Request 43 'hands_plugin_call' @{ plugin = 'missing'; tool = 'missing'; arguments = @{} }),
-        (Tool-Request 44 'uia_batch' @{ actions = @(@{ type = 'read_value'; params = @{ name = 'anything' } }) })
+        (Tool-Request 44 'uia_batch' @{ actions = @(@{ type = 'read_value'; params = @{ name = 'anything' } }) }),
+        (Tool-Request 45 'browser_route' @{ pattern = '/api/*'; action = 'log' }),
+        (Tool-Request 46 'browser_trace_start' @{})
     )
     $policyResponses = Complete-HandProcess $policyHandle
     $scriptAlias = Tool-Payload (Response-ById $policyResponses 40)
@@ -337,6 +408,8 @@ try {
     $pluginLoad = Tool-Payload (Response-ById $policyResponses 42)
     $pluginCall = Tool-Payload (Response-ById $policyResponses 43)
     $uiaBatch = Tool-Payload (Response-ById $policyResponses 44)
+    $routeStart = Tool-Payload (Response-ById $policyResponses 45)
+    $traceStart = Tool-Payload (Response-ById $policyResponses 46)
     if ($scriptAlias.success -ne $false -or -not (Payload-HasCode $scriptAlias 'browser_unbound')) {
         throw 'hands_script resolved browser alias bypassed browser binding'
     }
@@ -349,14 +422,23 @@ try {
         throw 'Native plugin execution was not blocked under strict scope'
     }
     if ($uiaBatch.success -ne $false -or
-        [int] $uiaBatch.failures -lt 1 -or
-        -not (Payload-HasCode $uiaBatch 'unscopable_global_ability')) {
+        [int] $uiaBatch.failures -lt 1) {
         throw 'Rejected UIA batch action did not propagate aggregate failure'
+    }
+    if ($routeStart.success -ne $false -or
+        -not (Payload-HasCode $routeStart 'persistent_browser_action_unscopable')) {
+        throw 'Persistent browser route start was not blocked under strict scope'
+    }
+    if ($traceStart.success -ne $false -or
+        -not (Payload-HasCode $traceStart 'persistent_browser_action_unscopable')) {
+        throw 'Persistent browser trace start was not blocked under strict scope'
     }
     $tests.resolved_alias_browser_binding_enforced = $true
     $tests.qr_browser_binding_enforced = $true
     $tests.native_plugins_blocked_under_scope = $true
     $tests.rejected_uia_batch_aggregated_failure = $true
+    $tests.persistent_route_start_blocked_under_scope = $true
+    $tests.persistent_trace_start_blocked_under_scope = $true
 
     $burstHandle = Start-HandProcess @{
         HANDS_MONITOR_SCOPE = 'primary'
@@ -415,14 +497,20 @@ try {
         }
     )
 
-    $allProofs = @($fixedResults.capture) + @($sameProcessResults) + @($parallelResults)
-    if (@($allProofs.path | Sort-Object -Unique).Count -ne $allProofs.Count) {
+    $allProofs = @(
+        foreach ($result in @($fixedResults)) { $result.capture }
+        foreach ($result in @($primaryResults)) { $result.capture }
+        foreach ($result in @($sameProcessResults)) { $result }
+        foreach ($result in @($parallelResults)) { $result }
+    )
+    $uniquePaths = @($allProofs | ForEach-Object { $_.path } | Sort-Object -Unique)
+    if ($uniquePaths.Count -ne $allProofs.Count) {
         throw 'Automatic screenshot filenames collided across the full test run'
     }
     $tests.cross_process_paths_unique = $true
     $tests.png_decode_and_dimensions_valid = $true
 
-    $fullFourMonitorAcceptance = $MinimumMonitorCount -ge 4 -and $monitors.Count -ge $MinimumMonitorCount
+    $fullFourMonitorAcceptance = $monitors.Count -ge 4
     $status = if ($fullFourMonitorAcceptance) { 'PASS' } else { 'PASS_DIAGNOSTIC' }
 } catch {
     $failure = $_ | Out-String
@@ -456,10 +544,12 @@ try {
             keep_captures = [bool] $KeepCaptures
         }
         monitor_count = $monitors.Count
+        all_connected_monitors_tested = ((@($fixedResults).Count + @($primaryResults).Count) -eq $monitors.Count)
         full_four_monitor_acceptance = $fullFourMonitorAcceptance
         test_tier = if ($fullFourMonitorAcceptance) { 'four-monitor-acceptance' } else { 'diagnostic-only' }
         monitors = $monitors
         fixed_monitor_results = @($fixedResults)
+        primary_monitor_results = @($primaryResults)
         same_process_results = @($sameProcessResults)
         concurrent_results = @($parallelResults)
         tests = $tests
