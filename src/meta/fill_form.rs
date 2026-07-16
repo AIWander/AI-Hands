@@ -6,7 +6,7 @@
 //!   3. Escalate ONLY failed fields (don't re-fill already-filled ones)
 //!
 //! Features:
-//! - Pre-scan extracts {label, element_role, required, current_value}
+//! - Pre-scan extracts field structure plus has_value/value_length, never values
 //! - Label matching priority: exact > startsWith > contains > fuzzy
 //! - Per-field success tracking with separate filled/failed lists
 //! - DOM change detection between fields: re-snapshot if field count changes
@@ -61,7 +61,8 @@ const JS_FORM_PRESCAN: &str = r#"
             autocomplete: el.autocomplete || el.getAttribute('autocomplete') || '',
             inputmode: el.inputMode || el.getAttribute('inputmode') || '',
             required: el.required || el.getAttribute('aria-required') === 'true',
-            value: el.value || '',
+            has_value: (el.value || '').length > 0,
+            value_length: (el.value || '').length,
             checked: el.checked || false,
             disabled: el.disabled || el.getAttribute('aria-disabled') === 'true',
             id: el.id || '',
@@ -300,11 +301,8 @@ pub async fn handle(
             .filter(|id| !id.is_empty())
             .map(|id| format!("#{}", id));
         if let Some(ref sel) = field_selector {
-            let autofill_js = format!(
-                "({})('{}')",
-                autofill::JS_CHECK_AUTOFILL,
-                sel.replace('\'', "\\'")
-            );
+            let selector_js = serde_json::to_string(sel).unwrap_or_else(|_| "\"\"".to_string());
+            let autofill_js = format!("({})({})", autofill::JS_CHECK_AUTOFILL, selector_js);
             let af_result = browser_mcp::tools::handle_tool(
                 browser,
                 "evaluate",
@@ -322,10 +320,7 @@ pub async fn handle(
                         label: label.clone(),
                         success: true,
                         method: "autofill".into(),
-                        reason: Some(format!(
-                            "Browser autofilled: {}",
-                            af_state.value.as_deref().unwrap_or("(value)")
-                        )),
+                        reason: Some("Browser autofill detected; value withheld".into()),
                     });
                     last_fill_coords = Some((field_x, field_y));
                     continue;

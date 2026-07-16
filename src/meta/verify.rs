@@ -795,16 +795,13 @@ async fn run_dom_text_search(
     negated: bool,
     require_visible: bool,
 ) -> RungResult {
-    let escaped_target = target
-        .replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace('\n', "\\n");
+    let target_js = serde_json::to_string(target).unwrap_or_else(|_| "\"\"".to_string());
 
     let script = match mode {
         VerifyMode::Regex => {
             format!(
                 r#"(() => {{
-                    const re = new RegExp('{}', 'i');
+                    const re = new RegExp({}, 'i');
                     const body = document.body ? document.body.innerText : '';
                     const match = re.test(body);
                     if (!match) return JSON.stringify({{found: false}});
@@ -812,7 +809,7 @@ async fn run_dom_text_search(
                     const snippet = m ? m[0].substring(0, 100) : '';
                     return JSON.stringify({{found: true, snippet: snippet, location: 'body'}});
                 }})()"#,
-                escaped_target
+                target_js
             )
         }
         _ => {
@@ -849,7 +846,7 @@ async fn run_dom_text_search(
 
             format!(
                 r#"(() => {{
-                    const target = '{}';
+                    const target = {};
                     const body = document.body ? document.body.innerText : '';
                     const found = body.toLowerCase().includes(target.toLowerCase());
                     if (!found) return JSON.stringify({{found: false}});
@@ -877,7 +874,7 @@ async fn run_dom_text_search(
                     const snippet = body.substring(Math.max(0, idx - 20), idx + target.length + 20);
                     return JSON.stringify({{found: true, snippet: snippet, location: location}});
                 }})()"#,
-                escaped_target, visibility_check
+                target_js, visibility_check
             )
         }
     };
@@ -935,7 +932,7 @@ async fn run_element_query(
     negated: bool,
     require_visible: bool,
 ) -> RungResult {
-    let escaped = selector.replace('\\', "\\\\").replace('\'', "\\'");
+    let selector_js = serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_string());
 
     let visibility_part = if require_visible {
         r#"
@@ -951,7 +948,7 @@ async fn run_element_query(
 
     let script = format!(
         r#"(() => {{
-            const el = document.querySelector('{}');
+            const el = document.querySelector({});
             if (!el) return JSON.stringify({{found: false}});
             {}
             const tag = el.tagName.toLowerCase();
@@ -959,7 +956,7 @@ async fn run_element_query(
             const role = el.getAttribute('role') || '';
             return JSON.stringify({{found: true, tag: tag, text: text, role: role}});
         }})()"#,
-        escaped, visibility_part
+        selector_js, visibility_part
     );
 
     let eval_result =

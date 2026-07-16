@@ -59,6 +59,101 @@ pub enum RouteAction {
     Log,
 }
 
+fn serialize_route_rules(routes: &[RouteRule]) -> Result<String, serde_json::Error> {
+    let values = routes
+        .iter()
+        .map(|route| {
+            let action = match &route.action {
+                RouteAction::Block => serde_json::json!({"type": "block"}),
+                RouteAction::Mock {
+                    status,
+                    content_type,
+                    body,
+                } => serde_json::json!({
+                    "type": "mock",
+                    "status": status,
+                    "contentType": content_type,
+                    "body": body,
+                }),
+                RouteAction::Log => serde_json::json!({"type": "log"}),
+            };
+            serde_json::json!({"pattern": route.pattern, "action": action})
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_string(&values)
+}
+
+fn js_string(raw: &str) -> String {
+    serde_json::to_string(raw).expect("JSON string serialization cannot fail")
+}
+
+const SAFE_ROUTE_LITERALS: &[&str] = &[
+    "api", "rest", "rpc", "graphql", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "auth",
+    "oauth", "login", "logout", "callback", "users", "user", "accounts", "account", "orders",
+    "order", "events", "webhooks", "health", "status", "assets", "static",
+];
+
+fn validate_route_pattern(pattern: &str) -> Result<String, BrowserError> {
+    let trimmed = pattern.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if trimmed.is_empty()
+        || trimmed.len() > 2_048
+        || trimmed.chars().any(char::is_control)
+        || trimmed
+            .chars()
+            .any(|ch| matches!(ch, '?' | '#' | '@' | '\\' | '=' | '&' | ';'))
+        || lower.contains("://")
+        || lower.contains(':')
+        || [
+            "authorization",
+            "bearer ",
+            "basic ",
+            "password",
+            "secret",
+            "token",
+            "api_key",
+            "api-key",
+            "apikey",
+            "cookie",
+            "session",
+            "credential",
+            "one-time-code",
+            "otp",
+        ]
+        .iter()
+        .any(|marker| lower.contains(marker))
+    {
+        return Err(BrowserError::Cdp(
+            "Route pattern must be a credential-free path-shape glob".into(),
+        ));
+    }
+    if !trimmed.starts_with('/') && !trimmed.starts_with("**/") {
+        return Err(BrowserError::Cdp(
+            "Route pattern must start with '/' or '**/'".into(),
+        ));
+    }
+    if trimmed.split('/').any(|segment| {
+        let segment = segment.trim();
+        !segment.is_empty()
+            && !segment.chars().all(|ch| ch == '*')
+            && !SAFE_ROUTE_LITERALS.contains(&segment.to_ascii_lowercase().as_str())
+    }) {
+        return Err(BrowserError::Cdp(
+            "Route pattern contains an arbitrary path value; replace dynamic segments with '*'"
+                .into(),
+        ));
+    }
+    Ok(lower)
+}
+
+fn route_action_label(action: &RouteAction) -> &'static str {
+    match action {
+        RouteAction::Block => "block",
+        RouteAction::Mock { .. } => "mock",
+        RouteAction::Log => "log",
+    }
+}
+
 /// Named browser context — isolated page group with separate state
 pub struct BrowserContext {
     pub pages: Vec<Page>,
@@ -359,6 +454,9 @@ impl BrowserManager {
             .await
             .unwrap_or_default()
             .unwrap_or_default();
+        if !self.routes.is_empty() {
+            self.inject_interception().await?;
+        }
         Ok(title)
     }
 
@@ -403,10 +501,8 @@ impl BrowserManager {
             .map_err(|_| BrowserError::ElementNotFound(selector.into()))?;
 
         if clear {
-            let clear_script = format!(
-                "document.querySelector('{}').value = ''",
-                selector.replace("'", "\\'")
-            );
+            let clear_script =
+                format!("document.querySelector({}).value = ''", js_string(selector));
             self.evaluate(&clear_script).await.ok();
         }
 
@@ -548,7 +644,7 @@ impl BrowserManager {
                 let visible = page
                     .evaluate(format!(
                         "(() => {{ \
-                        const el = document.querySelector('{}'); \
+                        const el = document.querySelector({}); \
                         if (!el) return false; \
                         const style = window.getComputedStyle(el); \
                         return style.display !== 'none' && \
@@ -556,7 +652,7 @@ impl BrowserManager {
                                style.opacity !== '0' && \
                                el.offsetParent !== null; \
                     }})()",
-                        selector.replace("'", "\\'")
+                        js_string(selector)
                     ))
                     .await
                     .ok()
@@ -623,7 +719,7 @@ impl BrowserManager {
     pub async fn resolve_xpath(&self, xpath: &str) -> Result<serde_json::Value, BrowserError> {
         let script = format!(
             r#"(() => {{
-                const result = document.evaluate("{}", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                const result = document.evaluate({}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
                 const el = result.singleNodeValue;
                 if (!el) return null;
                 const rect = el.getBoundingClientRect();
@@ -642,7 +738,7 @@ impl BrowserManager {
                     height: Math.round(rect.height)
                 }};
             }})()"#,
-            xpath.replace('"', r#"\""#)
+            js_string(xpath)
         );
         let val = self.evaluate(&script).await?;
         if val.is_null() {
@@ -715,19 +811,19 @@ impl BrowserManager {
     ) -> Result<(), BrowserError> {
         let timeout = Duration::from_millis(timeout_ms);
         let start = std::time::Instant::now();
-        let escaped = xpath.replace('"', r#"\""#);
+        let xpath_js = js_string(xpath);
 
         while start.elapsed() < timeout {
             let script = format!(
                 r#"(() => {{
-                    const result = document.evaluate("{}", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    const result = document.evaluate({}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
                     const el = result.singleNodeValue;
                     if (!el) return {{ found: false, visible: false }};
                     const style = window.getComputedStyle(el);
                     const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && el.offsetParent !== null;
                     return {{ found: true, visible: visible }};
                 }})()"#,
-                escaped
+                xpath_js
             );
             if let Ok(val) = self.evaluate(&script).await {
                 let found = val.get("found").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -781,12 +877,12 @@ impl BrowserManager {
     ) -> Result<(f64, f64, f64, f64), BrowserError> {
         let script = format!(
             r#"(() => {{
-                const el = document.querySelector('{}');
+                const el = document.querySelector({});
                 if (!el) return null;
                 const r = el.getBoundingClientRect();
                 return [r.x, r.y, r.width, r.height];
             }})()"#,
-            selector.replace("'", "\\'")
+            js_string(selector)
         );
 
         let result = self.evaluate(&script).await?;
@@ -810,11 +906,11 @@ impl BrowserManager {
 
     pub async fn select_option(&self, selector: &str, value: &str) -> Result<(), BrowserError> {
         let script = format!(
-            r#"document.querySelector('{}').value = '{}';
-               document.querySelector('{}').dispatchEvent(new Event('change'));"#,
-            selector.replace("'", "\\'"),
-            value.replace("'", "\\'"),
-            selector.replace("'", "\\'")
+            r#"document.querySelector({}).value = {};
+               document.querySelector({}).dispatchEvent(new Event('change'));"#,
+            js_string(selector),
+            js_string(value),
+            js_string(selector)
         );
         self.evaluate(&script).await?;
         Ok(())
@@ -977,9 +1073,10 @@ impl BrowserManager {
                 .slice(0, 100)
                 .map(el => {
                     const rect = el.getBoundingClientRect();
+                    const label = el.labels && el.labels.length ? el.labels[0].innerText : '';
                     return {
                         tag: el.tagName.toLowerCase(),
-                        text: (el.innerText || el.value || el.getAttribute('aria-label') || '').slice(0, 50),
+                        text: (el.innerText || el.getAttribute('aria-label') || label || el.getAttribute('placeholder') || el.getAttribute('name') || el.getAttribute('type') || '').slice(0, 50),
                         x: Math.round(rect.x + rect.width/2),
                         y: Math.round(rect.y + rect.height/2),
                         width: Math.round(rect.width),
@@ -1067,7 +1164,9 @@ impl BrowserManager {
                     name: e.name,
                     type: e.type,
                     id: e.id,
-                    value: e.value
+                    autocomplete: e.autocomplete || null,
+                    has_value: typeof e.value === 'string' && e.value.length > 0,
+                    value_length: typeof e.value === 'string' ? e.value.length : 0
                 }))
             }))
         "#;
@@ -1082,11 +1181,12 @@ impl BrowserManager {
         if let Some(obj) = data.as_object() {
             for (name, value) in obj {
                 if let Some(v) = value.as_str() {
+                    let field_selector = format!("[name={}]", js_string(name));
                     let script = format!(
-                        r#"document.querySelector('{}')?.querySelector('[name="{}"]')?.setAttribute('value', '{}')"#,
-                        form_selector.replace("'", "\\'"),
-                        name.replace("\"", "\\\""),
-                        v.replace("'", "\\'")
+                        r#"document.querySelector({})?.querySelector({})?.setAttribute('value', {})"#,
+                        js_string(form_selector),
+                        js_string(&field_selector),
+                        js_string(v)
                     );
                     self.evaluate(&script).await.ok();
                 }
@@ -1096,10 +1196,7 @@ impl BrowserManager {
     }
 
     pub async fn submit_form(&self, selector: &str) -> Result<(), BrowserError> {
-        let script = format!(
-            "document.querySelector('{}')?.submit()",
-            selector.replace("'", "\\'")
-        );
+        let script = format!("document.querySelector({})?.submit()", js_string(selector));
         self.evaluate(&script).await?;
         tokio::time::sleep(Duration::from_millis(500)).await;
         Ok(())
@@ -1144,28 +1241,64 @@ impl BrowserManager {
         pattern: String,
         action: RouteAction,
     ) -> Result<String, BrowserError> {
+        let pattern = validate_route_pattern(&pattern)?;
+        if let RouteAction::Mock {
+            status,
+            content_type,
+            body,
+        } = &action
+        {
+            if !(100..=599).contains(status)
+                || content_type.is_empty()
+                || content_type.len() > 128
+                || !content_type.chars().all(|ch| {
+                    ch.is_ascii_alphanumeric()
+                        || matches!(
+                            ch,
+                            '!' | '#' | '$' | '&' | '^' | '_' | '.' | '+' | '-' | '*' | '/'
+                        )
+                })
+                || body.len() > 1_048_576
+            {
+                return Err(BrowserError::Cdp(
+                    "Mock route requires status 100-599, a safe MIME type, and a body no larger than 1 MiB"
+                        .into(),
+                ));
+            }
+        }
+        let previous = self.routes.clone();
+        self.routes.retain(|route| route.pattern != pattern);
         self.routes.push(RouteRule {
             pattern: pattern.clone(),
             action: action.clone(),
         });
-        self.inject_interception().await?;
+        if let Err(error) = self.inject_interception().await {
+            self.routes = previous;
+            return Err(error);
+        }
         Ok(format!(
-            "Route added: {} ({:?}), {} total routes",
-            pattern,
-            action,
+            "Route added ({}) with validated path shape; {} total routes",
+            route_action_label(&action),
             self.routes.len()
         ))
     }
 
     /// Remove a route by pattern
-    pub fn remove_route(&mut self, pattern: &str) -> Result<String, BrowserError> {
+    pub async fn remove_route(&mut self, pattern: &str) -> Result<String, BrowserError> {
+        let pattern = validate_route_pattern(pattern)?;
+        let previous = self.routes.clone();
         let before = self.routes.len();
         self.routes.retain(|r| r.pattern != pattern);
         let removed = before - self.routes.len();
+        if self.interception_active {
+            if let Err(error) = self.inject_interception().await {
+                self.routes = previous;
+                return Err(error);
+            }
+        }
         Ok(format!(
-            "Removed {} route(s) matching '{}', {} remaining",
+            "Removed {} route(s) matching the validated path shape; {} remaining",
             removed,
-            pattern,
             self.routes.len()
         ))
     }
@@ -1184,7 +1317,7 @@ impl BrowserManager {
                     } => format!("mock({}; {})", status, content_type),
                     RouteAction::Log => "log".to_string(),
                 };
-                serde_json::json!({"pattern": r.pattern, "action": action_str})
+                serde_json::json!({"pattern_shape": r.pattern, "action": action_str})
             })
             .collect()
     }
@@ -1197,45 +1330,86 @@ impl BrowserManager {
 
     /// Clear intercepted request log
     pub async fn clear_intercepted(&self) -> Result<(), BrowserError> {
-        self.evaluate("window.__mcp_intercepted = []").await?;
+        self.evaluate(
+            "if (window.__mcp_reset_intercepted) { window.__mcp_reset_intercepted(false); } else { window.__mcp_intercepted = []; }",
+        )
+        .await?;
         Ok(())
     }
 
     /// Inject the JS interception layer (overrides fetch + XHR)
     async fn inject_interception(&mut self) -> Result<(), BrowserError> {
-        let mut rules_js = String::from("[");
-        for (idx, route) in self.routes.iter().enumerate() {
-            if idx > 0 {
-                rules_js.push(',');
-            }
-            let action_js = match &route.action {
-                RouteAction::Block => r#"{"type":"block"}"#.to_string(),
-                RouteAction::Mock {
-                    status,
-                    content_type,
-                    body,
-                } => {
-                    format!(
-                        r#"{{"type":"mock","status":{},"contentType":"{}","body":{}}}"#,
-                        status,
-                        content_type.replace('"', r#"\""#),
-                        serde_json::to_string(body).unwrap_or_default()
-                    )
-                }
-                RouteAction::Log => r#"{"type":"log"}"#.to_string(),
-            };
-            rules_js.push_str(&format!(
-                r#"{{"pattern":"{}","action":{}}}"#,
-                route.pattern.replace('"', r#"\""#),
-                action_js
-            ));
-        }
-        rules_js.push(']');
+        let rules_js = serialize_route_rules(&self.routes).map_err(|error| {
+            BrowserError::Cdp(format!("Could not serialize route rules: {error}"))
+        })?;
 
         let script = format!(
             r#"(() => {{
             window.__mcp_routes = {rules};
-            window.__mcp_intercepted = window.__mcp_intercepted || [];
+            const safeRouteLiterals = new Set([
+                'api', 'rest', 'rpc', 'graphql', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6',
+                'v7', 'v8', 'v9', 'auth', 'oauth', 'login', 'logout', 'callback', 'users',
+                'user', 'accounts', 'account', 'orders', 'order', 'events', 'webhooks',
+                'health', 'status', 'assets', 'static'
+            ]);
+            const safeQueryKeys = new Set([
+                'page', 'limit', 'offset', 'sort', 'order', 'filter', 'q', 'query',
+                'search', 'cursor', 'after', 'before', 'fields', 'include', 'expand',
+                'lang', 'locale', 'format', 'version', 'id', 'code', 'state', 'token', 'key'
+            ]);
+            const safeUrlShape = raw => {{
+                try {{
+                    const parsed = new URL(String(raw), location.href);
+                    const path = parsed.pathname.split('/').map(segment => {{
+                        if (!segment) return '';
+                        let decoded = '';
+                        try {{ decoded = decodeURIComponent(segment).toLowerCase(); }}
+                        catch (_error) {{ return '{{segment}}'; }}
+                        return safeRouteLiterals.has(decoded) ? decoded : '{{segment}}';
+                    }}).join('/');
+                    const keys = [];
+                    parsed.searchParams.forEach((_value, key) => {{
+                        const normalized = String(key).toLowerCase();
+                        const safeKey = safeQueryKeys.has(normalized) ? normalized : 'parameter';
+                        if (!keys.includes(safeKey)) keys.push(safeKey);
+                    }});
+                    const query = keys.length
+                        ? '?' + keys.map(key => encodeURIComponent(key) + '=[REDACTED]').join('&')
+                        : '';
+                    return path + query + (parsed.hash ? '#[REDACTED]' : '');
+                }} catch (_error) {{
+                    return '[URL_WITHHELD]';
+                }}
+            }};
+            const routeMatches = (pattern, urlShape) => {{
+                const escaped = String(pattern).replace(/[.+?^${{}}()|[\]\\]/g, '\\$&');
+                const source = '^' + escaped.replace(/\*+/g, '.*') + '$';
+                try {{ return new RegExp(source).test(String(urlShape)); }}
+                catch (_error) {{ return false; }}
+            }};
+            window.__mcp_safe_url_shape = safeUrlShape;
+            window.__mcp_reset_intercepted = preserve => {{
+                const prior = preserve && window.__mcp_intercepted_safe_v2 === true
+                    && Array.isArray(window.__mcp_intercepted)
+                    ? window.__mcp_intercepted.slice()
+                    : [];
+                const guarded = [];
+                Object.defineProperty(guarded, 'push', {{
+                    configurable: false,
+                    writable: false,
+                    value: function(...items) {{
+                        const safeItems = items.map(item => {{
+                            if (!item || typeof item !== 'object') return {{event: '[WITHHELD]'}};
+                            return {{...item, url: safeUrlShape(item.url)}};
+                        }});
+                        return Array.prototype.push.apply(this, safeItems);
+                    }}
+                }});
+                window.__mcp_intercepted = guarded;
+                window.__mcp_intercepted_safe_v2 = true;
+                if (prior.length) guarded.push(...prior);
+            }};
+            window.__mcp_reset_intercepted(window.__mcp_intercepted_safe_v2 === true);
             if (window.__mcp_interception_installed) return 'updated';
 
             // Override fetch
@@ -1243,8 +1417,8 @@ impl BrowserManager {
             window.fetch = async function(input, init) {{
                 const url = typeof input === 'string' ? input : input.url;
                 for (const route of window.__mcp_routes) {{
-                    if (url.includes(route.pattern) || new RegExp(route.pattern).test(url)) {{
-                        window.__mcp_intercepted.push({{url, method: init?.method || 'GET', time: Date.now(), action: route.action.type}});
+                    if (routeMatches(route.pattern, safeUrlShape(url))) {{
+                        window.__mcp_intercepted.push({{url: safeUrlShape(url), method: init?.method || 'GET', time: Date.now(), action: route.action.type}});
                         if (route.action.type === 'block') {{
                             return new Response('', {{status: 0, statusText: 'Blocked by MCP route'}});
                         }}
@@ -1263,11 +1437,9 @@ impl BrowserManager {
             // Override XMLHttpRequest
             const origXHROpen = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function(method, url, ...rest) {{
-                this.__mcp_url = url;
-                this.__mcp_method = method;
                 for (const route of window.__mcp_routes) {{
-                    if (url.includes(route.pattern) || new RegExp(route.pattern).test(url)) {{
-                        window.__mcp_intercepted.push({{url, method, time: Date.now(), action: route.action.type}});
+                    if (routeMatches(route.pattern, safeUrlShape(url))) {{
+                        window.__mcp_intercepted.push({{url: safeUrlShape(url), method, time: Date.now(), action: route.action.type}});
                         if (route.action.type === 'block') {{
                             this.__mcp_blocked = true;
                         }}
@@ -1311,12 +1483,20 @@ impl BrowserManager {
 
     /// Disable interception — restore original fetch/XHR
     pub async fn disable_interception(&mut self) -> Result<String, BrowserError> {
+        // Keep the one installed wrapper in place and empty its rules. Marking
+        // it uninstalled would cause later adds to wrap fetch/XHR repeatedly.
+        self.evaluate("window.__mcp_routes = []").await?;
         self.routes.clear();
         self.interception_active = false;
-        // Can't fully restore, but we can empty the rules so everything passes through
-        self.evaluate("window.__mcp_routes = []; window.__mcp_interception_installed = false")
-            .await?;
-        Ok("Interception disabled, all routes cleared".into())
+        Ok("Interception routes cleared; one pass-through wrapper remains installed".into())
+    }
+
+    pub fn persistent_page_automation(&self) -> serde_json::Value {
+        serde_json::json!({
+            "active": !self.routes.is_empty() || self.trace_active,
+            "route_count": self.routes.len(),
+            "trace_active": self.trace_active,
+        })
     }
 
     // ===== P5: Multiple Browser Contexts =====
@@ -1440,20 +1620,95 @@ impl BrowserManager {
         if self.trace_active {
             return Err(BrowserError::Cdp("Trace already active".into()));
         }
-        self.trace_active = true;
         self.trace_entries.clear();
 
         // Inject performance observer JS
         let script = r#"(() => {
-            window.__mcp_trace = [];
+            if (window.__mcp_trace_observer) window.__mcp_trace_observer.disconnect();
+            if (window.__mcp_trace_url_check) clearInterval(window.__mcp_trace_url_check);
+            if (window.__mcp_trace_click_handler) {
+                document.removeEventListener('click', window.__mcp_trace_click_handler, true);
+            }
             window.__mcp_trace_start = Date.now();
+
+            const safeRouteLiterals = new Set([
+                'api', 'rest', 'rpc', 'graphql', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6',
+                'v7', 'v8', 'v9', 'auth', 'oauth', 'login', 'logout', 'callback', 'users',
+                'user', 'accounts', 'account', 'orders', 'order', 'events', 'webhooks',
+                'health', 'status', 'assets', 'static'
+            ]);
+            const safeQueryKeys = new Set([
+                'page', 'limit', 'offset', 'sort', 'order', 'filter', 'q', 'query',
+                'search', 'cursor', 'after', 'before', 'fields', 'include', 'expand',
+                'lang', 'locale', 'format', 'version', 'id', 'code', 'state', 'token', 'key'
+            ]);
+            const safeUrlShape = raw => {
+                try {
+                    const parsed = new URL(String(raw), location.href);
+                    const path = parsed.pathname.split('/').map(segment => {
+                        if (!segment) return '';
+                        let decoded = '';
+                        try { decoded = decodeURIComponent(segment).toLowerCase(); }
+                        catch (_error) { return '{segment}'; }
+                        return safeRouteLiterals.has(decoded) ? decoded : '{segment}';
+                    }).join('/');
+                    const keys = [];
+                    parsed.searchParams.forEach((_value, key) => {
+                        const normalized = String(key).toLowerCase();
+                        const safeKey = safeQueryKeys.has(normalized) ? normalized : 'parameter';
+                        if (!keys.includes(safeKey)) keys.push(safeKey);
+                    });
+                    const query = keys.length
+                        ? '?' + keys.map(key => encodeURIComponent(key) + '=[REDACTED]').join('&')
+                        : '';
+                    return path + query + (parsed.hash ? '#[REDACTED]' : '');
+                } catch (_error) {
+                    return '[URL_WITHHELD]';
+                }
+            };
+            window.__mcp_trace_safe_url = safeUrlShape;
+
+            const traceTypes = new Set([
+                'navigation', 'resource', 'longtask', 'paint',
+                'largest-contentful-paint', 'click'
+            ]);
+            const projectTraceEntry = item => {
+                if (!item || typeof item !== 'object') return {type: 'event'};
+                const rawType = String(item.type || '').toLowerCase();
+                const type = traceTypes.has(rawType) ? rawType : 'event';
+                const safe = {type};
+                for (const key of ['start', 'duration', 'time', 'x', 'y']) {
+                    if (Number.isFinite(item[key])) safe[key] = Number(item[key]);
+                }
+                if (type === 'click') {
+                    const tag = String(item.tag || '').toUpperCase();
+                    if (/^[A-Z0-9-]{1,20}$/.test(tag)) safe.tag = tag;
+                } else if (type === 'navigation' || type === 'resource') {
+                    safe.name = safeUrlShape(item.name);
+                    if (item.from !== undefined) safe.from = safeUrlShape(item.from);
+                } else if (['self', 'first-paint', 'first-contentful-paint'].includes(item.name)) {
+                    safe.name = String(item.name);
+                }
+                return safe;
+            };
+            const guardedTrace = [];
+            Object.defineProperty(guardedTrace, 'push', {
+                configurable: false,
+                writable: false,
+                value: function(...items) {
+                    return Array.prototype.push.apply(this, items.map(projectTraceEntry));
+                }
+            });
+            window.__mcp_trace = guardedTrace;
 
             // Observe navigation + resource timing
             const observer = new PerformanceObserver(list => {
                 for (const entry of list.getEntries()) {
                     window.__mcp_trace.push({
                         type: entry.entryType,
-                        name: entry.name.slice(0, 200),
+                        name: (entry.entryType === 'navigation' || entry.entryType === 'resource')
+                            ? safeUrlShape(entry.name)
+                            : String(entry.name).slice(0, 80),
                         start: Math.round(entry.startTime),
                         duration: Math.round(entry.duration),
                         time: Date.now() - window.__mcp_trace_start
@@ -1464,28 +1719,29 @@ impl BrowserManager {
             window.__mcp_trace_observer = observer;
 
             // Track clicks
-            document.addEventListener('click', e => {
+            window.__mcp_trace_click_handler = e => {
                 const target = e.target;
                 window.__mcp_trace.push({
                     type: 'click',
-                    name: target.tagName + (target.id ? '#' + target.id : '') + (target.className ? '.' + target.className.split(' ')[0] : ''),
-                    text: (target.innerText || '').slice(0, 50),
+                    tag: String(target.tagName || '').slice(0, 20),
                     x: e.clientX, y: e.clientY,
                     time: Date.now() - window.__mcp_trace_start
                 });
-            }, true);
+            };
+            document.addEventListener('click', window.__mcp_trace_click_handler, true);
 
             // Track URL changes
-            let lastUrl = location.href;
+            let lastUrl = safeUrlShape(location.href);
             const urlCheck = setInterval(() => {
-                if (location.href !== lastUrl) {
+                const currentUrl = safeUrlShape(location.href);
+                if (currentUrl !== lastUrl) {
                     window.__mcp_trace.push({
                         type: 'navigation',
-                        name: location.href.slice(0, 200),
-                        from: lastUrl.slice(0, 200),
+                        name: currentUrl,
+                        from: lastUrl,
                         time: Date.now() - window.__mcp_trace_start
                     });
-                    lastUrl = location.href;
+                    lastUrl = currentUrl;
                 }
             }, 200);
             window.__mcp_trace_url_check = urlCheck;
@@ -1493,12 +1749,13 @@ impl BrowserManager {
             return 'trace started';
         })()"#;
         self.evaluate(script).await?;
+        self.trace_active = true;
 
         // Record trace start entry
         self.trace_entries.push(serde_json::json!({
             "type": "trace_start",
             "time": 0,
-            "url": self.current_url
+            "url": "[captured-as-route-shape-in-page-trace]"
         }));
 
         Ok("Trace recording started".into())
@@ -1520,8 +1777,21 @@ impl BrowserManager {
             r#"(() => {
             if (window.__mcp_trace_observer) window.__mcp_trace_observer.disconnect();
             if (window.__mcp_trace_url_check) clearInterval(window.__mcp_trace_url_check);
-            delete window.__mcp_trace;
+            if (window.__mcp_trace_click_handler) {
+                document.removeEventListener('click', window.__mcp_trace_click_handler, true);
+            }
+            const dropSink = [];
+            Object.defineProperty(dropSink, 'push', {
+                configurable: false,
+                writable: false,
+                value: function() { return this.length; }
+            });
+            window.__mcp_trace = dropSink;
             delete window.__mcp_trace_start;
+            delete window.__mcp_trace_safe_url;
+            delete window.__mcp_trace_observer;
+            delete window.__mcp_trace_url_check;
+            delete window.__mcp_trace_click_handler;
             return 'cleaned';
         })()"#,
         )
@@ -1585,6 +1855,79 @@ pub type SharedBrowser = Arc<RwLock<BrowserManager>>;
 
 pub fn create_shared() -> SharedBrowser {
     Arc::new(RwLock::new(BrowserManager::new()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn js_string_round_trips_hostile_input_as_one_literal() {
+        let hostile = "\";globalThis.PWNED=true;//\n\\tail'\r\t";
+        let encoded = js_string(hostile);
+        let decoded: String = serde_json::from_str(&encoded).expect("valid JSON string literal");
+        assert_eq!(decoded, hostile);
+        assert!(!encoded.contains('\n'));
+        assert!(!encoded.contains('\r'));
+    }
+
+    #[test]
+    fn route_patterns_are_limited_to_noncredential_path_shapes() {
+        for accepted in ["/api/*/orders/**", "**/api/*", "/graphql"] {
+            assert_eq!(validate_route_pattern(accepted).unwrap(), accepted);
+        }
+        for rejected in [
+            "https://example.test/api/*",
+            "/api/*?token=secret",
+            "/api/*#private",
+            "/api/user@example.test",
+            "/private/customer-name",
+            "api/*",
+        ] {
+            assert!(validate_route_pattern(rejected).is_err(), "{rejected}");
+        }
+    }
+
+    #[test]
+    fn route_listing_never_returns_mock_body() {
+        let mut manager = BrowserManager::new();
+        manager.routes.push(RouteRule {
+            pattern: "/api/*".to_string(),
+            action: RouteAction::Mock {
+                status: 200,
+                content_type: "application/json".to_string(),
+                body: "MOCK_BODY_SECRET".to_string(),
+            },
+        });
+        let listed = manager.list_routes();
+        let serialized = serde_json::to_string(&listed).unwrap();
+        assert_eq!(listed[0]["pattern_shape"], "/api/*");
+        assert!(!serialized.contains("MOCK_BODY_SECRET"));
+        assert!(listed[0].get("body").is_none());
+    }
+
+    #[test]
+    fn route_rules_are_json_serialized_without_script_injection() {
+        let hostile_pattern = "api\\\";globalThis.PWNED=true;//\nnext";
+        let hostile_content_type = "text/plain\\\";throw new Error('PWNED');//";
+        let hostile_body = "line1\n\"quoted\"\\tail";
+        let rules = vec![RouteRule {
+            pattern: hostile_pattern.to_string(),
+            action: RouteAction::Mock {
+                status: 207,
+                content_type: hostile_content_type.to_string(),
+                body: hostile_body.to_string(),
+            },
+        }];
+
+        let serialized = serialize_route_rules(&rules).expect("route rules serialize");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&serialized).expect("serialized rules remain valid JSON");
+        assert_eq!(parsed[0]["pattern"], hostile_pattern);
+        assert_eq!(parsed[0]["action"]["contentType"], hostile_content_type);
+        assert_eq!(parsed[0]["action"]["body"], hostile_body);
+        assert!(!serialized.contains(";globalThis.PWNED=true;//\n"));
+    }
 }
 
 // === FILE NAVIGATION ===

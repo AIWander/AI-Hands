@@ -1,6 +1,6 @@
 ---
 name: hands-getting-started
-description: 'Getting started with Hands -- the 117-tool automation server for browser,
+description: 'Getting started with Hands -- the safe-profile automation server for browser,
 
   Windows desktop, and vision/OCR tasks. Use when: first time using hands,
 
@@ -11,14 +11,18 @@ description: 'Getting started with Hands -- the 117-tool automation server for b
 
 ## What Hands Is
 
-A single MCP server (hands.exe) with 117 tools across 5 subsystems. It replaces pixel-guessing with structured, fast automation.
+A single MCP server (`hands.exe`) with safe-advertised browser, Windows UIA, vision/OCR, cross-surface, monitor-scope, and health abilities. It replaces pixel-guessing with structured, verifiable automation.
 
-| Subsystem | Prefix | Tools | What It Does |
-|-----------|--------|-------|-------------|
-| Browser | browser_* | 67 | chromiumoxide CDP. DOM, JS, network, forms, tabs. |
-| UIA | uia_* | 16 | Windows UI Automation. Native app control. |
-| Vision | vision_* | 9 | Screenshots, OCR, template match, image diff. |
-| Combo | (mixed) | 11 | Cross-subsystem: drag, file_upload, find_and_click, read_screen_text, etc. |
+| Profile | Operational tools | Catalog | Advertised entries | Safety |
+|---|---:|---:|---:|---|
+| `default` | 104 | 1 | 105 | Safe-advertised; recommended |
+| `full` | 106 | 1 | 107 | Safe-advertised |
+| `strict` | 108 | 1 | 109 | Safe-advertised |
+| `compatibility` | 143 | 1 | 144 | Unsafe debug escape hatch |
+
+Compatibility is not the fast path. A raw/debug, built-in direct-fetch, or native-plugin call requires `HANDS_TOOL_PROFILE=compatibility`, the matching process gate (`HANDS_ALLOW_UNSAFE_RAW_TOOLS=1`, `HANDS_ALLOW_UNSAFE_DIRECT_FETCH=1`, or `HANDS_ALLOW_UNSAFE_PLUGINS=1`), and the matching per-call acknowledgement (`allow_unsafe_raw=true`, `allow_unsafe_fetch=true`, or `allow_unsafe_plugin=true`). The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call. Safe profiles reduce the built-in first-party surface; Hands can still launch external desktop applications and is not a general OS or secrecy sandbox.
+
+Before enabling a monitor fence, clear browser routes and stop any active trace; fence activation refuses while either persistent state is active. Under an active fence, `browser_route` and `browser_trace_start` fail closed, while `browser_route_remove`, `browser_route_clear`, and `browser_trace_stop` remain available so cleanup cannot be trapped.
 
 ## First Steps -- Browser
 
@@ -26,7 +30,7 @@ Most tasks start here. The pattern is always: **launch/attach -> navigate -> do 
 
 ### 1. Get a browser
 ```
-hands:browser_launch()              # new headless browser
+hands:browser_launch(headless=false) # new visible browser
 hands:browser_attach(port=9222)     # connect to existing Chrome (launched with --remote-debugging-port=9222)
 ```
 Use attach when you need to work in the user's logged-in session (cookies, auth).
@@ -38,12 +42,10 @@ hands:browser_navigate(url="https://example.com")
 
 ### 3. Extract content
 ```
-hands:browser_extract_content(url="https://example.com")   # clean text, no junk -- best for reading pages
-hands:browser_get_text()                                     # raw visible text of current page
-hands:browser_get_html(selector="main")                      # HTML of a specific element
-hands:browser_js_extract(script="document.title")            # run JS and return result
+hands:browser_extract_content()                              # clean text from the current visible page
+hands:browser_get_text()                                     # visible text of current page
 ```
-browser_extract_content is the go-to for "read this webpage." Use instead of web_fetch.
+Use a visible browser: `hands_navigate`, then `browser_extract_content` or `browser_get_text`. Use `hands_find` and bounded `browser_batch` actions when interaction is needed. Workflow or another dedicated web/network owner handles validated durable direct API methods.
 
 ### 4. Interact
 ```
@@ -83,7 +85,7 @@ hands:uia_list_window()                                       # see what's open
 hands:uia_find(name="Save", role="Button")                   # find element by name/role
 hands:uia_click(name="Save", role="Button")                  # click it
 hands:uia_type(name="File name:", text="report.txt")         # type into a field
-hands:uia_read_value(name="Total")                           # read a value
+hands:uia_get_state(name="Total")                           # inspect bounded structural state
 ```
 
 ### 3. Keyboard and window control
@@ -132,7 +134,7 @@ browser_extract_content(url="...") -- one call, done.
 browser_navigate -> browser_fill_form -> browser_submit_form
 
 **Automate a Windows app:**
-uia_app_launch -> uia_find -> uia_click / uia_type -> uia_read_value
+uia_app_launch -> uia_find -> uia_click / uia_type -> uia_get_state
 
 **Monitor for a visual change:**
 wait_for_visual(text="Complete") -> read_screen_text()
@@ -143,9 +145,9 @@ browser_navigate -> browser_scroll_collect(selector=".item") -- auto-scrolls and
 **Batch browser actions (speed):**
 ```
 hands:browser_batch(actions=[
-  {"action": "click", "selector": "#tab1"},
-  {"action": "wait_for", "selector": ".content"},
-  {"action": "get_text", "selector": ".content"}
+  {"type": "click", "params": {"selector": "#tab1"}},
+  {"type": "wait_for", "params": {"selector": ".content"}},
+  {"type": "screenshot", "params": {"path": "C:/temp/content.png"}}
 ])
 ```
 
@@ -160,7 +162,7 @@ hands:browser_batch(actions=[
 | See what's on screen | read_screen_text or vision_screenshot |
 | Wait for something to appear | browser_wait_for (web) / wait_for_visual (anything) |
 | Take a screenshot | browser_screenshot (web) / vision_screenshot (screen) / window_screenshot (app) |
-| Run JavaScript | browser_eval |
+| Run a fixed browser sequence | browser_batch |
 | Manage browser tabs | browser_new_tab / browser_switch_tab / browser_close_tab |
 | Check what windows are open | uia_list_window |
 | Download a file | browser_navigate to URL or browser_click on download link |
@@ -173,6 +175,10 @@ Hands is NOT pixel-guessing. It uses structured APIs:
 - **Vision**: OCR engine + template matching -- structured text extraction, not model interpretation
 
 Each action takes milliseconds, not 2 seconds. You can batch actions. You get structured data back, not just screenshots.
+
+Do not recommend direct fetch, arbitrary evaluation, raw HTML or accessibility dumps, page capture, free-form `hands_script`, raw QR decoding, or raw UIA value/event tools in a safe profile. Those surfaces are compatibility/debug-only and require the explicit three-part gate above.
+
+The Hands HTTP dashboard is off by default. Set `HANDS_ENABLE_DASHBOARD=1` only when a local operator deliberately opts in after reviewing the listening boundary.
 
 ## Reference
 

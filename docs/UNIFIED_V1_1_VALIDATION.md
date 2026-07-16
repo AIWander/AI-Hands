@@ -1,57 +1,57 @@
-# AI-Hands v1.1.0-unified.1 validation
+# AI-Hands v1.1.0-unified.2 validation
 
-This report identifies the exact local publication artifacts prepared for source review. The standalone Rust executable is signed; the Windows installer is not signed or released.
+This report identifies the exact ARM64 publication artifacts prepared for source review. The standalone Rust executable and the self-installing Windows plugin package are Authenticode signed; neither artifact has been released from this branch.
 
 ## Final Rust binary
 
 - File: `dist/hand.exe`
-- Source-exact unsigned SHA-256 before signing: `F3C8C8A83A36E89BD19C64076EBB0432B2534922C9DB521BDB9322AA11900529`
-- Final signed SHA-256: `CD218D6356830AE7A926CD2E78760E726A5BF8B5F1381457124ED19A485B99C4`
-- Final signed size: 21,768,976 bytes
-- Signature state: Valid and timestamped
+- Final signed SHA-256: `5A4A09429C0B228753AF1B50EFD983DAD06C26FAD756C8F98D63F9BDDE136F93`
+- Final signed size: 21,989,136 bytes
+- PE architecture: ARM64 (`0xAA64`)
+- Signature state: Valid and timestamped; signer `Joseph Wander`
 - Embedded-string checks: no workstation-specific username path, private user path, old live-binary hash, private coverage filename, hardcoded Node executable, or private JavaScript-helper path. Generic, non-user-specific fallback strings from the public path-discovery dependency remain by design.
-- Dependency check: one vendored `vision-core` package is shared by Hands and the vendored browser library
+- Dependency check: one vendored `vision-core` package is shared by Hands and the vendored browser library.
 
-## Four-monitor acceptance
+## Current monitor acceptance
 
-Both runs used the unchanged strict acceptance suite and the exact final signed binary hash above. Each found four monitors, exercised fixed-and-locked scope on every monitor, rejected mismatched or unscoped actions, verified browser and QR bindings, blocked native plugins under scope, propagated rejected UIA batch actions, and validated unique decodable PNG captures.
+The exact final signed binary above passed the strict monitor harness twice. Only one logical primary monitor was connected for these runs, so the result is diagnostic coverage rather than four-monitor acceptance. Both runs proved fail-closed scope policy, one virtual-primary capture, six collision-free same-process captures, four collision-free concurrent captures, valid PNG output, scope-mutation rejection, and the policy probes available on the current topology.
 
 | Run report | Report SHA-256 | Result |
 |---|---|---|
-| `monitor-smoke-20260715_014118_828_108988.json` | `38F7BD0D327E5C39E57B1F45B6CB7D9BFD61FEED3A01AE15946BC965D350B634` | PASS, 13 of 13 |
-| `monitor-smoke-20260715_014219_978_87604.json` | `81C0D87BEAD8DDCC24C61D52384B5982B253480D3EA13565D5DCB2460D55D0CE` | PASS, 13 of 13 |
+| `monitor-smoke-20260716_143159_061_75296.json` | `737619AFB884546F72557C69953D4D9FF31CBEFF5380F67387D3B58041861796` | `PASS_DIAGNOSTIC`; one connected logical primary, every test true |
+| `monitor-smoke-20260716_143201_149_73440.json` | `86705E78ED0300997D8397357879225458B605F567B76EFF8F633FF49E58918B` | `PASS_DIAGNOSTIC`; repeat run, same topology, every test true |
 
-The four physical stable IDs were identical across both runs. The IDs themselves are intentionally omitted from this public report.
+An earlier signed `.1` build passed the four-physical-monitor suite twice. That is useful regression evidence for the monitor design, but it is not substituted for an exact-binary four-monitor claim on this `.2` artifact. Fixed-physical unattended acceptance must be rerun when multiple physical monitors are connected.
 
-## Rust and plugin checks
+## Rust, security, and plugin checks
 
-- Unit tests: 371 discovered; 370 passed, 0 failed, 1 ignored because the optional example plugin was not built.
-- Clippy: all targets passed with warnings denied.
+- Unit tests: 414 discovered; 413 passed, 0 failed, 1 ignored because the optional example plugin was not built.
+- Clippy: all targets and features passed with warnings denied.
 - Format check: passed.
-- RustSec audit: passed after updating `crossbeam-epoch` to 0.9.20. Two Linux-only `quick-xml` advisories are explicitly ignored by `cargo audit` because this Windows build reaches them only through trusted Wayland/XCB build-time metadata.
-- Cargo Deny CI policy: license, duplicate-ban, and source checks passed.
-- Hook policy tests: 5 passed.
+- Browser crate tests: 5 passed.
+- Hook/plugin policy tests: 5 passed.
+- RustSec audit: exit 0 for the Windows targets; remaining warnings are unmaintained `fxhash` and `rustls-pemfile`, plus a `memmap2` warning reached through the Linux-only screenshot/Wayland path.
+- Cargo Deny: exit 0; remaining diagnostics are warnings, not denied findings.
 - Codex plugin validator: passed.
-- Claude plugin validator: passed.
-- Grok plugin validator: passed.
-- Both bundled skill validators: passed.
+- Four bundled AIHands/Grok skill validators: passed.
+- JSON package registrations: parsed successfully.
+- Profile smoke tests: default 105 listed, full 107, strict 109, compatibility 144; every list was unique, grouped, and contract-consistent.
+- Headless browser security smoke: passed. A page-injected performance row was reduced to the closed safe schema; hostile `headers`, `body`, `extra`, and sentinel values did not escape.
+- Final-output path smoke: only existing Hands-generated captures under the canonical capture roots can retain a path, and only from the narrow capture-tool/key allowlist; page-provided and arbitrary paths remain redacted.
 
-## Windows installer
+## Windows self-installing plugin
 
-- File: `dist/AIHands-Setup-1.1.0-unified.1-arm64.exe`
-- SHA-256: `7BBD2E9A51E2F17755E6A6BAC30E1D1123ED0417D8DFC22892781980244B7956`
-- Size: 7,114,012 bytes
-- Signature state: unsigned
-- Embedded Rust binary SHA-256: `920C5C64DC83399BC86DD917A45DC686B8FC142F875F1C08108D2C9EDBD45E7E`
-- Required payloads: 9 of 9 present in the actual test install
-- PATH: unchanged when the selectable PATH task was disabled
-- AI and hook configuration: not edited
-- Browser detection: existing 64-bit Chrome detected; no false missing-browser warning
-- Uninstall: exit code 0 and test installation directory removed
-- Package string checks: no workstation username path or old live-binary hash
+- File: `dist/AIHands-Setup-1.1.0-unified.2-arm64.exe`
+- SHA-256: `74A7C9B827597C8D253969DEBBB05B77869602ABC81DD9D033845187DD8A9B0E`
+- Size: 7,199,088 bytes
+- PE architecture: ARM64 (`0xAA64`)
+- Signature state: Valid and timestamped; signer `Joseph Wander`
+- Contents: signed Rust server, Codex and Claude plugin manifests, MCP registration template, two AIHands skills, host-neutral instructions, and opt-in hook fragments.
+- Default behavior: does not edit AI host configuration, enable hooks, start a server, alter a tunnel, or add PATH unless that selectable task is enabled.
+- Interactive behavior: attempts to copy the universal application guide and reports whether clipboard setup succeeded; silent mode leaves activation and result files instead of claiming an interactive action occurred.
 
-This installer predates the final dependency update and signature. It copied the complete per-AI guide with its native Unicode clipboard path and logged the success popup; the acceptance harness restored the pre-test clipboard afterward. If native clipboard access is unavailable, the installer also tries original-user PowerShell fallbacks and truthfully points to the installed guide when every method fails.
+A prior isolated installer cycle verified the payload layout, absolute MCP command, disabled PATH task, no host/hook/server mutation, and clean uninstall, but it used an earlier signed `.2` binary. The final installer was deliberately not rerun on the same Windows account because Inno's fixed application identity could replace the existing per-user uninstall registration even with a custom directory. The release workflow now performs a cold install/hash/config/uninstall gate on each fresh x64 and ARM64 runner before artifact upload; that gate must be green before release.
 
 ## Release boundary
 
-The source and standalone signed Rust executable are ready for publication review. The installer is held until it is rebuilt around the final signed Rust payload, signed itself, and reruns install/uninstall acceptance. An x64 decision also remains open. Inno Setup's base license permits commercial use; the vendor requests commercial users purchase a license but states that purchase is not strictly required. Record the publisher's support and compliance choice before commercial distribution; it is not a technical build blocker. See the [official commercial-license guidance](https://jrsoftware.org/isorder.php). No live AI configuration was edited, no live Hands binary was replaced, and no shared service was restarted.
+The source, signed Rust binary, and signed installer are ready for pull-request review. Publication requires green CI, including the fresh-runner self-installing-package gate. No live Hands binary or configuration was replaced, no hook was enabled, no tunnel was changed, and no shared service was restarted. Inno Setup's base license permits commercial use; its vendor requests commercial users purchase a license but states that purchase is not strictly required. Record the publisher's support and compliance choice before commercial distribution; it is not a technical build blocker. See the [official commercial-license guidance](https://jrsoftware.org/isorder.php).

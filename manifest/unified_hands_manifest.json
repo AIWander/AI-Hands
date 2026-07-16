@@ -5,7 +5,7 @@
     "as_of": "2026-07-14",
     "github_main_commit": "0a9a8d83249b32b0c616db19b243cc5449a79a5c",
     "candidate": {
-      "version": "1.1.0-unified.1"
+      "version": "1.1.0-unified.2"
     },
     "audited_sources": {
       "github_main_unique_tools": 138,
@@ -28,19 +28,27 @@
     "local_only": 7,
     "removed_workflow_front_doors": 3,
     "template_only": 1,
-    "strict_unique": 136,
-    "full_unique": 134,
-    "default_unique": 132,
+    "strict_unique": 108,
+    "full_unique": 106,
+    "default_unique": 104,
     "template_catalog_tool": 1,
     "compatibility_tools_list": 144,
-    "strict_tools_list": 137,
-    "full_tools_list": 135,
-    "default_tools_list": 133
+    "strict_tools_list": 109,
+    "full_tools_list": 107,
+    "default_tools_list": 105
   },
   "profiles": {
-    "compatibility": "All 143 canonical union tools; exact duplicate registrations and three Workflow-owned self-record front doors removed.",
-    "full": "Canonical local surface; seven redundant compatibility front doors and two absorbed tools hidden.",
-    "default": "Full minus manual attach-lock acquire/release; adds one catalog tool."
+    "compatibility": "UNSAFE DEBUG PROFILE. All 143 canonical union tools are advertised, including raw content, trace, direct-fetch, native-plugin execution, QR, form-value, and UIA value/event surfaces. Use only for deliberate compatibility/debug work; exact duplicate registrations and three Workflow-owned self-record front doors remain removed.",
+    "strict": "Safe advertised surface with raw content, trace, direct-fetch, native-plugin execution, QR, form-value, and UIA value/event front doors hidden; retains the strict-only OCR alias and health alias.",
+    "full": "Safe canonical surface with raw content, trace, direct-fetch, native-plugin execution, QR, form-value, UIA value/event, redundant compatibility, and absorbed front doors hidden.",
+    "default": "Safe full surface minus manual attach-lock acquire/release; adds one catalog tool."
+  },
+  "profile_safety": {
+    "default": "safe-advertised",
+    "full": "safe-advertised",
+    "strict": "safe-advertised",
+    "compatibility": "unsafe-debug",
+    "compatibility_warning": "Compatibility advertises raw/debug capabilities that may expose page content, form or desktop values, traces, QR payloads, load native plugins, or perform server-side direct fetches. It is not a security-safe profile."
   },
   "collections": [
     {
@@ -78,9 +86,9 @@
     {
       "id": "dom-and-page-state-discovery",
       "raw": 10,
-      "strict": 10,
-      "full": 10,
-      "default": 10,
+      "strict": 5,
+      "full": 5,
+      "default": 5,
       "tools": [
         "browser_a11y_find",
         "browser_a11y_snapshot",
@@ -118,9 +126,9 @@
     {
       "id": "web-retrieval-crawling-page-artifacts",
       "raw": 12,
-      "strict": 11,
-      "full": 11,
-      "default": 11,
+      "strict": 3,
+      "full": 3,
+      "default": 3,
       "tools": [
         "browser_bulk_extract",
         "browser_crawl",
@@ -160,9 +168,9 @@
     {
       "id": "browser-evaluation-waits-traces-evidence",
       "raw": 11,
-      "strict": 11,
-      "full": 11,
-      "default": 11,
+      "strict": 7,
+      "full": 7,
+      "default": 7,
       "tools": [
         "browser_evaluate",
         "browser_screenshot",
@@ -180,9 +188,9 @@
     {
       "id": "browser-scripting-planning-agentic-execution",
       "raw": 6,
-      "strict": 5,
-      "full": 5,
-      "default": 5,
+      "strict": 3,
+      "full": 3,
+      "default": 3,
       "tools": [
         "browser_agent",
         "browser_batch",
@@ -195,9 +203,9 @@
     {
       "id": "desktop-apps-windows-input-uia",
       "raw": 21,
-      "strict": 20,
-      "full": 20,
-      "default": 20,
+      "strict": 17,
+      "full": 17,
+      "default": 17,
       "tools": [
         "drag",
         "type_into_window",
@@ -225,9 +233,9 @@
     {
       "id": "vision-ocr-visual-perception",
       "raw": 18,
-      "strict": 16,
-      "full": 15,
-      "default": 15,
+      "strict": 14,
+      "full": 13,
+      "default": 13,
       "tools": [
         "read_screen_text",
         "wait_for_visual",
@@ -270,9 +278,9 @@
     {
       "id": "workflow-scripting-run-telemetry",
       "raw": 2,
-      "strict": 2,
-      "full": 2,
-      "default": 2,
+      "strict": 1,
+      "full": 1,
+      "default": 1,
       "tools": [
         "hands_script",
         "hands_summarize_run"
@@ -291,9 +299,9 @@
     {
       "id": "extensions-runtime-health",
       "raw": 6,
-      "strict": 6,
-      "full": 5,
-      "default": 5,
+      "strict": 3,
+      "full": 2,
+      "default": 2,
       "tools": [
         "status",
         "hands_health",
@@ -336,11 +344,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Find nodes in the cached/refreshed accessibility snapshot by role and name.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_find for a scoped target",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_a11y_snapshot",
@@ -349,11 +358,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Build an accessibility-oriented DOM snapshot with ref IDs usable by click(a11y_ref=...).",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_find for a scoped target",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_agent",
@@ -414,11 +424,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Extract text from multiple URLs in sequence. Uses smart_browse auto-escalation for each URL.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_navigate plus browser_extract_content in the visible browser",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_click",
@@ -531,11 +542,12 @@
       "github_main": false,
       "source_status": "Local only",
       "ability": "Polite recursive crawler: fetches a site from a start URL, honoring robots.txt, per-domain rate limits, and an honest user-agent. Bounded by max_depth/max_pages/timeout. Returns clean text per page. Set CPC_CRAWLER_PROXY to egress through a non-home IP.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_navigate plus browser_extract_content in the visible browser",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_debug_launch",
@@ -557,11 +569,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Execute JavaScript",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "browser_batch or hands_script with built-in actions",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_evaluate",
@@ -570,11 +583,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Evaluate a web artifact. With spec: runs test steps with assertions. Without spec: auto-discovery mode checks page load, console errors, broken images, unlabeled inputs, link validity, a11y summary, and page metrics. Returns structured pass/fail/warning with screenshot evidence.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "browser_verify_state plus browser_screenshot and explicit bounded assertions",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_exists",
@@ -674,11 +688,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Get all clickable elements with coordinates (for vision)",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_find for a scoped target",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_get_forms",
@@ -687,11 +702,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Get all forms on page with their fields",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_fill_form for bounded form handling, or browser_exists/browser_get_text for specific fields",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_get_html",
@@ -700,11 +716,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Get page or element HTML",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "browser_get_text or browser_extract_content",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_get_metrics",
@@ -791,11 +808,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Simple HTTP GET, strip HTML, return text. Fast fallback when JS rendering not needed. No browser spin-up.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_navigate plus browser_extract_content in the visible browser",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_iframe_extract",
@@ -817,7 +835,8 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Inject and execute JavaScript",
-      "disposition": "compatibility_front_door",
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
       "replacement": "browser_eval(script=\"(function(){ <script> })()\")",
       "exposed_strict": false,
       "exposed_full": false,
@@ -830,11 +849,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Spawn Node.js to extract content from a URL without Chrome. Supports linkedom or jsdom engines.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_navigate plus browser_extract_content in the visible browser",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_launch",
@@ -882,11 +902,12 @@
       "github_main": false,
       "source_status": "Local only",
       "ability": "Discover URLs on a site without extracting content. Reads sitemap.xml (incl. sitemap indexes) and supplements with a shallow link crawl. Returns a deduped URL list.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_navigate plus browser_extract_content in the visible browser",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_navigate",
@@ -921,11 +942,12 @@
       "github_main": false,
       "source_status": "Local only",
       "ability": "Capture the current page as image, DOM dump, scroll-collected dump, or saved artifact bundle.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "browser_screenshot plus browser_extract_content",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_page_dump",
@@ -934,7 +956,8 @@
       "github_main": false,
       "source_status": "Local only",
       "ability": "Alias for page_capture(mode='dom' or mode='bundle'): structured page data with optional saved artifacts.",
-      "disposition": "compatibility_front_door",
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
       "replacement": "browser_page_capture(mode=\"dom\")",
       "exposed_strict": false,
       "exposed_full": false,
@@ -985,8 +1008,9 @@
       "local": true,
       "github_main": true,
       "source_status": "Shared",
-      "ability": "Add a network interception route. Intercepts fetch() and XHR requests matching the URL pattern.",
+      "ability": "Add a validated noncredential path-shape glob for fetch/XHR block, mock, or minimized logging. Disabled while a strict monitor fence is active.",
       "disposition": "canonical",
+      "safety": "persistent-page-action-disabled-under-monitor-fence",
       "replacement": null,
       "exposed_strict": true,
       "exposed_full": true,
@@ -998,7 +1022,7 @@
       "local": true,
       "github_main": true,
       "source_status": "Shared",
-      "ability": "Disable all network interception and restore normal fetch/XHR",
+      "ability": "Clear all routes and leave one pass-through fetch/XHR wrapper to prevent double wrapping. Available as cleanup under a strict monitor fence.",
       "disposition": "canonical",
       "replacement": null,
       "exposed_strict": true,
@@ -1011,7 +1035,7 @@
       "local": true,
       "github_main": true,
       "source_status": "Shared",
-      "ability": "List all active network interception routes",
+      "ability": "List validated route shapes and action metadata without mock response bodies",
       "disposition": "canonical",
       "replacement": null,
       "exposed_strict": true,
@@ -1024,7 +1048,7 @@
       "local": true,
       "github_main": true,
       "source_status": "Shared",
-      "ability": "Remove a network interception route by pattern",
+      "ability": "Remove one validated path-shape route and synchronize the current page. Available as cleanup under a strict monitor fence.",
       "disposition": "canonical",
       "replacement": null,
       "exposed_strict": true,
@@ -1064,11 +1088,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Execute a batch of browser steps with variable substitution. Steps run sequentially; {{var}} placeholders replaced from vars map. On failure, returns partial results + screenshot.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_script with built-in tool steps",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_scroll",
@@ -1116,11 +1141,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Try HTTP scrape first, then escalate to linkedom, then jsdom, and finally flag when Chrome rendering is needed.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_navigate plus browser_extract_content in the visible browser",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_smart_navigate",
@@ -1181,11 +1207,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Stop trace recording and save to a JSON file",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "browser_screenshot, browser_verify_state, and hands_summarize_run",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_trace_start",
@@ -1193,12 +1220,13 @@
       "local": true,
       "github_main": true,
       "source_status": "Shared",
-      "ability": "Start recording a browser trace. Captures navigation, clicks, resource loading, paint timing, and URL changes.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "ability": "Compatibility/debug trace start for navigation, click coordinates, resource timing, and paint timing. Disabled under a strict monitor fence.",
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "browser_screenshot, browser_verify_state, and hands_summarize_run",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_trace_stop",
@@ -1206,12 +1234,13 @@
       "local": true,
       "github_main": true,
       "source_status": "Shared",
-      "ability": "Stop trace recording and return all captured entries as JSON",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "ability": "Stop tracing and return only the strict Rust trace schema. Available as cleanup under a strict monitor fence.",
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "browser_screenshot, browser_verify_state, and hands_summarize_run",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "browser_type",
@@ -1623,11 +1652,12 @@
       "github_main": true,
       "source_status": "GitHub only",
       "ability": "Invoke a tool exposed by a loaded Hands plugin.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "built-in canonical Hands tools, or an explicitly audited plugin under the trusted-plugin compatibility gate",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "hands_plugin_list",
@@ -1649,11 +1679,12 @@
       "github_main": true,
       "source_status": "GitHub only",
       "ability": "Load and validate a native Hands plugin library.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "statically integrated audited capability, or an explicitly audited plugin under the trusted-plugin compatibility gate",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "hands_plugin_unload",
@@ -1662,11 +1693,12 @@
       "github_main": true,
       "source_status": "GitHub only",
       "ability": "Shut down and unload a Hands plugin.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "end the isolated compatibility session after plugin work, or use the trusted-plugin compatibility gate",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "hands_read_page",
@@ -1675,11 +1707,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "RECOMMENDED: Fetch readable content from any URL. Auto-escalates HTTP scrape Node.js rendering Chrome as needed no manual browser setup required. Use instead of browser_http_scrape / browser_smart_browse / browser_navigate + browser_extract_content chains.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "hands_navigate plus browser_extract_content in the visible browser",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "hands_scan_qr",
@@ -1688,11 +1721,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Scan a QR code from screen or browser, decode it, and validate otpauth:// URI format. Returns the decoded URI for registration via workflow:totp_register_from_uri. Supports full-screen capture or browser-only capture with optional region cropping.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "vision_screenshot followed by explicit user-reviewed QR handling",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "hands_script",
@@ -1701,11 +1735,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "RECOMMENDED: Execute a multi-step automation script. Chains meta-tool calls with {{var}} substitution, output capture, per-step error handling (stop/skip/retry), and per-step + overall timeouts. Use for login flows, form wizards, multi-page workflows. Use instead of manual meta-tool call sequences.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "explicit bounded calls to advertised safe tools or browser_batch for its fixed action set",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "hands_summarize_run",
@@ -1792,11 +1827,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "[Vision] Screenshot and OCR bottom of screen to detect if user typed during tool execution.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "native host interruption and consent signals",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "vision_diff",
@@ -2052,11 +2088,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Drain queued events from active watches. Returns events and removes them from the queue. Call periodically or on-demand to check what happened.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "explicit polling with hands_verify or uia_get_state",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "uia_read_value",
@@ -2065,11 +2102,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Read the text/value content of UI elements. Uses UIA ValuePattern and TextPattern to extract actual text from Edit fields, text boxes, documents, etc. Filter by name, automation_id, or control_type.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "uia_get_state for structural state, or hands_verify for an explicit expected condition",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "uia_scroll",
@@ -2117,11 +2155,12 @@
       "github_main": true,
       "source_status": "Shared",
       "ability": "Register a watch for desktop events. Background thread polls every 750ms and queues events. Use uia_poll_events to drain. Types: 'focus' (window focus changes), 'window_list' (windows open/close), 'element_value' (UI element text changes). Actions: 'add', 'remove', 'list', 'clear'.",
-      "disposition": "canonical",
-      "replacement": null,
-      "exposed_strict": true,
-      "exposed_full": true,
-      "exposed_default": true
+      "disposition": "unsafe_debug_compatibility",
+      "safety": "unsafe-debug-compatibility-only",
+      "replacement": "explicit polling with hands_verify or uia_get_state",
+      "exposed_strict": false,
+      "exposed_full": false,
+      "exposed_default": false
     },
     {
       "name": "uia_window_move",

@@ -211,12 +211,14 @@ pub fn ref_resolution_js(ref_id: &str) -> Result<String, String> {
             .replace("\\:", ":")
             .replace("\\\\", "\\");
         let _index = parts.get(2).unwrap_or(&"0");
+        let role_js = serde_json::to_string(role).unwrap_or_else(|_| "\"\"".to_string());
+        let name_js = serde_json::to_string(&name).unwrap_or_else(|_| "\"\"".to_string());
 
         // Build JS that finds element by role + accessible name
         let js = format!(
             r#"(() => {{
-                const role = '{}';
-                const targetName = '{}';
+                const role = {};
+                const targetName = {};
 
                 // Map role to candidate selectors
                 const ROLE_SELECTORS = {{
@@ -307,16 +309,13 @@ pub fn ref_resolution_js(ref_id: &str) -> Result<String, String> {
                 }}
                 return null;
             }})()"#,
-            role.replace('\'', "\\'"),
-            name.replace('\'', "\\'"),
+            role_js, name_js,
         );
         Ok(js)
     } else {
         // Plain CSS selector (shouldn't happen with our format, but handle it)
-        Ok(format!(
-            "document.querySelector('{}')",
-            selector.replace('\'', "\\'")
-        ))
+        let selector_js = serde_json::to_string(&selector).unwrap_or_else(|_| "\"\"".to_string());
+        Ok(format!("document.querySelector({selector_js})"))
     }
 }
 

@@ -1055,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "hands"
-version = "1.1.0-unified.1"
+version = "1.1.0-unified.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

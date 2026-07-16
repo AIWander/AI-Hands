@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "hands",
   "display_name": "AI-Hands",
-  "version": "1.1.0-unified.1",
+  "version": "1.1.0-unified.2",
   "description": "Browser automation, Windows UIA, OCR, and computer vision for Claude",
   "long_description": "AI-Hands provides chromiumoxide-based browser automation (CDP), Windows UI Automation (UIA) for native app control, OCR text extraction, and computer vision capabilities. It enables Claude to interact with any application or website on Windows. Successor to AIWander/hands; same Rust codebase, fresh versioning. MCP tool prefix and binary name unchanged.",
   "author": {

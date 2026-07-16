@@ -236,22 +236,6 @@ $results = foreach ($profile in $expected.Keys) {
             $requestId++
         }
 
-        $snapshotDefinition = @($definitions | Where-Object name -eq 'browser_a11y_snapshot')[0]
-        $snapshotProperties = @($snapshotDefinition.inputSchema.properties.PSObject.Properties.Name)
-        foreach ($requiredProperty in @('root_selector','include_ignored','max_depth','max_nodes','incremental')) {
-            if ($requiredProperty -notin $snapshotProperties) {
-                throw "United a11y snapshot schema is missing '$requiredProperty'"
-            }
-        }
-
-        $findDefinition = @($definitions | Where-Object name -eq 'browser_a11y_find')[0]
-        $findProperties = @($findDefinition.inputSchema.properties.PSObject.Properties.Name)
-        foreach ($requiredProperty in @('role','name','exact','refresh','max_nodes')) {
-            if ($requiredProperty -notin $findProperties) {
-                throw "United a11y find schema is missing '$requiredProperty'"
-            }
-        }
-
         $ocrDefinition = @($definitions | Where-Object name -eq 'vision_ocr')[0]
         if ($ocrDefinition.description -notmatch 'automatic result caching' -or $ocrDefinition.description -notmatch 'backend metadata') {
             throw 'Canonical vision_ocr does not advertise the absorbed cache/backend contract'
@@ -270,6 +254,24 @@ $results = foreach ($profile in $expected.Keys) {
         foreach ($requiredProperty in @('action','mode','monitor','display_id','browser_window_title')) {
             if ($requiredProperty -notin $monitorProperties) {
                 throw "hands_monitor_scope schema is missing '$requiredProperty'"
+            }
+        }
+    }
+
+    if ($profile -eq 'compatibility') {
+        $snapshotDefinition = @($definitions | Where-Object name -eq 'browser_a11y_snapshot')[0]
+        $snapshotProperties = @($snapshotDefinition.inputSchema.properties.PSObject.Properties.Name)
+        foreach ($requiredProperty in @('root_selector','include_ignored','max_depth','max_nodes','incremental')) {
+            if ($requiredProperty -notin $snapshotProperties) {
+                throw "United a11y snapshot schema is missing '$requiredProperty'"
+            }
+        }
+
+        $findDefinition = @($definitions | Where-Object name -eq 'browser_a11y_find')[0]
+        $findProperties = @($findDefinition.inputSchema.properties.PSObject.Properties.Name)
+        foreach ($requiredProperty in @('role','name','exact','refresh','max_nodes')) {
+            if ($requiredProperty -notin $findProperties) {
+                throw "United a11y find schema is missing '$requiredProperty'"
             }
         }
     }

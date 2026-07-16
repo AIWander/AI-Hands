@@ -32,6 +32,7 @@ mod canonical;
 mod dashboard_endpoint;
 mod meta;
 mod monitor_scope;
+mod network_redaction;
 mod plugin;
 mod security;
 mod stealth;
@@ -136,9 +137,15 @@ fn get_all_tool_definitions_raw() -> Vec<Value> {
                 }));
             }
         }
+        let description = match t.name.as_str() {
+            "get_network_log" => "Get intercepted/logged network requests captured by routes. Credential values, URL query values, fragments, and request/response body values are always redacted; body shape is preserved when structured.",
+            "trace_stop" => "Stop trace recording and return sanitized entries. URL query values, fragments, click text, script source, and resolved parameter values are always redacted.",
+            "trace_save" => "Stop trace recording and save sanitized entries to a new JSON file. Existing files are never overwritten. URL query values, fragments, click text, script source, and resolved parameter values are always redacted.",
+            _ => t.description.as_str(),
+        };
         tools.push(json!({
             "name": format!("browser_{}", t.name),
-            "description": t.description,
+            "description": description,
             "inputSchema": schema,
         }));
     }
@@ -671,7 +678,7 @@ fn get_all_tool_definitions_raw() -> Vec<Value> {
 
     tools.push(json!({
         "name": "browser_get_all_network",
-        "description": "Get ALL network activity by merging route-based logs (browser_get_network_log) and Performance API logs (browser_get_performance_log). Each entry includes a 'source' field ('route' or 'performance'). Provides the most complete picture of network requests.",
+        "description": "Get network activity by merging route-based logs (browser_get_network_log) and Performance API logs (browser_get_performance_log). Each entry includes a source field. Credential values, URL query values, fragments, and body values are always redacted; structured body shape is preserved.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -691,7 +698,7 @@ fn get_all_tool_definitions_raw() -> Vec<Value> {
 
     tools.push(json!({
         "name": "browser_learn_api",
-        "description": "Analyze captured network traffic to discover API endpoints. Call this AFTER interacting with a page to extract the APIs it uses. Returns structured endpoint patterns (URL, method, headers, body template) that can be stored and replayed via direct HTTP calls.",
+        "description": "Analyze captured network traffic to discover API candidates. Output is redacted and includes observed/inferred provenance. Current route/performance capture can omit method, headers, body, status, and response semantics, so replay_ready is always false until a human or Workflow verifies the current method, schema, credential reference, and response behavior.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -753,6 +760,75 @@ fn get_all_tool_definitions_raw() -> Vec<Value> {
 
 fn get_all_tool_definitions() -> Vec<Value> {
     canonical::filter_tool_definitions(get_all_tool_definitions_raw())
+        .into_iter()
+        .map(annotate_unsafe_compatibility_gate)
+        .collect()
+}
+
+fn annotate_unsafe_compatibility_gate(mut definition: Value) -> Value {
+    let Some(name) = definition.get("name").and_then(Value::as_str) else {
+        return definition;
+    };
+    let gates = canonical::unsafe_compatibility_gates(name);
+    if gates.is_empty() {
+        return definition;
+    }
+    let Some(object) = definition.as_object_mut() else {
+        return definition;
+    };
+    let description = object
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let gate_summary = gates
+        .iter()
+        .map(|(kind, env_name, argument_name)| {
+            format!("{env_name}=1 and {argument_name}=true ({kind})")
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    object.insert(
+        "description".into(),
+        Value::String(format!(
+            "{description} UNSAFE COMPATIBILITY CAPABILITY: requires HANDS_TOOL_PROFILE=compatibility plus every gate on this call: {gate_summary}."
+        )),
+    );
+    if let Some(properties) = object
+        .get_mut("inputSchema")
+        .and_then(Value::as_object_mut)
+        .and_then(|schema| schema.get_mut("properties"))
+        .and_then(Value::as_object_mut)
+    {
+        for (kind, env_name, argument_name) in &gates {
+            properties.insert(
+                (*argument_name).into(),
+                json!({
+                    "type": "boolean",
+                    "default": false,
+                    "description": format!(
+                        "Per-call acknowledgement for this {kind} capability. Also requires HANDS_TOOL_PROFILE=compatibility and {env_name}=1."
+                    )
+                }),
+            );
+        }
+    }
+    object.insert("x-hands-unsafe-compatibility".into(), json!(true));
+    object.insert(
+        "x-hands-unsafe-gates".into(),
+        json!(gates
+            .iter()
+            .map(|(kind, env_name, argument_name)| json!({
+                "kind": kind,
+                "env": env_name,
+                "argument": argument_name
+            }))
+            .collect::<Vec<_>>()),
+    );
+    if gates.len() == 1 {
+        object.insert("x-hands-unsafe-env".into(), json!(gates[0].1));
+        object.insert("x-hands-unsafe-argument".into(), json!(gates[0].2));
+    }
+    definition
 }
 
 // ============ COMBO TOOL HANDLERS ============
@@ -1937,11 +2013,16 @@ fn handle_type_into_window(args: &Value) -> Value {
 
     // Type
     let type_result = uia_lib::handle_tool_call("uia_type_text", &json!({"text": text}));
+    let success = type_result
+        .get("success")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     json!({
-        "success": true,
+        "success": success,
         "window": title,
-        "typed": text,
+        "typed": success,
+        "typed_length": text.chars().count(),
         "type_result": type_result
     })
 }
@@ -2046,13 +2127,15 @@ pub(crate) async fn handle_accessibility_snapshot(
 
     // JavaScript that walks the DOM and builds an accessibility tree.
     // Uses HTML semantics + ARIA attributes to determine roles, names, and states.
+    let root_selector_js =
+        serde_json::to_string(root_selector).expect("JSON string serialization cannot fail");
     let script = format!(
         r#"
     (() => {{
         const MAX_DEPTH = {max_depth};
         const MAX_NODES = {max_nodes};
         const INCLUDE_IGNORED = {include_ignored};
-        const ROOT_SELECTOR = "{root_selector_escaped}";
+        const ROOT_SELECTOR = {root_selector_js};
         let semanticNodeCount = 0;
 
         // Map HTML tags to implicit ARIA roles
@@ -2209,10 +2292,12 @@ pub(crate) async fn handle_accessibility_snapshot(
             if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {{
                 const t = (el.type || 'text').toLowerCase();
                 if (t === 'password') props.type = 'password';
-                if (el.value && t !== 'password') props.value = el.value.slice(0, 100);
+                props.has_value = typeof el.value === 'string' && el.value.length > 0;
+                props.value_length = typeof el.value === 'string' ? el.value.length : 0;
             }}
             if (el.tagName === 'SELECT' && el.selectedIndex >= 0) {{
-                props.value = el.options[el.selectedIndex]?.text?.slice(0, 100);
+                props.has_selection = true;
+                props.selected_index = el.selectedIndex;
             }}
             if (el.tagName === 'METER' || el.tagName === 'PROGRESS') {{
                 if (el.value !== undefined) props.value = el.value;
@@ -2334,7 +2419,7 @@ pub(crate) async fn handle_accessibility_snapshot(
         max_depth = max_depth,
         max_nodes = max_nodes,
         include_ignored = if include_ignored { "true" } else { "false" },
-        root_selector_escaped = root_selector.replace('\\', "\\\\").replace('"', "\\\""),
+        root_selector_js = root_selector_js,
     );
 
     // Execute the JS via the browser
@@ -2588,17 +2673,23 @@ async fn handle_file_upload(args: &Value, browser: &browser_mcp::browser::Shared
     let files_js: Vec<String> = file_data
         .iter()
         .map(|(name, mime, b64)| {
+            let b64 = serde_json::to_string(b64).expect("JSON string serialization cannot fail");
+            let name = serde_json::to_string(name).expect("JSON string serialization cannot fail");
+            let mime = serde_json::to_string(mime).expect("JSON string serialization cannot fail");
             format!(
-            "new File([Uint8Array.from(atob('{}'), c => c.charCodeAt(0))], '{}', {{type: '{}'}})",
-            b64, name, mime
-        )
+                "new File([Uint8Array.from(atob({}), c => c.charCodeAt(0))], {}, {{type: {}}})",
+                b64, name, mime
+            )
         })
         .collect();
 
+    let selector_js =
+        serde_json::to_string(selector).expect("JSON string serialization cannot fail");
+
     let script = format!(
         r#"(() => {{
-            const input = document.querySelector('{}');
-            if (!input) return JSON.stringify({{error: 'Element not found: {}'}});
+            const input = document.querySelector({});
+            if (!input) return JSON.stringify({{error: 'Element not found'}});
             const dt = new DataTransfer();
             const files = [{}];
             files.forEach(f => dt.items.add(f));
@@ -2606,8 +2697,7 @@ async fn handle_file_upload(args: &Value, browser: &browser_mcp::browser::Shared
             input.dispatchEvent(new Event('change', {{bubbles: true}}));
             return JSON.stringify({{success: true, files_set: {}}});
         }})()"#,
-        selector.replace('\'', "\\'"),
-        selector.replace('\'', "\\'"),
+        selector_js,
         files_js.join(", "),
         file_paths.len()
     );
@@ -2694,12 +2784,18 @@ async fn handle_get_network_log(
         .collect();
     let combined = text_parts.join("\n");
 
-    // If JS eval fails (e.g. CDP timeout, no page loaded), return empty rather than error
+    // If JS eval fails, fail closed without echoing browser error text that may
+    // contain a sensitive URL.
     if result.is_error {
-        return json!({"entries": [], "count": 0, "note": format!("JS eval failed (returning empty): {}", combined)});
+        return json!({
+            "entries": [],
+            "count": 0,
+            "note": "Performance log unavailable; raw browser error withheld",
+            "conservative_redaction_applied": true
+        });
     }
 
-    match serde_json::from_str::<Value>(&combined) {
+    let parsed = match serde_json::from_str::<Value>(&combined) {
         Ok(val) => {
             // The evaluate tool may return the JSON as a string within JSON
             if let Some(s) = val.as_str() {
@@ -2710,8 +2806,202 @@ async fn handle_get_network_log(
                 json!({"entries": val})
             }
         }
-        Err(_) => json!({"entries": [], "note": combined}),
+        Err(_) => {
+            return json!({
+                "entries": [],
+                "count": 0,
+                "note": "Performance log returned an unparseable payload; raw text withheld",
+                "conservative_redaction_applied": true
+            })
+        }
+    };
+    let mut output = network_redaction::project_performance_log_value(&parsed);
+    network_redaction::redact_network_value_in_place(&mut output);
+    if let Some(object) = output.as_object_mut() {
+        object.insert("conservative_redaction_applied".into(), json!(true));
     }
+    output
+}
+
+fn parse_network_log_text(text: &str) -> Option<Value> {
+    let mut value = serde_json::from_str::<Value>(text).ok()?;
+    for _ in 0..2 {
+        let Some(inner) = value.as_str() else {
+            break;
+        };
+        value = serde_json::from_str::<Value>(inner).ok()?;
+    }
+    Some(value)
+}
+
+fn unsafe_compatibility_block(name: &str, args: &Value) -> Option<Value> {
+    canonical::unsafe_call_block_response(name, args)
+}
+
+fn capture_path_pointers(name: &str) -> &'static [&'static str] {
+    match name {
+        "vision_screenshot" | "vision_zoom" => &["/path"],
+        "window_screenshot" => &["/image_path", "/screenshot_result/path"],
+        "vision_screenshot_hidden_window" => &["/image_path"],
+        _ => &[],
+    }
+}
+
+fn sanitize_tool_output(name: &str, value: Value) -> Value {
+    let owned_capture_paths = capture_path_pointers(name)
+        .iter()
+        .filter_map(|pointer| {
+            value
+                .pointer(pointer)
+                .and_then(Value::as_str)
+                .filter(|path| monitor_scope::is_safe_generated_capture_path(path))
+                .map(|path| (*pointer, path.to_string()))
+        })
+        .collect::<Vec<_>>();
+
+    let mut safe = network_redaction::redact_network_value(&value);
+    for (pointer, path) in owned_capture_paths {
+        if let Some(slot) = safe.pointer_mut(pointer) {
+            *slot = Value::String(path);
+        }
+    }
+    safe
+}
+
+async fn handle_redacted_route_network_log(
+    args: &Value,
+    browser: &browser_mcp::browser::SharedBrowser,
+) -> Value {
+    let clear = args.get("clear").and_then(Value::as_bool).unwrap_or(false);
+    let result =
+        browser_mcp::tools::handle_tool(browser, "get_network_log", json!({"clear": clear})).await;
+    if result.is_error {
+        return json!({
+            "success": false,
+            "error": "Route network log was unavailable",
+            "conservative_redaction_applied": true
+        });
+    }
+
+    let text = result
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            browser_mcp::types::ToolContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let Some(value) = parse_network_log_text(&text) else {
+        return json!({
+            "success": false,
+            "error": "Route network log returned an unparseable payload; raw text was withheld",
+            "conservative_redaction_applied": true
+        });
+    };
+    let mut value = meta::network_subscribe::project_network_log_value(&value);
+    network_redaction::redact_network_value_in_place(&mut value);
+
+    match value {
+        Value::Array(entries) => json!({
+            "entries": entries,
+            "count": entries.len(),
+            "conservative_redaction_applied": true
+        }),
+        Value::Object(mut object) => {
+            object.insert("conservative_redaction_applied".into(), json!(true));
+            Value::Object(object)
+        }
+        _ => json!({
+            "success": false,
+            "error": "Route network log returned an unsupported payload; raw data was withheld",
+            "conservative_redaction_applied": true
+        }),
+    }
+}
+
+async fn collect_redacted_trace(
+    browser: &browser_mcp::browser::SharedBrowser,
+) -> Result<Value, String> {
+    let trace = browser
+        .write()
+        .await
+        .trace_stop()
+        .await
+        .map_err(|_| "Could not stop browser trace; raw error withheld".to_string())?;
+    let projected = network_redaction::project_trace_value(&trace);
+    let mut safe = network_redaction::redact_trace_value(&projected);
+    if let Some(object) = safe.as_object_mut() {
+        object.insert("conservative_redaction_applied".into(), json!(true));
+    }
+    Ok(safe)
+}
+
+async fn handle_safe_trace_stop(browser: &browser_mcp::browser::SharedBrowser) -> Value {
+    collect_redacted_trace(browser)
+        .await
+        .unwrap_or_else(|error| json!({"success": false, "error": error}))
+}
+
+async fn handle_safe_trace_save(
+    args: &Value,
+    browser: &browser_mcp::browser::SharedBrowser,
+) -> Value {
+    let Some(path) = args
+        .get("path")
+        .and_then(Value::as_str)
+        .filter(|p| !p.is_empty())
+    else {
+        return json!({"success": false, "error": "Missing non-empty trace path"});
+    };
+    let safe = match collect_redacted_trace(browser).await {
+        Ok(trace) => trace,
+        Err(error) => return json!({"success": false, "error": error}),
+    };
+    let json = match serde_json::to_string_pretty(&safe) {
+        Ok(json) => json,
+        Err(_) => {
+            return json!({
+                "success": false,
+                "error": "Could not serialize sanitized trace"
+            })
+        }
+    };
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return json!({
+                "success": false,
+                "error": "Trace destination already exists; refusing to overwrite"
+            })
+        }
+        Err(_) => {
+            return json!({
+                "success": false,
+                "error": "Could not create trace destination; raw path and OS error withheld"
+            })
+        }
+    };
+    if file.write_all(json.as_bytes()).is_err() || file.flush().is_err() {
+        return json!({
+            "success": false,
+            "error": "Could not finish writing sanitized trace"
+        });
+    }
+    json!({
+        "success": true,
+        "saved": true,
+        "file": std::path::Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("trace.json"),
+        "count": safe.get("count").and_then(Value::as_u64).unwrap_or(0),
+        "conservative_redaction_applied": true
+    })
 }
 
 async fn handle_a11y_find(args: &Value, browser: &browser_mcp::browser::SharedBrowser) -> Value {
@@ -2849,34 +3139,15 @@ async fn handle_get_all_network(
         .unwrap_or(100);
     let clear = args.get("clear").and_then(|v| v.as_bool()).unwrap_or(true);
 
-    // Source 1: Route-based network log (via browser-mcp)
-    let route_result =
-        browser_mcp::tools::handle_tool(browser, "get_network_log", json!({"clear": clear})).await;
-    let route_text: String = route_result
-        .content
-        .iter()
-        .filter_map(|c| match c {
-            browser_mcp::types::ToolContent::Text { text } => Some(text.clone()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let mut route_entries: Vec<Value> = if !route_result.is_error {
-        serde_json::from_str::<Value>(&route_text)
-            .ok()
-            .and_then(|v| {
-                // The response may have entries at top level or nested
-                if let Some(arr) = v.as_array() {
-                    Some(arr.clone())
-                } else {
-                    v.get("entries").and_then(|e| e.as_array()).cloned()
-                }
-            })
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    // Source 1: route-based network log. Redaction occurs before this handler
+    // sees any captured value, so learn_api cannot accidentally return secrets.
+    let route_result = handle_redacted_route_network_log(&json!({"clear": clear}), browser).await;
+    let mut route_entries: Vec<Value> = route_result
+        .get("entries")
+        .or_else(|| route_result.get("requests"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
 
     // Tag each route entry with source
     for entry in &mut route_entries {
@@ -2909,6 +3180,7 @@ async fn handle_get_all_network(
         "entries": all_entries,
         "count": all_entries.len(),
         "sources": ["route", "performance"],
+        "conservative_redaction_applied": true,
     })
 }
 
@@ -3181,10 +3453,11 @@ pub(crate) async fn resolve_a11y_ref(
     let resolve_js = a11y_cache::ref_resolution_js(ref_id)?;
 
     // Wrap the resolution JS to return a unique selector for the found element
+    let ref_id_js = serde_json::to_string(ref_id).expect("JSON string serialization cannot fail");
     let script = format!(
         r#"(() => {{
             const el = {};
-            if (!el) return JSON.stringify({{error: 'Element not found for ref: {}'}});
+            if (!el) return JSON.stringify({{error: 'Element not found for ref', ref: {}}});
 
             // Generate a unique CSS selector for this element
             function uniqueSelector(element) {{
@@ -3223,8 +3496,7 @@ pub(crate) async fn resolve_a11y_ref(
 
             return JSON.stringify({{selector: uniqueSelector(el)}});
         }})()"#,
-        resolve_js,
-        ref_id.replace('"', "\\\""),
+        resolve_js, ref_id_js,
     );
 
     let eval_args = json!({"script": script});
@@ -3277,10 +3549,12 @@ pub(crate) async fn resolve_a11y_ref(
         {
             // Retry resolution with fresh cache
             if let Ok(resolve_js2) = a11y_cache::ref_resolution_js(ref_id) {
+                let ref_id_js =
+                    serde_json::to_string(ref_id).expect("JSON string serialization cannot fail");
                 let script2 = format!(
                     r#"(() => {{
                         const el = {};
-                        if (!el) return JSON.stringify({{error: 'Element not found for ref: {}'}});
+                        if (!el) return JSON.stringify({{error: 'Element not found for ref', ref: {}}});
                         function uniqueSelector(element) {{
                             if (element.id) return '#' + CSS.escape(element.id);
                             const label = element.getAttribute('aria-label');
@@ -3305,8 +3579,7 @@ pub(crate) async fn resolve_a11y_ref(
                         }}
                         return JSON.stringify({{selector: uniqueSelector(el)}});
                     }})()"#,
-                    resolve_js2,
-                    ref_id.replace('"', "\\\""),
+                    resolve_js2, ref_id_js,
                 );
                 let retry_result =
                     browser_mcp::tools::handle_tool(browser, "eval", json!({"script": script2}))
@@ -3420,15 +3693,17 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
             .get("transferSize")
             .and_then(|v| v.as_u64())
             .or_else(|| entry.get("response_size").and_then(|v| v.as_u64()))
+            .or_else(|| entry.get("size_bytes").and_then(|v| v.as_u64()))
             .unwrap_or(0);
         if resp_size < min_response_size && min_response_size > 0 {
             continue;
         }
 
+        let method_observed = entry.get("method").and_then(Value::as_str).is_some();
         let method = entry
             .get("method")
             .and_then(|v| v.as_str())
-            .unwrap_or("GET")
+            .unwrap_or("UNKNOWN")
             .to_string();
         let content_type = entry
             .get("content_type")
@@ -3448,6 +3723,8 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
             .to_string();
 
         // Extract headers (from route entries)
+        let headers_observed =
+            entry.get("request_headers").is_some() || entry.get("headers").is_some();
         let headers = entry
             .get("request_headers")
             .cloned()
@@ -3462,9 +3739,10 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
                     .find(|(k, _)| k.to_lowercase() == "authorization")
                     .map(|(_, v)| v.as_str().unwrap_or(""))
                     .unwrap_or("");
-                if auth_val.starts_with("Bearer ") {
+                let auth_val = auth_val.to_ascii_lowercase();
+                if auth_val.starts_with("bearer ") {
                     "bearer"
-                } else if auth_val.starts_with("Basic ") {
+                } else if auth_val.starts_with("basic ") {
                     "basic"
                 } else {
                     "custom"
@@ -3483,6 +3761,7 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
         };
 
         // Extract body template (from route entries with POST/PUT/PATCH)
+        let body_observed = entry.get("request_body").is_some() || entry.get("body").is_some();
         let body_template = if ["POST", "PUT", "PATCH"].contains(&method.as_str()) {
             entry
                 .get("request_body")
@@ -3493,6 +3772,7 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
         };
 
         // Extract response shape (first-level JSON keys)
+        let response_shape_observed = entry.get("response_body").is_some();
         let response_shape: Option<Vec<String>> = entry.get("response_body").and_then(|v| {
             if let Some(obj) = v.as_object() {
                 Some(obj.keys().cloned().collect())
@@ -3509,12 +3789,17 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
             "url_pattern": url_pattern_base,
             "url_actual": url,
             "method": method,
+            "method_provenance": if method_observed { "observed" } else { "unknown" },
             "headers": headers,
+            "headers_observed": headers_observed,
             "auth_type": auth_type,
             "body_template": body_template,
+            "body_observed": body_observed,
             "response_shape": response_shape,
+            "response_shape_observed": response_shape_observed,
             "content_type": content_type,
             "response_size": resp_size,
+            "replay_ready": false,
         }));
     }
 
@@ -3563,6 +3848,10 @@ async fn handle_learn_api(args: &Value, browser: &browser_mcp::browser::SharedBr
         "total_requests_captured": total,
         "api_requests_found": discovered.len(),
         "static_filtered": static_filtered,
+        "conservative_redaction_applied": true,
+        "replay_ready": false,
+        "warning": "Discovery candidates only. Verify the current method, query keys, request and response schema, credential reference, and response semantics before storing a durable Workflow method or making a direct API call.",
+        "capture_limitations": "Route logs currently observe URL, method, time, and action; Performance API rows observe URL and timing/size only. Headers, bodies, status, and response semantics may be absent.",
     })
 }
 
@@ -3681,10 +3970,16 @@ async fn handle_browser_batch(
             "wait_for" => "wait_for",
             "scroll" => "scroll",
             "a11y_snapshot" => {
-                // Special: a11y_snapshot is handled by hands, not browser-mcp directly
-                let result = handle_accessibility_snapshot(&params, browser).await;
-                results.push(json!({"index": i, "type": action_type, "result": result}));
-                continue;
+                let err = json!({
+                    "index": i,
+                    "success": false,
+                    "error": "a11y_snapshot is unavailable in browser_batch; use the separately gated browser_a11y_snapshot compatibility tool"
+                });
+                results.push(err);
+                if continue_on_error {
+                    continue;
+                }
+                break;
             }
             other => {
                 let err = json!({"index": i, "success": false, "error": format!("unknown action type: {}", other)});
@@ -3769,7 +4064,18 @@ fn handle_uia_batch(args: &Value) -> Value {
             "key_press" => "uia_key_press",
             "focus_window" => "uia_focus_window",
             "screenshot" => "vision_screenshot",
-            "read_value" => "uia_read_value",
+            "read_value" => {
+                let err = json!({
+                    "index": i,
+                    "success": false,
+                    "error": "read_value is unavailable in uia_batch; use the separately gated uia_read_value compatibility tool"
+                });
+                results.push(err);
+                if continue_on_error {
+                    continue;
+                }
+                break;
+            }
             "scroll" => "uia_scroll",
             other => {
                 let err = json!({"index": i, "success": false, "error": format!("unknown action type: {}", other)});
@@ -3845,17 +4151,22 @@ pub(crate) async fn handle_tool_call(
     session: &meta::SessionHandle,
 ) -> Value {
     let _dispatch_start = std::time::Instant::now();
-    let scoped_args = match monitor_scope::prepare_call(name, args) {
-        Ok(scoped) => scoped,
-        Err(blocked) => return blocked,
+    let raw_result = match monitor_scope::prepare_call(name, args) {
+        Ok(scoped_args) => {
+            let result = handle_tool_call_inner(name, &scoped_args, browser, session).await;
+            dashboard_endpoint::record_action(
+                name,
+                &scoped_args,
+                _dispatch_start.elapsed().as_millis() as u64,
+            );
+            result
+        }
+        Err(blocked) => blocked,
     };
-    let _result = handle_tool_call_inner(name, &scoped_args, browser, session).await;
-    dashboard_endpoint::record_action(
-        name,
-        &scoped_args,
-        _dispatch_start.elapsed().as_millis() as u64,
-    );
-    _result
+    // One final sink boundary for every tool family, including nested browser
+    // batches, UIA, vision, plugins, and meta-tools. Leaf-level sanitizers are
+    // defense in depth; this is the boundary that prevents repackaging bypasses.
+    sanitize_tool_output(name, raw_result)
 }
 
 async fn handle_tool_call_inner(
@@ -3869,10 +4180,18 @@ async fn handle_tool_call_inner(
     }
 
     if name == monitor_scope::TOOL_NAME {
+        let persistent = browser.read().await.persistent_page_automation();
+        if let Some(blocked) = monitor_scope::persistent_state_activation_error(args, &persistent) {
+            return blocked;
+        }
         return monitor_scope::handle_tool(args);
     }
 
     if let Some(blocked) = canonical::blocked_call_response(name) {
+        return blocked;
+    }
+
+    if let Some(blocked) = unsafe_compatibility_block(name, args) {
         return blocked;
     }
 
@@ -3890,25 +4209,20 @@ async fn handle_tool_call_inner(
             if let Ok(guard) = browser.try_read() {
                 dashboard_endpoint::update_browser_snapshot(guard.status());
             }
-            return result;
+            return sanitize_tool_output(name, result);
         }
         Ok(None) => {} // Not a meta-tool, continue to other dispatch paths
         Err(panic_info) => {
-            let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
-                s.to_string()
-            } else if let Some(s) = panic_info.downcast_ref::<String>() {
-                s.clone()
-            } else {
-                "unknown panic".to_string()
-            };
+            let _ = panic_info;
             eprintln!(
-                "[hands] PANIC CAUGHT in meta-tool '{}': {}",
-                name, panic_msg
+                "[hands] PANIC CAUGHT in meta-tool '{}'; details withheld",
+                name
             );
             return json!({
                 "success": false,
-                "error": format!("Internal error in '{}': {}", name, panic_msg),
+                "error": format!("Internal error in '{}'; panic details withheld", name),
                 "panic_caught": true,
+                "raw_error_withheld": true,
             });
         }
     }
@@ -3953,6 +4267,9 @@ async fn handle_tool_call_inner(
         "browser_a11y_snapshot" | "browser_accessibility_snapshot" => {
             return handle_accessibility_snapshot(args, browser).await
         }
+        "browser_get_network_log" => return handle_redacted_route_network_log(args, browser).await,
+        "browser_trace_stop" => return handle_safe_trace_stop(browser).await,
+        "browser_trace_save" => return handle_safe_trace_save(args, browser).await,
         "browser_get_performance_log" => return handle_get_network_log(args, browser).await,
         "element_drag" => return handle_element_drag(args, browser).await,
         "browser_batch" => return handle_browser_batch(args, browser).await,
@@ -4069,10 +4386,7 @@ async fn handle_tool_call_inner(
                 let temp_profile = std::env::temp_dir().join("hands_chrome_profile");
                 let _ = std::fs::create_dir_all(&temp_profile);
                 let temp_profile_str = temp_profile.to_string_lossy().to_string();
-                eprintln!(
-                    "[hands] Chrome profile locked, retrying with temp profile: {}",
-                    temp_profile_str
-                );
+                eprintln!("[hands] Chrome profile locked, retrying with an isolated temp profile");
 
                 let mut retry_args = saved_args.clone();
                 if let Some(obj) = retry_args.as_object_mut() {
@@ -4091,10 +4405,7 @@ async fn handle_tool_call_inner(
                         )
                         .await;
                         if stealth_result.is_error {
-                            eprintln!(
-                                "[hands] Stealth JS injection warning (auto-retry): {:?}",
-                                stealth_result.content
-                            );
+                            eprintln!("[hands] Stealth JS injection warning (auto-retry); details withheld");
                         }
                     }
                     let retry_text: Vec<String> = retry_result
@@ -4109,20 +4420,20 @@ async fn handle_tool_call_inner(
                     let mut val = serde_json::from_str::<Value>(&combined_retry)
                         .unwrap_or_else(|_| json!({"result": combined_retry}));
                     if let Some(obj) = val.as_object_mut() {
-                        obj.insert("auto_profile".into(), json!(temp_profile_str));
+                        obj.insert("auto_profile".into(), json!(true));
                         if wants_stealth {
                             obj.insert("stealth".into(), json!(true));
                         }
                     }
-                    return val;
+                    return sanitize_tool_output(name, val);
                 }
 
                 // Retry also failed — return original error with helpful message
                 return json!({
                     "success": false,
                     "error": "Chrome profile is locked by another instance. Auto-retry with temp profile also failed. Either close other Chrome instances or provide a different profile_path.",
-                    "auto_retry_profile": temp_profile_str,
-                    "raw_error": err_text
+                    "auto_retry_profile": "temporary profile path withheld",
+                    "raw_error_withheld": true
                 });
             }
         }
@@ -4152,7 +4463,7 @@ async fn handle_tool_call_inner(
                 obj.insert("a11y_ref_count".into(), json!(ref_count));
                 obj.insert("a11y_hint".into(), json!("Use a11y_ref from browser_a11y_snapshot for element interaction. Refs are pre-cached."));
             }
-            return val;
+            return sanitize_tool_output(name, val);
         }
 
         // After successful launch/attach with stealth, inject anti-detection JS
@@ -4167,10 +4478,7 @@ async fn handle_tool_call_inner(
             )
             .await;
             if stealth_result.is_error {
-                eprintln!(
-                    "[hands] Stealth JS injection warning: {:?}",
-                    stealth_result.content
-                );
+                eprintln!("[hands] Stealth JS injection warning; details withheld");
             }
         }
 
@@ -4185,7 +4493,7 @@ async fn handle_tool_call_inner(
             .collect();
         let combined = text_parts.join("\n");
         return if result.is_error {
-            json!({"success": false, "error": combined})
+            sanitize_tool_output(name, json!({"success": false, "error": combined}))
         } else {
             let mut val = serde_json::from_str::<Value>(&combined)
                 .unwrap_or_else(|_| json!({"result": combined}));
@@ -4212,7 +4520,7 @@ async fn handle_tool_call_inner(
                     obj.insert("attach_lock_release".into(), release);
                 }
             }
-            val
+            sanitize_tool_output(name, val)
         };
     }
 
@@ -4320,8 +4628,19 @@ fn main() {
         ),
     );
 
-    // Spawn HTTP dashboard endpoint (127.0.0.1:9102 by default)
-    dashboard_endpoint::spawn();
+    // The loopback dashboard is optional because it is an additional local
+    // data sink. It has no wildcard CORS, but callers must still opt in.
+    if std::env::var("HANDS_ENABLE_DASHBOARD")
+        .ok()
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+    {
+        dashboard_endpoint::spawn();
+    }
 
     // Create tokio runtime for async browser/vision operations
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -4395,5 +4714,100 @@ mod unified_template_tests {
         let successful = vec![json!({"index": 0, "success": true})];
         assert_eq!(batch_outcome(1, &successful), (true, 0));
         assert_eq!(batch_outcome(2, &successful), (false, 0));
+    }
+
+    #[test]
+    fn uia_batch_refuses_raw_value_composite_action() {
+        let result = handle_uia_batch(&json!({
+            "actions": [{"type": "read_value", "params": {}}]
+        }));
+        assert_eq!(result.get("success"), Some(&json!(false)));
+        assert_eq!(result.get("failures"), Some(&json!(1)));
+        assert!(result
+            .to_string()
+            .contains("separately gated uia_read_value"));
+    }
+
+    #[tokio::test]
+    async fn browser_batch_refuses_raw_a11y_composite_action() {
+        let browser = browser_mcp::browser::create_shared();
+        let result = handle_browser_batch(
+            &json!({"actions": [{"type": "a11y_snapshot", "params": {}}]}),
+            &browser,
+        )
+        .await;
+        assert_eq!(result.get("success"), Some(&json!(false)));
+        assert_eq!(result.get("failures"), Some(&json!(1)));
+        assert!(result
+            .to_string()
+            .contains("separately gated browser_a11y_snapshot"));
+    }
+
+    #[test]
+    fn general_output_sanitizer_does_not_make_blanket_redaction_attestation() {
+        let safe = sanitize_tool_output(
+            "test",
+            json!({"username": "private@example.com", "ordinary": "visible"}),
+        );
+        assert_eq!(safe.get("username"), Some(&json!("[REDACTED]")));
+        assert_eq!(safe.get("ordinary"), Some(&json!("visible")));
+        assert!(safe.get("sensitive_values_redacted").is_none());
+    }
+
+    #[test]
+    fn screenshot_output_preserves_only_existing_hands_owned_generated_path() {
+        let path = monitor_scope::unique_capture_path("window_behind", "png", false);
+        std::fs::write(&path, b"capture-test").expect("write capture fixture");
+
+        let safe = sanitize_tool_output(
+            "vision_screenshot_hidden_window",
+            json!({"success": true, "image_path": path}),
+        );
+        assert_eq!(
+            safe.get("image_path").and_then(Value::as_str),
+            Some(path.as_str())
+        );
+
+        let spoofed = sanitize_tool_output(
+            "browser_get_text",
+            json!({"success": true, "image_path": path}),
+        );
+        assert_ne!(
+            spoofed.get("image_path").and_then(Value::as_str),
+            Some(path.as_str())
+        );
+
+        std::fs::remove_file(path).expect("remove capture fixture");
+    }
+
+    #[test]
+    fn screenshot_output_keeps_arbitrary_private_path_redacted() {
+        let safe = sanitize_tool_output(
+            "vision_screenshot",
+            json!({"success": true, "path": r"C:\Users\private-user\secret\capture.png"}),
+        );
+        assert_eq!(safe.get("path"), Some(&json!("[PRIVATE_PATH]")));
+    }
+
+    #[test]
+    fn composite_unsafe_tool_schema_requires_raw_and_fetch_acknowledgements() {
+        let raw = get_all_tool_definitions_raw()
+            .into_iter()
+            .find(|definition| definition.get("name") == Some(&json!("browser_script")))
+            .expect("browser_script definition");
+        let annotated = annotate_unsafe_compatibility_gate(raw);
+        let properties = annotated
+            .pointer("/inputSchema/properties")
+            .and_then(Value::as_object)
+            .expect("properties");
+        assert!(properties.contains_key("allow_unsafe_fetch"));
+        assert!(properties.contains_key("allow_unsafe_raw"));
+        assert_eq!(
+            annotated
+                .get("x-hands-unsafe-gates")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(2)
+        );
     }
 }

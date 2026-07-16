@@ -14,9 +14,9 @@ See the [`examples/`](examples/) directory for sample configurations and walkthr
 
 AIWander tools are local, user-authorized MCP capability surfaces. They do not grant an AI new permissions by themselves. They expose tools the user explicitly installs and enables. Sensitive actions should be confirmed by the user, credentials should stay in the OS keyring or local vault, and demos should use mock data.
 
-## What's New in v1.1.0-unified.1 (preview)
+## What's New in v1.1.0-unified.2 (preview)
 
-- **Ability-first union:** the public and locally proven Hands surfaces are merged by capability, not by keeping every historical name. The default profile exposes 132 operational tools plus `hands_capability_catalog`; strict, full, and compatibility profiles are available through `HANDS_TOOL_PROFILE`.
+- **Ability-first union:** the public and locally proven Hands surfaces are merged by capability, not by keeping every historical name. The safe `default` profile exposes 104 operational tools plus `hands_capability_catalog`; safe `full` and `strict` profiles and an explicitly unsafe compatibility/debug profile are selected through `HANDS_TOOL_PROFILE`.
 - **Central monitor boundary:** `hands_monitor_scope` lists displays and applies one fail-closed scope across coordinate, UIA, browser-binding, screenshot, OCR, QR, and plugin paths. A locked physical stable ID is the recommended unattended setting.
 - **Collision-resistant screenshots:** automatic filenames include sub-second time, process ID, and a per-process sequence so same-second and concurrent captures do not overwrite one another.
 - **Optional plugin package:** Codex and Claude-compatible manifests, ability-routed skills, per-host instructions, and inert opt-in hook templates live under [`plugins/ai-hands/`](plugins/ai-hands/). They do not silently edit host configuration.
@@ -68,7 +68,7 @@ The entries below are pre-rename `AIWander/hands` lineage notes kept for context
 
 - HTTP dashboard endpoint migrated to tiny_http (smaller binary, simpler stack)
 - Duration tracking for tool calls in dashboard status
-- Credential redaction in dashboard output
+- Best-effort credential-pattern redaction in dashboard output
 - Field name alignment across dashboard JSON responses
 - Metadata cleanup and documentation fixes
 </details>
@@ -151,7 +151,7 @@ scoop install https://raw.githubusercontent.com/AIWander/AI-Hands/main/installer
 - Windows 10/11 (x64 or ARM64)
 - Chrome installed normally (any recent version). AI-Hands does not download or manage browser binaries — it talks to your existing Chrome over CDP.
 - Claude Desktop or any MCP-compatible client
-- Optional `browser_js_extract` parser only: Node.js plus `linkedom` or `jsdom`; normal CDP browser tools do not require Node.js.
+- Optional compatibility/debug-only `browser_js_extract` parser: Node.js plus `linkedom` or `jsdom`; safe-profile CDP browser tools do not require Node.js.
 
 For full per-machine setup (paths, skills, credentials), see [`docs/per_machine_setup.md`](./docs/per_machine_setup.md).
 
@@ -167,7 +167,7 @@ AI-Hands takes a different approach: **use the right automation layer for each t
 
 | Layer | What it does | When to use it |
 |-------|-------------|---------------|
-| **Browser** (chromiumoxide CDP) | Full DOM access, JS eval, network interception, form fill, multi-tab | Web apps, scraping, testing |
+| **Browser** (chromiumoxide CDP) | Structured visible DOM, minimized and pattern-redacted network observation, form interaction, multi-tab | Web apps, current-state reading, testing |
 | **UIA** (Win UI Automation) | Accessibility tree, named elements, window management, app launch | Native Windows apps |
 | **Vision** (OCR + template match) | Screenshot, OCR, image diff, visual analysis | Anything else, verification |
 
@@ -221,26 +221,34 @@ These bundle a specific AI model with their own UI surface. AI-Hands does neithe
 
 ## Ability profiles and collections
 
-The default profile exposes 132 operational tools plus `hands_capability_catalog` (133 `tools/list` entries). `full` exposes 134 plus the catalog, `strict` exposes 136 plus the catalog, and `compatibility` exposes all 143 canonical union tools plus the catalog. Exact duplicate registrations and three Workflow-owned recording front doors are not retained.
+The safe-advertised profiles are `default` with 104 operational tools plus `hands_capability_catalog` (105 `tools/list` entries), `full` with 106 plus the catalog (107 entries), and `strict` with 108 plus the catalog (109 entries). `compatibility` exposes all 143 canonical union tools plus the catalog (144 entries), including unsafe raw/debug and native-plugin capabilities. Exact duplicate registrations and three Workflow-owned recording front doors are not retained.
 
 | Ability collection | Default operational tools |
 |---|---:|
 | Browser sessions, navigation, and contexts | 21 |
-| DOM and page-state discovery | 10 |
+| DOM and page-state discovery | 5 |
 | Browser interaction and forms | 11 |
-| Web retrieval, crawling, and page artifacts | 11 |
+| Web retrieval, crawling, and page artifacts | 3 |
 | API and network intelligence | 12 |
-| Browser evaluation, waits, traces, and evidence | 11 |
-| Browser scripting, planning, and agentic execution | 5 |
-| Desktop apps, windows, input, and UIA | 20 |
-| Vision, OCR, and visual perception | 15 |
+| Browser evaluation, waits, and evidence | 7 |
+| Browser batching, planning, and agentic execution | 3 |
+| Desktop apps, windows, input, and UIA | 17 |
+| Vision, OCR, and visual perception | 13 |
 | Unified cross-surface actions and verification | 8 |
-| Workflow scripting, run, and telemetry | 2 |
+| Run telemetry | 1 |
 | Monitor scope and topology | 1 |
-| Extensions, runtime, and health | 5 |
-| **Operational total** | **132** |
+| Extensions, runtime, and health | 2 |
+| **Operational total** | **104** |
 
-Set `HANDS_TOOL_PROFILE` to `default`, `full`, `strict`, or `compatibility`. Use `hands_capability_catalog` to inspect replacements and profile membership without guessing from legacy names.
+Keep `HANDS_TOOL_PROFILE=default` unless a specific safe capability requires `full` or `strict`. All three are safe-advertised. The `compatibility` profile is an unsafe debug escape hatch, not a faster operating mode. Its raw/direct-fetch/value/trace/QR/event/native-plugin tools require three explicit gates: `HANDS_TOOL_PROFILE=compatibility`, the matching process gate (`HANDS_ALLOW_UNSAFE_RAW_TOOLS=1`, `HANDS_ALLOW_UNSAFE_DIRECT_FETCH=1`, or `HANDS_ALLOW_UNSAFE_PLUGINS=1`), and the matching per-call acknowledgement (`allow_unsafe_raw=true`, `allow_unsafe_fetch=true`, or `allow_unsafe_plugin=true`). The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call. Use `hands_capability_catalog` to inspect safety classification, replacements, and profile membership.
+
+Before enabling a monitor fence, clear browser routes and stop any active trace; fence activation refuses while either persistent state is active. Under an active fence, `browser_route` and `browser_trace_start` fail closed, while `browser_route_remove`, `browser_route_clear`, and `browser_trace_stop` remain available so cleanup cannot be trapped.
+
+For normal web reading, use a visible browser and current-state tools such as `hands_navigate`, `hands_find`, `browser_extract_content`, `browser_get_text`, and bounded `browser_batch` actions. Safe profiles hide built-in first-party raw/direct-fetch/native-plugin front doors. Workflow or another dedicated web/network owner should validate and own durable direct API methods.
+
+This is attack-surface reduction, not a secrecy or OS-sandbox guarantee. Hands remains a desktop-action runtime: UIA application launch and external applications can perform work outside the built-in dispatcher. Use isolated sessions and least privilege for sensitive browsing or desktop automation.
+
+The built-in Hands HTTP dashboard is off by default. Set `HANDS_ENABLE_DASHBOARD=1` only when a local operator deliberately needs it and has reviewed the listening boundary.
 
 ## Capabilities Beyond the Basics
 
@@ -254,19 +262,19 @@ Set `HANDS_TOOL_PROFILE` to `default`, `full`, `strict`, or `compatibility`. Use
 
 **Multi-tab management.** `browser_new_tab`, `browser_list_tab`, `browser_switch_tab`, `browser_close_tab` — full tab lifecycle for workflows that span multiple pages simultaneously.
 
-**Network interception.** `browser_route` intercepts requests with block/mock/log actions. Three sources of network truth: route logs (what you intercepted), Performance API logs (`browser_get_performance_log`), and the merged view via `browser_get_all_network`.
+**Minimized network observation.** `browser_route` can block, mock, or log current browser requests. The server minimizes persisted/output data and applies conservative pattern redaction as defense in depth. This is not a confidentiality guarantee: browser traffic can contain secrets that no redactor recognizes. Use isolated sessions and least privilege, and keep observations ephemeral.
 
-**API discovery.** `browser_learn_api` extracts endpoint patterns from captured network traffic — URLs, methods, headers, auth tokens, body templates. Feed the output to `workflow:api_store` and never open Chrome for that task again.
+**API discovery.** `browser_learn_api` can infer endpoint shape from minimized current traffic. Hand durable validation, credentials, storage, and direct calls to Workflow or another dedicated web/network owner, and re-verify results against current visible state when accuracy matters.
 
-**Auto-escalation reading.** `browser_smart_browse` and `hands_read_page` auto-escalate from HTTP fetch → linkedom parse → jsdom → full Chrome, stopping at the cheapest rung that returns content.
+**Visible-browser reading.** Start with `hands_navigate`, then use `browser_extract_content` or `browser_get_text`; use `hands_find` and `browser_batch` for bounded interaction. This keeps the page and the user's visible state as the source of truth.
 
-**Iframe extraction** with cross-origin OCR fallback. **Trace recording** (`browser_trace_start/stop/save`) for debugging. **Screenshot bursts** (`browser_screenshot_burst`) for state-change tracking.
+**Iframe extraction** with cross-origin OCR fallback and **screenshot bursts** (`browser_screenshot_burst`) for state-change tracking are available in safe profiles. Raw trace export is compatibility/debug-only and requires the explicit unsafe gates above.
 
 ### UIA Tier
 
 **Window management.** `uia_window_snap` (left/right/top-left/top-right/center), `uia_window_move`, `uia_window_resize`, `uia_window_state` (minimize/maximize/restore/close) — full multi-window orchestration from AI agents.
 
-**Event watching.** `uia_watch` monitors for focus changes, window-list changes, or element-value changes. `uia_poll_event` drains events without blocking.
+**Current-state checks.** Use `uia_get_state`, `uia_find`, and explicit bounded polling with `hands_verify`. Raw UIA value reads and event watch/poll surfaces are compatibility/debug-only.
 
 **Compile-time-safe dispatch.** Typed ZSTs in `src/atomic.rs` guarantee every UIA tool name matches the canonical MCP tool name at compile time — no runtime "Unknown tool" errors.
 
@@ -278,7 +286,7 @@ Set `HANDS_TOOL_PROFILE` to `default`, `full`, `strict`, or `compatibility`. Use
 
 **Zoom + OCR.** `vision_zoom` for tiny or low-contrast text before running `vision_ocr`.
 
-**User-input detection.** `vision_check_user_input` detects whether the user has typed during a tool sequence — for polite mid-operation interruption.
+**User-input detection.** Raw user-input detection is compatibility/debug-only because it can expose interaction state. Safe profiles should keep action bursts short and re-observe before continuing.
 
 ### Meta-Tier (hands_*)
 
@@ -290,13 +298,11 @@ Set `HANDS_TOOL_PROFILE` to `default`, `full`, `strict`, or `compatibility`. Use
 
 **`hands_login_recovery`** — 5-stage pipeline: detect login page → fill approved credentials → handle user-authorized MFA steps → verify success → retry on failure.
 
-**`hands_scan_qr`** — supports authorized on-screen setup flows without placing secrets or recovery codes in prompts.
-
-**`hands_script`** — multi-step orchestration with `{{var}}` substitution across tool calls.
+Raw QR decoding and free-form `hands_script` orchestration are compatibility/debug-only. In safe profiles, use a user-reviewed screenshot for QR setup and explicit bounded calls or `browser_batch` for its fixed safe action set.
 
 ### Cross-Server Hooks
 
-**Graduation pipeline (hands → workflow).** `browser_learn_api` extracts API patterns during a browser session. `workflow:api_store` saves them. `workflow:api_call` replays direct HTTP forever — ~50-200ms vs 3-5s browser cycle. Automate once in Chrome, replay at API speed indefinitely.
+**Graduation pipeline (hands → workflow).** Hands exercises and verifies the current visible UI; minimized network observation may help identify endpoint shape. Workflow or another dedicated web/network owner validates, stores, and performs any durable direct API method. Compatibility-only built-in direct fetches are debug escape hatches, never the speed path for normal Hands use.
 
 **Credential and MFA workflows (hands + workflow).** Credential and MFA workflows require explicit user authorization and local keyring storage. Public docs intentionally avoid implementation details. Do not place passwords, tokens, recovery codes, or MFA setup material in chat context.
 
@@ -330,7 +336,7 @@ Host clients: Claude Desktop, Claude Code, OpenAI Codex CLI, Gemini CLI, or any 
 
 ### First-run tip for Claude clients
 
-The default profile exposes 133 entries spanning browser, UIA, vision, monitor scope, extensions, and the capability catalog. Enable **tools always loaded** in your Claude client's tool settings before the first call — a lazy-loaded client can miss layers on initial discovery and produce "tool not found" errors mid-session.
+The default profile exposes 105 entries spanning browser, UIA, vision, monitor scope, extensions, and the capability catalog. Enable **tools always loaded** in your Claude client's tool settings before the first call — a lazy-loaded client can miss layers on initial discovery and produce "tool not found" errors mid-session.
 
 ## Architecture
 
@@ -384,7 +390,7 @@ AI-Hands is Windows-only. The UIA automation layer depends on Windows COM interf
 Automation across three different layers (browser, UIA, vision) means each layer has its own characteristic failures:
 
 - **Browser profile locked** — a previous Chromium process still holds the profile. `browser_launch` returns `profile_locked`; close the stuck Chrome or use a fresh context via `browser_context_create`.
-- **UIA element not found** — selector name drift after an app update. Call `uia_find` with a broader query, or snapshot the accessibility tree with `browser_a11y_snapshot` / UIA equivalents to see current names.
+- **UIA element not found** — selector name drift after an app update. Call `uia_find` with a broader query, inspect bounded structural state with `uia_get_state`, or use `hands_find` after focusing the intended window.
 - **OCR misreads on tiny or low-contrast text** — vision layer returns its best guess. Use `vision_zoom` before `vision_ocr`, or fall back to `browser_extract_content` if the target is a web page with real text.
 - **Chrome not found or debug port not open** — Hands connects to Chrome over CDP. Use `browser_debug_launch` to start Chrome with `--remote-debugging-port=9222`, or ensure Chrome is running with that flag before calling `browser_attach`.
 - **Popup or OS dialog steals focus mid-sequence** — UIA actions target the wrong window. Use `uia_focus_window` before sensitive sequences, or batch via `uia_batch` which rechecks focus between steps.

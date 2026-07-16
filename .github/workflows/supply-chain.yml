@@ -28,8 +28,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
-      - name: cargo audit
-        run: cargo audit
+      - name: cargo audit (released Windows targets)
+        # AI-Hands publishes only Windows x64/ARM64 executables. Cargo.lock also
+        # contains Linux-only Wayland/XCB build metadata that is never compiled
+        # into either released target; audit the actual shipping target set.
+        run: cargo audit --target-os windows --target-arch x86_64 --target-arch aarch64
 
   deny:
     name: cargo deny

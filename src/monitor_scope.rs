@@ -505,6 +505,27 @@ pub fn tool_definition() -> Value {
     })
 }
 
+pub fn persistent_state_activation_error(args: &Value, persistent: &Value) -> Option<Value> {
+    let action = args.get("action").and_then(Value::as_str).unwrap_or("get");
+    let active = persistent
+        .get("active")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !action.eq_ignore_ascii_case("set") || !active {
+        return None;
+    }
+    Some(json!({
+        "success": false,
+        "error": "Cannot activate monitor scope while browser routes or tracing are active; clear routes and stop tracing first",
+        "monitor_scope": {
+            "strict": true,
+            "fail_closed": true,
+            "code": "persistent_browser_state_active",
+        },
+        "persistent_browser_state": persistent,
+    }))
+}
+
 pub fn handle_tool(args: &Value) -> Value {
     let action = args
         .get("action")
@@ -955,6 +976,47 @@ fn prepare_script(args: &Value) -> Result<Value, Value> {
     Ok(scoped)
 }
 
+fn unscoped_browser_composite(name: &str) -> bool {
+    matches!(
+        name,
+        "browser_agent"
+            | "agent"
+            | "browser_batch"
+            | "batch"
+            | "browser_script"
+            | "script"
+            | "browser_evaluate"
+            | "evaluate"
+            | "browser_screenshot_burst"
+            | "screenshot_burst"
+            | "browser_scroll_collect"
+            | "scroll_collect"
+            | "browser_wait_stable"
+            | "wait_stable"
+            | "browser_retry_click"
+            | "retry_click"
+    )
+}
+
+fn persistent_browser_start(name: &str) -> bool {
+    matches!(
+        name,
+        "browser_route" | "route" | "browser_trace_start" | "trace_start"
+    )
+}
+
+fn risk_reducing_browser_cleanup(name: &str) -> bool {
+    matches!(
+        name,
+        "browser_route_clear"
+            | "route_clear"
+            | "browser_route_remove"
+            | "route_remove"
+            | "browser_trace_stop"
+            | "trace_stop"
+    )
+}
+
 pub fn prepare_call(name: &str, args: &Value) -> Result<Value, Value> {
     if name == TOOL_NAME {
         return Ok(args.clone());
@@ -963,8 +1025,36 @@ pub fn prepare_call(name: &str, args: &Value) -> Result<Value, Value> {
         return Ok(args.clone());
     };
 
+    // Cleanup must remain available when a previously-bound browser window has
+    // moved out of scope; otherwise the fence can trap a persistent route or
+    // trace. Cleanup is risk-reducing and its returned trace is separately
+    // projected onto a strict Rust schema.
+    if risk_reducing_browser_cleanup(name) {
+        return Ok(args.clone());
+    }
+
     if name == "hands_script" {
         return prepare_script(args);
+    }
+
+    if persistent_browser_start(name) {
+        return Err(strict_error(
+            "persistent_browser_action_unscopable",
+            format!(
+                "'{name}' is disabled under a strict monitor fence because its page-resident behavior cannot revalidate the bound window for every later event"
+            ),
+            Some(&monitor),
+        ));
+    }
+
+    if unscoped_browser_composite(name) {
+        return Err(strict_error(
+            "unscoped_browser_composite",
+            format!(
+                "'{name}' is disabled under a strict monitor fence because its nested browser actions cannot revalidate the bound window before each step; use individually scoped browser calls or hands_script"
+            ),
+            Some(&monitor),
+        ));
     }
 
     validate_browser_binding(name, args, &monitor)?;
@@ -1159,6 +1249,65 @@ pub fn unique_capture_path(prefix: &str, extension: &str, persistent: bool) -> S
     };
     let _ = std::fs::create_dir_all(&directory);
     directory.join(filename).to_string_lossy().into_owned()
+}
+
+fn generated_capture_prefix(filename: &str) -> Option<&str> {
+    let stem = filename.strip_suffix(".png")?;
+    let mut parts = stem.rsplitn(6, '_');
+    let counter = parts.next()?;
+    let process_id = parts.next()?;
+    let nanos = parts.next()?;
+    let time = parts.next()?;
+    let date = parts.next()?;
+    let prefix = parts.next()?;
+
+    let digits = |value: &str| !value.is_empty() && value.as_bytes().iter().all(u8::is_ascii_digit);
+    if !digits(counter)
+        || !digits(process_id)
+        || nanos.len() != 9
+        || !digits(nanos)
+        || time.len() != 6
+        || !digits(time)
+        || date.len() != 8
+        || !digits(date)
+    {
+        return None;
+    }
+
+    matches!(prefix, "screenshot" | "zoom" | "window_behind").then_some(prefix)
+}
+
+/// Return true only for a capture file Hands generated in one of its owned
+/// output directories. This deliberately excludes caller-chosen paths and
+/// transient OCR/region intermediates.
+pub fn is_safe_generated_capture_path(path: &str) -> bool {
+    let candidate = PathBuf::from(path);
+    if !candidate.is_absolute() || !candidate.is_file() {
+        return false;
+    }
+    let Some(filename) = candidate.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(prefix) = generated_capture_prefix(filename) else {
+        return false;
+    };
+
+    let expected_directory = if prefix == "window_behind" {
+        std::env::temp_dir().join("hands-captures")
+    } else {
+        std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("Pictures")
+            .join("Screenshots")
+    };
+    let Ok(candidate) = std::fs::canonicalize(candidate) else {
+        return false;
+    };
+    let Ok(expected_directory) = std::fs::canonicalize(expected_directory) else {
+        return false;
+    };
+    candidate.parent() == Some(expected_directory.as_path())
 }
 
 fn filter_scoped_value(
@@ -1375,6 +1524,38 @@ mod tests {
     }
 
     #[test]
+    fn generated_capture_schema_rejects_arbitrary_names() {
+        assert_eq!(
+            generated_capture_prefix("screenshot_20260716_135100_123456789_42_7.png"),
+            Some("screenshot")
+        );
+        assert_eq!(
+            generated_capture_prefix("window_behind_20260716_135100_123456789_42_7.png"),
+            Some("window_behind")
+        );
+        assert!(generated_capture_prefix("screenshot_private.png").is_none());
+        assert!(generated_capture_prefix("browser_20260716_135100_123456789_42_7.png").is_none());
+        assert!(generated_capture_prefix("screenshot_20260716_135100_12345678_42_7.png").is_none());
+    }
+
+    #[test]
+    fn generated_capture_path_requires_owned_directory_and_existing_file() {
+        let path = unique_capture_path("window_behind", "png", false);
+        std::fs::write(&path, b"capture-test").expect("write generated capture fixture");
+        assert!(is_safe_generated_capture_path(&path));
+
+        let arbitrary =
+            std::env::temp_dir().join("window_behind_20260716_135100_123456789_42_7.png");
+        std::fs::write(&arbitrary, b"capture-test").expect("write arbitrary capture fixture");
+        assert!(!is_safe_generated_capture_path(
+            arbitrary.to_string_lossy().as_ref()
+        ));
+
+        std::fs::remove_file(path).expect("remove generated capture fixture");
+        std::fs::remove_file(arbitrary).expect("remove arbitrary capture fixture");
+    }
+
+    #[test]
     fn locked_without_explicit_scope_is_fail_closed() {
         for selector in ["", "off", " OFF "] {
             let state = inactive_selector_state(selector.trim(), true)
@@ -1400,6 +1581,76 @@ mod tests {
             "hands_scan_qr",
             &json!({"source": "screen"})
         ));
+    }
+
+    #[test]
+    fn nested_browser_composites_are_classified_as_unscoped() {
+        for name in [
+            "browser_agent",
+            "agent",
+            "browser_batch",
+            "batch",
+            "browser_script",
+            "script",
+            "browser_evaluate",
+            "evaluate",
+            "browser_screenshot_burst",
+            "screenshot_burst",
+            "browser_scroll_collect",
+            "scroll_collect",
+            "browser_wait_stable",
+            "wait_stable",
+            "browser_retry_click",
+            "retry_click",
+        ] {
+            assert!(unscoped_browser_composite(name), "{name}");
+        }
+        assert!(!unscoped_browser_composite("hands_script"));
+        assert!(!unscoped_browser_composite("browser_click"));
+    }
+
+    #[test]
+    fn persistent_browser_starts_are_blocked_but_cleanup_is_recognized() {
+        for name in [
+            "browser_route",
+            "route",
+            "browser_trace_start",
+            "trace_start",
+        ] {
+            assert!(persistent_browser_start(name), "{name}");
+            assert!(!risk_reducing_browser_cleanup(name), "{name}");
+        }
+        for name in [
+            "browser_route_clear",
+            "route_clear",
+            "browser_route_remove",
+            "route_remove",
+            "browser_trace_stop",
+            "trace_stop",
+        ] {
+            assert!(risk_reducing_browser_cleanup(name), "{name}");
+            assert!(!persistent_browser_start(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn activation_refuses_preexisting_persistent_browser_state() {
+        let persistent = json!({"active": true, "route_count": 2, "trace_active": true});
+        let blocked = persistent_state_activation_error(&json!({"action": "set"}), &persistent)
+            .expect("set must fail closed while persistent browser state exists");
+        assert_eq!(
+            blocked["monitor_scope"]["code"],
+            json!("persistent_browser_state_active")
+        );
+        assert_eq!(blocked["persistent_browser_state"], persistent);
+        assert!(
+            persistent_state_activation_error(&json!({"action": "get"}), &persistent).is_none()
+        );
+        assert!(persistent_state_activation_error(
+            &json!({"action": "set"}),
+            &json!({"active": false, "route_count": 0, "trace_active": false})
+        )
+        .is_none());
     }
 
     #[test]

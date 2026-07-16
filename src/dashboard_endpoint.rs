@@ -19,6 +19,7 @@
 
 use serde_json::{json, Value};
 use std::collections::VecDeque;
+use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 
@@ -92,8 +93,30 @@ pub fn record_action(tool: &str, args: &Value, duration_ms: u64) {
 /// Update the cached browser status snapshot (from a sync try_read on SharedBrowser).
 pub fn update_browser_snapshot(status: Value) {
     if let Ok(mut guard) = browser_snapshot().lock() {
-        *guard = status;
+        *guard = sanitize_browser_snapshot(&status);
     }
+}
+
+/// Keep only the fields the dashboard renders and redact the current URL before
+/// the snapshot is retained in process memory.
+fn sanitize_browser_snapshot(status: &Value) -> Value {
+    if status.is_null() {
+        return Value::Null;
+    }
+
+    let current_url = status
+        .get("current_url")
+        .and_then(Value::as_str)
+        .map(crate::network_redaction::redact_url)
+        .map(Value::String)
+        .unwrap_or(Value::Null);
+
+    json!({
+        "active": status.get("active").and_then(Value::as_bool).unwrap_or(false),
+        "headless": status.get("headless").and_then(Value::as_bool).unwrap_or(false),
+        "current_url": current_url,
+        "tab_count": status.get("tab_count").and_then(Value::as_u64).unwrap_or(0),
+    })
 }
 
 /// Update the cached UIA state after a UIA tool runs.
@@ -114,7 +137,7 @@ pub fn update_uia_snapshot(window: &str, action: &str) {
 pub fn update_vision_snapshot(screenshot_path: Option<&str>, ocr: bool) {
     let ts = chrono::Utc::now().to_rfc3339();
     if let Ok(mut guard) = vision_snapshot().lock() {
-        if let Some(path) = screenshot_path {
+        if let Some(path) = screenshot_path.and_then(screenshot_basename) {
             if let Some(obj) = guard.as_object_mut() {
                 obj.insert("last_screenshot_path".into(), json!(path));
                 if ocr {
@@ -133,14 +156,40 @@ pub fn update_vision_snapshot(screenshot_path: Option<&str>, ocr: bool) {
     }
 }
 
-/// Extract a meaningful target string from tool args (first non-empty known field).
+fn screenshot_basename(path: &str) -> Option<String> {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+}
+
+/// Extract a non-sensitive target descriptor from tool args.
+///
+/// URLs retain endpoint shape after central redaction. All other accepted fields
+/// are represented by their field name only so typed text, selectors, paths,
+/// query strings, credential material, and arbitrary user-provided values never
+/// enter the recent-action ring buffer.
 fn extract_target(args: &Value) -> String {
-    for field in &[
-        "target", "selector", "url", "title", "text", "name", "query", "path",
-    ] {
+    if let Some(url) = args.get("url").and_then(Value::as_str) {
+        if !url.is_empty() {
+            return crate::network_redaction::redact_url(url)
+                .chars()
+                .take(300)
+                .collect();
+        }
+    }
+
+    for field in &["target", "selector", "title", "name"] {
         if let Some(v) = args.get(field).and_then(|v| v.as_str()) {
             if !v.is_empty() {
-                return v.chars().take(100).collect();
+                if v.contains("://") {
+                    return crate::network_redaction::redact_url(v)
+                        .chars()
+                        .take(300)
+                        .collect();
+                }
+                return format!("[{field}]");
             }
         }
     }
@@ -199,23 +248,19 @@ fn try_bind(base_port: u16) -> Option<tiny_http::Server> {
     None
 }
 
-fn cors_headers() -> Vec<tiny_http::Header> {
+fn response_headers() -> Vec<tiny_http::Header> {
     vec![
-        "Access-Control-Allow-Origin: *".parse().unwrap(),
-        "Access-Control-Allow-Methods: GET, OPTIONS"
-            .parse()
-            .unwrap(),
-        "Access-Control-Allow-Headers: Content-Type"
-            .parse()
-            .unwrap(),
         "Content-Type: application/json".parse().unwrap(),
+        "Cache-Control: no-store".parse().unwrap(),
+        "X-Content-Type-Options: nosniff".parse().unwrap(),
+        "Cross-Origin-Resource-Policy: same-origin".parse().unwrap(),
     ]
 }
 
 fn respond(request: tiny_http::Request, status: u16, body: Value) {
     let body_str = serde_json::to_string(&body).unwrap_or_default();
     let mut response = tiny_http::Response::from_string(body_str).with_status_code(status);
-    for h in cors_headers() {
+    for h in response_headers() {
         response = response.with_header(h);
     }
     let _ = request.respond(response);
@@ -227,7 +272,6 @@ fn handle_request(request: tiny_http::Request) {
 
     match (method.as_str(), url.as_str()) {
         ("GET", "/api/status") => respond(request, 200, build_status()),
-        ("OPTIONS", _) => respond(request, 204, json!({})),
         _ => respond(request, 404, json!({"error": "Not found"})),
     }
 }
@@ -385,12 +429,131 @@ mod tests {
         let args = json!({"selector": "#btn", "title": "My Window"});
         let target = extract_target(&args);
         // "target" field not present, next is "selector"
-        assert_eq!(target, "#btn");
+        assert_eq!(target, "[selector]");
     }
 
     #[test]
     fn test_extract_target_empty_args() {
         let target = extract_target(&json!({}));
         assert!(target.is_empty());
+    }
+
+    #[test]
+    fn test_response_headers_are_same_origin_and_non_cacheable() {
+        let headers = response_headers();
+        assert!(headers.iter().all(|header| !header
+            .field
+            .as_str()
+            .as_str()
+            .starts_with("Access-Control-")));
+        assert_eq!(
+            headers
+                .iter()
+                .find(|header| header.field.equiv("Cache-Control"))
+                .unwrap()
+                .value
+                .as_str()
+                .to_string(),
+            "no-store"
+        );
+        assert_eq!(
+            headers
+                .iter()
+                .find(|header| header.field.equiv("X-Content-Type-Options"))
+                .unwrap()
+                .value
+                .as_str()
+                .to_string(),
+            "nosniff"
+        );
+        assert_eq!(
+            headers
+                .iter()
+                .find(|header| header.field.equiv("Cross-Origin-Resource-Policy"))
+                .unwrap()
+                .value
+                .as_str()
+                .to_string(),
+            "same-origin"
+        );
+    }
+
+    #[test]
+    fn test_url_targets_are_redacted_before_storage() {
+        let sentinel = "DASHBOARD_SENTINEL";
+        let target = extract_target(&json!({
+            "url": format!(
+                "https://user:{sentinel}@example.test/api?token={sentinel}#fragment-{sentinel}"
+            )
+        }));
+        assert!(!target.contains(sentinel));
+        assert_eq!(
+            target,
+            "https://[REDACTED]@example.test/{segment}?token=[REDACTED]#[REDACTED]"
+        );
+    }
+
+    #[test]
+    fn test_typed_query_path_and_credential_values_are_not_stored() {
+        let sentinel = "DASHBOARD_TYPED_QUERY_PATH_SENTINEL";
+        let target = extract_target(&json!({
+            "selector": sentinel,
+            "text": sentinel,
+            "query": sentinel,
+            "value": sentinel,
+            "body": sentinel,
+            "header": sentinel,
+            "headers": {"Authorization": sentinel},
+            "path": sentinel,
+            "password": sentinel,
+            "token": sentinel
+        }));
+        assert_eq!(target, "[selector]");
+        assert!(!target.contains(sentinel));
+
+        let forbidden_only = extract_target(&json!({
+            "text": sentinel,
+            "query": sentinel,
+            "value": sentinel,
+            "body": sentinel,
+            "headers": {"Authorization": sentinel},
+            "path": sentinel,
+            "password": sentinel,
+            "token": sentinel
+        }));
+        assert!(forbidden_only.is_empty());
+    }
+
+    #[test]
+    fn test_browser_snapshot_is_minimized_and_url_redacted() {
+        let sentinel = "BROWSER_SNAPSHOT_SENTINEL";
+        let safe = sanitize_browser_snapshot(&json!({
+            "active": true,
+            "headless": false,
+            "current_url": format!(
+                "https://user:{sentinel}@example.test/app?code={sentinel}#fragment-{sentinel}"
+            ),
+            "tab_count": 2,
+            "active_tab": {"title": sentinel, "url": sentinel},
+            "query": sentinel
+        }));
+        assert_eq!(
+            safe["current_url"],
+            "https://[REDACTED]@example.test/{segment}?code=[REDACTED]#[REDACTED]"
+        );
+        assert_eq!(safe["tab_count"], 2);
+        assert!(safe.get("active_tab").is_none());
+        assert!(safe.get("query").is_none());
+        assert!(!safe.to_string().contains(sentinel));
+    }
+
+    #[test]
+    fn test_screenshot_exposes_basename_only() {
+        let full_path = r"C:\Users\private-user\sensitive-folder\screen-123.png";
+        update_vision_snapshot(Some(full_path), false);
+        let vision = build_vision_status();
+        assert_eq!(vision["last_screenshot_path"], "screen-123.png");
+        assert!(!vision.to_string().contains("private-user"));
+        assert!(!vision.to_string().contains("sensitive-folder"));
     }
 }

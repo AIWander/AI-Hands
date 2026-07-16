@@ -388,9 +388,13 @@ async fn type_via_browser(
 
     // Verify focus if requested
     if verify_focus {
+        let target_js = serde_json::to_string(target).unwrap_or_else(|_| "\"\"".to_string());
         let focus_result = browser_mcp::tools::handle_tool(
-            browser, "evaluate", json!({"expression": format!("({})('{}')", JS_VERIFY_FOCUS, target.replace('\'', "\\'"))}),
-        ).await;
+            browser,
+            "evaluate",
+            json!({"expression": format!("({})({})", JS_VERIFY_FOCUS, target_js)}),
+        )
+        .await;
         let (_, focus_val) = super::browser_result_to_value(focus_result);
         let is_focused = focus_val
             .get("focused")
@@ -429,22 +433,26 @@ async fn type_via_browser(
                 browser_mcp::tools::handle_tool(browser, "press", json!({"key": "Delete"})).await;
         } else {
             // Standard input: JS clear + events
+            let selector_js =
+                serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_string());
             let _ = browser_mcp::tools::handle_tool(
-                browser, "evaluate",
-                json!({"expression": format!("({})('{}')", JS_CLEAR_INPUT, selector.replace('\'', "\\'"))}),
-            ).await;
+                browser,
+                "evaluate",
+                json!({"expression": format!("({})({})", JS_CLEAR_INPUT, selector_js)}),
+            )
+            .await;
         }
     }
 
     // Type the text
     if use_fast_set {
         // Direct JS value set
+        let selector_js = serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_string());
+        let text_js = serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_string());
         let _ = browser_mcp::tools::handle_tool(
             browser,
             "evaluate",
-            json!({"expression": format!("({})('{}')", JS_FAST_SET,
-                format!("{}', '{}", selector.replace('\'', "\\'"), text.replace('\'', "\\'"))
-            )}),
+            json!({"expression": format!("({})({}, {})", JS_FAST_SET, selector_js, text_js)}),
         )
         .await;
     } else if text.len() > CHUNK_THRESHOLD {

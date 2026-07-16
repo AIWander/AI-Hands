@@ -8,6 +8,7 @@ set "BINARY_ARCH=%~2"
 
 if "%SOURCE_BINARY%"=="" set "SOURCE_BINARY=%REPO%\dist\hand.exe"
 if "%BINARY_ARCH%"=="" set "BINARY_ARCH=arm64"
+for %%I in ("%SOURCE_BINARY%") do set "SOURCE_BINARY=%%~fI"
 
 if exist "%ISCC%" goto iscc_ok
 echo Inno Setup compiler not found: %ISCC%

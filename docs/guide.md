@@ -1,6 +1,6 @@
 ---
 title: "Hands MCP Server — Desktop Automation for AI Agents"
-description: "Getting started guide for the Hands Rust MCP server. Gives Claude and other AI agents browser automation via chromiumoxide CDP, Windows UI Automation, and vision (OCR + template matching) through 117 tools over the Model Context Protocol."
+description: "Getting started guide for the Hands Rust MCP server. Covers safe-advertised browser automation, Windows UI Automation, vision, monitor scope, and the explicit unsafe compatibility boundary over the Model Context Protocol."
 keywords:
   - MCP server
   - model context protocol server
@@ -30,7 +30,7 @@ keywords:
 
 # Getting Started with Hands
 
-Hands is a Rust MCP server that provides 117 tools for desktop automation across five tiers: Browser (chromiumoxide CDP), Windows UI Automation (UIA), and Vision (OCR + template matching). It connects to Claude Desktop, Claude Code, or any MCP-compatible client over standard JSON-RPC on stdin/stdout.
+Hands is a Rust MCP server for browser automation, Windows UI Automation (UIA), vision/OCR, monitor-scoped action, and verification. The safe `default`, `full`, and `strict` profiles advertise 105, 107, and 109 entries including the catalog. It connects to Claude Desktop, Claude Code, or any MCP-compatible client over standard JSON-RPC on stdin/stdout.
 
 Unlike Claude computer use, which relies on repeated screenshots and pixel-coordinate guessing, Hands gives AI agents direct access to the DOM, the Windows accessibility tree, and dedicated OCR --- each chosen for the task at hand. For a full comparison, see the [README](../README.md).
 
@@ -82,14 +82,14 @@ Add it to `~/.claude/mcp.json` (global) or `.mcp.json` (per-project):
 }
 ```
 
-Restart Claude Desktop or Claude Code after editing. The 117 tools will appear in your tool list.
+Restart Claude Desktop or Claude Code after editing. The recommended `default` profile will advertise 105 entries including `hands_capability_catalog`.
 
 ## Architecture Overview
 
 ```
 hands.exe  (MCP tool server, stdin/stdout JSON-RPC)
   |
-  +-- browser-mcp    chromiumoxide CDP: navigate, click, fill, eval JS, intercept network
+  +-- browser-mcp    chromiumoxide CDP: visible navigation, interaction, extraction, minimized network observation
   +-- uia-mcp        Windows UI Automation COM: find elements, click, type, window mgmt
   +-- vision-core    Screenshot capture, OCR, template matching, image diff
   +-- combo tools    Cross-tier helpers: find_and_click, read_screen_text, wait_for_visual
@@ -101,9 +101,9 @@ All three tiers compile into one binary. The MCP server reads JSON-RPC requests 
 
 Every example below shows the raw JSON-RPC call. When using Claude Desktop or Claude Code, the client builds these calls automatically from natural-language requests.
 
-### Browser Tier (60 tools)
+### Browser Tier (safe-advertised tools)
 
-The browser tier wraps chromiumoxide over CDP. It handles headless browser sessions, web scraping, form filling, JS evaluation, network interception, multi-tab management, and accessibility snapshots.
+The browser tier wraps chromiumoxide over CDP. In the safe profiles it handles visible browser sessions, structured text extraction, form interaction, bounded batches, multi-tab management, verification, and minimized current-network observation. Output/persistence minimization and pattern redaction are defense in depth, not a secrecy guarantee; use isolated sessions and least privilege because browser traffic can contain secrets.
 
 **Navigate and extract text:**
 
@@ -149,22 +149,20 @@ The browser tier wraps chromiumoxide over CDP. It handles headless browser sessi
   "name": "browser_batch",
   "arguments": {
     "actions": [
-      {"tool": "browser_navigate", "arguments": {"url": "https://example.com/login"}},
-      {"tool": "browser_fill_form", "arguments": {"fields": [
-        {"selector": "#email", "value": "user@example.com"}
-      ]}},
-      {"tool": "browser_click", "arguments": {"selector": "#login-btn"}},
-      {"tool": "browser_screenshot", "arguments": {"path": "C:/tmp/after_login.png"}}
+      {"type": "navigate", "params": {"url": "https://example.com/login"}},
+      {"type": "type_text", "params": {"selector": "#email", "text": "user@example.com"}},
+      {"type": "click", "params": {"selector": "#login-btn"}},
+      {"type": "screenshot", "params": {"path": "C:/tmp/after_login.png"}}
     ]
   }
 }}
 ```
 
-Other notable browser tools: `browser_eval` (run arbitrary JS), `browser_get_forms` (discover form fields), `browser_scroll_collect` (paginate and collect), `browser_http_scrape` (lightweight fetch without a full browser), `browser_a11y_snapshot` (accessibility tree dump).
+Other safe browser tools include `browser_extract_content`, `browser_get_text`, `browser_scroll_collect`, `browser_iframe_extract`, `browser_wait_stable`, and `browser_verify_state`. Prefer `hands_navigate` and `hands_find` when a meta-tool can keep the interaction scoped and verifiable.
 
-### UIA Tier (12 tools)
+### UIA Tier (safe-advertised tools)
 
-The Windows UI Automation tier interacts with native desktop applications through the accessibility tree --- no pixel guessing required. It can find elements by name, control type, or automation ID, then click, type, read values, and manage windows.
+The Windows UI Automation tier interacts with native desktop applications through the accessibility tree --- no pixel guessing required. It can find elements by name, control type, or automation ID, then click, type, inspect bounded structural state, and manage windows.
 
 **Find and click a button in a Windows app:**
 
@@ -245,9 +243,9 @@ A few tools span multiple tiers for common workflows:
 
 ## Common Workflows
 
-**Scrape a page:** `browser_navigate` then `browser_extract_content` or `browser_js_extract` for structured data. For sites that require scrolling, use `browser_scroll_collect` to paginate automatically.
+**Read a page:** `hands_navigate` then `browser_extract_content` or `browser_get_text`. For sites that require scrolling, use `browser_scroll_collect` while the visible browser remains the source of truth.
 
-**Fill a web form:** `browser_get_forms` to discover fields, `browser_fill_form` to populate them, `browser_submit_form` or `browser_click` to submit. Batch the whole sequence with `browser_batch`.
+**Fill a web form:** use `hands_find` to identify the intended fields, `hands_fill_form` or `browser_fill_form` to populate them, and an explicitly confirmed submit action when required. Batch only a fixed, predictable sequence with `browser_batch`.
 
 **Automate a Windows app:** `uia_app_launch` to open it, `uia_find` to locate controls, `uia_click` / `uia_type` to interact. Use `uia_get_state` to read checkbox or toggle states. Use `uia_shortcut` for keyboard shortcuts like Ctrl+S.
 
@@ -259,9 +257,15 @@ A few tools span multiple tiers for common workflows:
 
 **Use batch operations.** `browser_batch` and `uia_batch` execute multiple actions in a single MCP call. This is significantly faster than issuing one tool call per action, especially over Claude Desktop where each round-trip adds latency.
 
-**Accessibility-first interaction.** Browser tools that support `a11y_ref` (click, type, hover, focus, select) can target elements by their accessibility tree reference instead of CSS selectors. Use `browser_a11y_snapshot` to get the tree, then pass the ref directly.
+**Structured targeting.** Use `hands_find(return_type="ref")` to obtain a bounded current reference, then pass it to interaction tools. Do not request a raw accessibility-tree dump in a safe profile.
 
 **Browser compatibility mode.** Launch and attach flows can apply compatibility adjustments for authorized automation testing in environments you control or have permission to test. Users are responsible for site terms and permissions.
+
+**Safe profile boundary.** `default`, `full`, and `strict` advertise 105, 107, and 109 entries including the catalog. `compatibility` advertises 144 and is an unsafe debug escape hatch, not a speed path. A compatibility-only raw, built-in direct-fetch, or native-plugin call requires `HANDS_TOOL_PROFILE=compatibility`, the matching process gate (`HANDS_ALLOW_UNSAFE_RAW_TOOLS=1`, `HANDS_ALLOW_UNSAFE_DIRECT_FETCH=1`, or `HANDS_ALLOW_UNSAFE_PLUGINS=1`), and the matching per-call acknowledgement. The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call. Keep durable/direct API methods in Workflow or another dedicated web/network owner. Safe profiles reduce the built-in first-party surface; Hands can still launch and act through external desktop applications and is not a general OS sandbox.
+
+Before enabling a monitor fence, clear browser routes and stop any active trace; fence activation refuses while either persistent state is active. Under an active fence, `browser_route` and `browser_trace_start` fail closed, while `browser_route_remove`, `browser_route_clear`, and `browser_trace_stop` remain available so cleanup cannot be trapped.
+
+**Dashboard.** The Hands HTTP dashboard is disabled by default. Opt in deliberately with `HANDS_ENABLE_DASHBOARD=1` only after reviewing the local listening boundary.
 
 **Browser not launching.** Hands connects to Chrome over CDP. Use `browser_debug_launch` to start Chrome with `--remote-debugging-port=9222`, or launch Chrome manually with that flag. If Chrome is not installed, install it from https://www.google.com/chrome/.
 

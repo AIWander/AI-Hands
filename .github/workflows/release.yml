@@ -30,9 +30,11 @@ jobs:
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             suffix: x64
+            installer_arch: x64compatible
           - runner: windows-11-arm
             target: aarch64-pc-windows-msvc
             suffix: aarch64
+            installer_arch: arm64
       fail-fast: false
     runs-on: ${{ matrix.runner }}
     steps:
@@ -46,14 +48,93 @@ jobs:
       - name: Rename binary
         shell: pwsh
         run: |
-          $repo = "${{ github.event.repository.name }}"
           $version = "${{ github.ref_name }}"
-          Copy-Item "target/${{ matrix.target }}/release/$repo.exe" "$repo-$version-${{ matrix.suffix }}.exe"
+          Copy-Item "target/${{ matrix.target }}/release/hands.exe" "AI-Hands-$version-${{ matrix.suffix }}.exe"
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Build self-installing plugin package
+        shell: pwsh
+        run: |
+          $binary = (Resolve-Path "target/${{ matrix.target }}/release/hands.exe").Path
+          & "installers/inno/build-installer.bat" $binary "${{ matrix.installer_arch }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $installer = Get-ChildItem "dist/AIHands-Setup-*-${{ matrix.installer_arch }}.exe" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $installer) { throw "Inno Setup did not produce the expected installer" }
+          Copy-Item $installer.FullName "AIHands-Setup-${{ github.ref_name }}-${{ matrix.suffix }}.exe"
+      - name: Smoke-test self-installing plugin package
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "dist/AIHands-Setup-*-${{ matrix.installer_arch }}.exe" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $installer) { throw "Installer smoke test could not find the package" }
+
+          $testRoot = Join-Path $env:RUNNER_TEMP "aihands-installer-${{ matrix.suffix }}"
+          New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @(
+            '/VERYSILENT',
+            '/SUPPRESSMSGBOXES',
+            '/NORESTART',
+            "/DIR=$testRoot",
+            '/MERGETASKS=!addtopath'
+          ) -WindowStyle Hidden -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer exited $($install.ExitCode)" }
+
+          $resultPath = Join-Path $testRoot 'install-result.json'
+          $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+          if ($result.success -ne $true -or
+              $result.client_configs_changed -ne $false -or
+              $result.hooks_enabled -ne $false -or
+              $result.server_started -ne $false) {
+            throw "Installer truth record is unsafe or incomplete: $($result | ConvertTo-Json -Compress)"
+          }
+
+          $builtBinary = (Resolve-Path "target/${{ matrix.target }}/release/hands.exe").Path
+          $installedBinary = (Resolve-Path (Join-Path $testRoot 'bin/hands.exe')).Path
+          $builtHash = (Get-FileHash -LiteralPath $builtBinary -Algorithm SHA256).Hash
+          $installedHash = (Get-FileHash -LiteralPath $installedBinary -Algorithm SHA256).Hash
+          if ($builtHash -ne $installedHash) { throw "Installed binary does not match the release build" }
+
+          $mcpPath = Join-Path $testRoot 'marketplace/plugins/ai-hands/.mcp.json'
+          $mcp = Get-Content -LiteralPath $mcpPath -Raw | ConvertFrom-Json
+          if ([IO.Path]::GetFullPath($mcp.mcpServers.hands.command) -ne $installedBinary) {
+            throw "Installed MCP registration does not use the absolute packaged binary path"
+          }
+          foreach ($required in @(
+            'marketplace/plugins/ai-hands/.codex-plugin/plugin.json',
+            'marketplace/plugins/ai-hands/.claude-plugin/plugin.json',
+            'marketplace/plugins/ai-hands/instructions/APPLY_TO_YOUR_AI.txt',
+            'marketplace/plugins/ai-hands/skills/ai-hands/SKILL.md',
+            'marketplace/plugins/ai-hands/hooks/opt-in/codex-hooks.fragment.json'
+          )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $testRoot $required) -PathType Leaf)) {
+              throw "Installer omitted required payload: $required"
+            }
+          }
+
+          $uninstaller = (Resolve-Path (Join-Path $testRoot 'unins000.exe')).Path
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @(
+            '/VERYSILENT',
+            '/SUPPRESSMSGBOXES',
+            '/NORESTART'
+          ) -WindowStyle Hidden -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller exited $($uninstall.ExitCode)" }
+          for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $testRoot); $attempt++) {
+            Start-Sleep -Milliseconds 250
+          }
+          if (Test-Path -LiteralPath $testRoot) {
+            throw "Uninstaller left the isolated installation directory behind: $testRoot"
+          }
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ github.event.repository.name }}-${{ matrix.suffix }}
-          path: ${{ github.event.repository.name }}-*-${{ matrix.suffix }}.exe
+          path: |
+            AI-Hands-*-${{ matrix.suffix }}.exe
+            AIHands-Setup-*-${{ matrix.suffix }}.exe
           if-no-files-found: error
           retention-days: 1
 

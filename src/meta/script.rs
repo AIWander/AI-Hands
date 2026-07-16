@@ -10,7 +10,7 @@
 //!   - Per-step and overall timeout_ms
 //!   - Verbose mode with full MetaToolResult per step
 
-use crate::{monitor_scope, uia_lib, vision_core};
+use crate::{canonical, monitor_scope, uia_lib, vision_core};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -369,6 +369,17 @@ enum StepOutcome {
     NotAMetaTool,
 }
 
+fn apply_monitor_scope_to_resolved_args<F>(
+    tool: &str,
+    args: &Value,
+    prepare: F,
+) -> Result<Value, Value>
+where
+    F: FnOnce(&str, &Value) -> Result<Value, Value>,
+{
+    prepare(tool, args)
+}
+
 async fn execute_step(
     tool: &str,
     args: &Value,
@@ -378,6 +389,30 @@ async fn execute_step(
 ) -> StepOutcome {
     let effective_timeout = timeout_ms.unwrap_or(30_000);
     let timeout_dur = std::time::Duration::from_millis(effective_timeout);
+
+    // Script variables are substituted before this function is called. Re-run
+    // the central monitor fence against those resolved arguments so a value
+    // such as `{{point.x}}` cannot bypass the earlier static script preflight.
+    // Underlying dispatch repeats this check deliberately; direct meta-tool
+    // handlers otherwise would not see the resolved coordinate boundary.
+    let scoped_args =
+        match apply_monitor_scope_to_resolved_args(tool, args, monitor_scope::prepare_call) {
+            Ok(scoped) => scoped,
+            Err(blocked) => return classify_step_result(blocked),
+        };
+    let args = &scoped_args;
+
+    // Direct meta-tool dispatch must pass the same canonical profile and unsafe
+    // dual gates as a top-level MCP call. Without this check, a compatibility
+    // script could repackage a direct-fetch tool behind the weaker script gate.
+    if tool.starts_with("hands_") {
+        if let Some(blocked) = canonical::blocked_call_response(tool) {
+            return classify_step_result(blocked);
+        }
+        if let Some(blocked) = canonical::unsafe_call_block_response(tool, args) {
+            return classify_step_result(blocked);
+        }
+    }
 
     // Phase C fix3: call meta-tool handlers DIRECTLY instead of going through
     // handle_meta_tool → dispatch_meta_tool. This avoids:
@@ -532,6 +567,12 @@ async fn dispatch_underlying_tool(
     };
 
     if tool.starts_with("uia_") {
+        if let Some(blocked) = canonical::blocked_call_response(tool) {
+            return Some(blocked);
+        }
+        if let Some(blocked) = canonical::unsafe_call_block_response(tool, args) {
+            return Some(blocked);
+        }
         if let Err(blocked) = monitor_scope::validate_scoped_ref(&scoped_args) {
             return Some(blocked);
         }
@@ -548,10 +589,22 @@ async fn dispatch_underlying_tool(
         return Some(monitor_scope::filter_uia_result(tool, result));
     }
     if tool.starts_with("vision_") {
+        if let Some(blocked) = canonical::blocked_call_response(tool) {
+            return Some(blocked);
+        }
+        if let Some(blocked) = canonical::unsafe_call_block_response(tool, args) {
+            return Some(blocked);
+        }
         let result = vision_core::execute(tool, &scoped_args).await;
         return Some(result);
     }
     if tool.starts_with("browser_") {
+        if let Some(blocked) = canonical::blocked_call_response(tool) {
+            return Some(blocked);
+        }
+        if let Some(blocked) = canonical::unsafe_call_block_response(tool, args) {
+            return Some(blocked);
+        }
         if let Some(browser_tool) = tool.strip_prefix("browser_") {
             let result = browser_mcp::tools::handle_tool(browser, browser_tool, scoped_args).await;
             let (_, val) = super::browser_result_to_value(result);
@@ -867,5 +920,26 @@ mod tests {
         assert_eq!(result["fields"]["Password"], "secret");
         assert_eq!(result["tags"][0], "user@example.com");
         assert_eq!(result["tags"][1], "extra");
+    }
+
+    #[test]
+    fn resolved_variable_coordinates_reach_the_monitor_fence() {
+        let mut vars = HashMap::new();
+        vars.insert("point".to_string(), json!({"x": 9000, "y": -4000}));
+        let template = json!({"x": "{{point.x}}", "y": "{{point.y}}"});
+        let resolved = substitute_variables(&template, &vars);
+
+        let blocked = apply_monitor_scope_to_resolved_args("uia_click", &resolved, |tool, args| {
+            assert_eq!(tool, "uia_click");
+            assert_eq!(args["x"], 9000);
+            assert_eq!(args["y"], -4000);
+            Err(json!({
+                "success": false,
+                "error": "strict monitor scope rejected resolved coordinates"
+            }))
+        })
+        .expect_err("resolved coordinates must be checked after substitution");
+
+        assert_eq!(blocked["success"], false);
     }
 }
