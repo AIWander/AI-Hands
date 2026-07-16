@@ -8,7 +8,7 @@ This report identifies the exact ARM64 publication artifacts prepared for source
 - Final signed SHA-256: `5A4A09429C0B228753AF1B50EFD983DAD06C26FAD756C8F98D63F9BDDE136F93`
 - Final signed size: 21,989,136 bytes
 - PE architecture: ARM64 (`0xAA64`)
-- Signature state: Valid and timestamped; signer `Joseph Wander`
+- Signature state: Valid and timestamped with the publisher certificate
 - Embedded-string checks: no workstation-specific username path, private user path, old live-binary hash, private coverage filename, hardcoded Node executable, or private JavaScript-helper path. Generic, non-user-specific fallback strings from the public path-discovery dependency remain by design.
 - Dependency check: one vendored `vision-core` package is shared by Hands and the vendored browser library.
 
@@ -45,7 +45,7 @@ An earlier signed `.1` build passed the four-physical-monitor suite twice. That 
 - SHA-256: `74A7C9B827597C8D253969DEBBB05B77869602ABC81DD9D033845187DD8A9B0E`
 - Size: 7,199,088 bytes
 - PE architecture: ARM64 (`0xAA64`)
-- Signature state: Valid and timestamped; signer `Joseph Wander`
+- Signature state: Valid and timestamped with the publisher certificate
 - Contents: signed Rust server, Codex and Claude plugin manifests, MCP registration template, two AIHands skills, host-neutral instructions, and opt-in hook fragments.
 - Default behavior: does not edit AI host configuration, enable hooks, start a server, alter a tunnel, or add PATH unless that selectable task is enabled.
 - Interactive behavior: attempts to copy the universal application guide and reports whether clipboard setup succeeded; silent mode leaves activation and result files instead of claiming an interactive action occurred.
