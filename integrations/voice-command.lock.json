@@ -1,0 +1,6 @@
+{
+  "repository": "AIWander/Voice-Command",
+  "commit": "54065b5475ffbe5a827e9b8c1e184c31b9cc3feb",
+  "plugin_version": "0.3.1",
+  "purpose": "Reproducible source for the optional Voice-Command plugin and Rust wrapper in AI-Hands combined installers."
+}

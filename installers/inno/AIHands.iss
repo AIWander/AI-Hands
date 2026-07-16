@@ -11,6 +11,38 @@
   #define BinaryArch "arm64"
 #endif
 
+#ifndef OutputArch
+  #define OutputArch "arm64"
+#endif
+
+#ifndef PluginId
+  #define PluginId "ai-hands"
+#endif
+
+#ifndef PluginPath
+  #define PluginPath "..\..\plugins\ai-hands"
+#endif
+
+#ifndef PackageFlavor
+  #define PackageFlavor "hooks"
+#endif
+
+#ifndef IncludeVoice
+  #define IncludeVoice 0
+#endif
+
+#if IncludeVoice == "1"
+  #ifndef VoicePluginRoot
+    #error VoicePluginRoot is required when IncludeVoice=1
+  #endif
+  #ifndef VoiceBinaryPath
+    #error VoiceBinaryPath is required when IncludeVoice=1
+  #endif
+  #define VoiceFlavor "voice"
+#else
+  #define VoiceFlavor "no-voice"
+#endif
+
 [Setup]
 AppId={{A2D39077-909B-4D5E-BA3A-67C12FA2A84B}
 AppName={#MyAppName}
@@ -33,7 +65,7 @@ SolidCompression=yes
 WizardStyle=modern
 ChangesEnvironment=yes
 OutputDir=..\..\dist
-OutputBaseFilename=AIHands-Setup-{#MyAppVersion}-{#BinaryArch}
+OutputBaseFilename=AIHands-Setup-{#MyAppVersion}-{#PackageFlavor}-{#VoiceFlavor}-{#OutputArch}
 UninstallDisplayIcon={app}\bin\hands.exe
 SetupLogging=yes
 
@@ -46,9 +78,12 @@ Name: "addtopath"; Description: "Add AI-Hands to the current user's PATH"; Flags
 [Files]
 Source: "{#BinaryPath}"; DestDir: "{app}\bin"; DestName: "hands.exe"; Flags: ignoreversion
 Source: "..\..\scripts\js_extract.js"; DestDir: "{app}\bin\helpers"; Flags: ignoreversion
-Source: "..\..\plugins\ai-hands\*"; DestDir: "{app}\marketplace\plugins\ai-hands"; Excludes: "__pycache__,__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs
-Source: "..\..\.agents\plugins\marketplace.json"; DestDir: "{app}\marketplace\.agents\plugins"; Flags: ignoreversion
-Source: "..\..\.claude-plugin\marketplace.json"; DestDir: "{app}\marketplace\.claude-plugin"; Flags: ignoreversion
+Source: "{#PluginPath}\*"; DestDir: "{app}\marketplace\plugins\{#PluginId}"; Excludes: "__pycache__,__pycache__\*,*.pyc,rendered-hooks,rendered-hooks\*"; Flags: ignoreversion recursesubdirs
+#if IncludeVoice == "1"
+Source: "{#VoiceBinaryPath}"; DestDir: "{app}\bin"; DestName: "voice-mcp.exe"; Flags: ignoreversion
+Source: "{#VoicePluginRoot}\plugins\voice-command\*"; DestDir: "{app}\marketplace\plugins\voice-command"; Excludes: "__pycache__,__pycache__\*,*.pyc"; Flags: ignoreversion recursesubdirs
+Source: "{#VoicePluginRoot}\installer\APPLY_TO_YOUR_AI.txt"; DestDir: "{app}\installer"; DestName: "VOICE_APPLY_TO_YOUR_AI.template.txt"; Flags: ignoreversion
+#endif
 Source: "..\scripts\Finalize-InstalledPlugin.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "PREREQUISITES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -56,11 +91,11 @@ Source: "PREREQUISITES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{code:UpdatedUserPath}"; Flags: preservestringtype; Tasks: addtopath
 
 [Icons]
-Name: "{group}\AI-Hands application guide"; Filename: "{app}\marketplace\plugins\ai-hands\instructions\APPLY_TO_YOUR_AI.txt"
+Name: "{group}\AI-Hands application guide"; Filename: "{app}\APPLY_TO_YOUR_AI.txt"
 Name: "{group}\AI-Hands prerequisites"; Filename: "{app}\PREREQUISITES.txt"
 
 [Run]
-Filename: "notepad.exe"; Parameters: """{app}\marketplace\plugins\ai-hands\instructions\APPLY_TO_YOUR_AI.txt"""; Description: "Open the per-AI application guide"; Flags: postinstall nowait skipifsilent unchecked
+Filename: "notepad.exe"; Parameters: """{app}\APPLY_TO_YOUR_AI.txt"""; Description: "Open the per-AI application guide"; Flags: postinstall nowait skipifsilent unchecked
 
 [Code]
 const
@@ -109,7 +144,9 @@ begin
   Params :=
     '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
     '"' + ExpandConstant('{app}\installer\Finalize-InstalledPlugin.ps1') + '" ' +
-    '-AppDir "' + ExpandConstant('{app}') + '"';
+    '-AppDir "' + ExpandConstant('{app}') + '" ' +
+    '-PluginId "{#PluginId}" ' +
+    '-VoiceIncluded {#IncludeVoice}';
   Result := Exec(
     ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     Params,
@@ -225,7 +262,7 @@ var
   Attempt: Integer;
   ResultCode: Integer;
 begin
-  GuidePath := ExpandConstant('{app}\marketplace\plugins\ai-hands\instructions\APPLY_TO_YOUR_AI.txt');
+  GuidePath := ExpandConstant('{app}\APPLY_TO_YOUR_AI.txt');
   ClipboardSucceeded := LoadStringFromFile(GuidePath, GuideBytes);
   if not ClipboardSucceeded then
   begin
@@ -319,9 +356,14 @@ begin
       CopyGuideToClipboard();
 
     MessageText :=
-      'AI-Hands, its optional plugin, and its skills are staged locally.' + #13#10 + #13#10 +
+      'AI-Hands profile {#PluginId} and its skills are staged locally.' + #13#10 + #13#10 +
       'No Codex, Claude, Grok, ChatGPT, MCP, or hook configuration was edited.' + #13#10 +
       'Use the per-AI guide to apply the plugin through each host''s supported UI or CLI.';
+
+#if IncludeVoice == "1"
+    MessageText := MessageText + #13#10 + #13#10 +
+      'This Voice variant also stages the Voice-Command plugin and Rust MCP wrapper. It does not start the microphone or include the full Voice App/listener runtime.';
+#endif
 
     MessageText := MessageText + #13#10 + #13#10 +
       'The installed plugin registration uses the absolute hands.exe path and does not depend on PATH.';
@@ -343,5 +385,12 @@ begin
 end;
 
 [UninstallDelete]
+Type: files; Name: "{app}\APPLY_TO_YOUR_AI.txt"
 Type: files; Name: "{app}\install-result.json"
+Type: filesandordirs; Name: "{app}\marketplace"
 Type: filesandordirs; Name: "{app}\installer"
+
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\marketplace"
+Type: files; Name: "{app}\bin\voice-mcp.exe"
+Type: files; Name: "{app}\installer\VOICE_APPLY_TO_YOUR_AI.template.txt"

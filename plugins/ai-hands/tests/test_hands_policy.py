@@ -97,6 +97,49 @@ class HandsPolicyTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn(policy.CONSENT_FIELD, text)
             self.assertNotIn(policy.CONSENT_KEY_ENV, text)
+            fragment = json.loads(text)
+            self.assertIn("SessionStart", fragment["hooks"])
+            self.assertIn("UserPromptSubmit", fragment["hooks"])
+            self.assertIn("PreToolUse", fragment["hooks"])
+            self.assertIn("PostToolUse", fragment["hooks"])
+            self.assertIn("PostToolUseFailure", fragment["hooks"])
+
+    def test_lifecycle_tracks_mutations_until_verification(self) -> None:
+        payload = {"session_id": "test-session"}
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict(os.environ, {"AIWANDER_POLICY_DATA": tmp}, clear=False),
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                policy.run("SessionStart", "codex", payload)
+            self.assertIn("hook profile loaded", stdout.getvalue())
+
+            policy.run(
+                "PostToolUse",
+                "codex",
+                {**payload, "toolName": "hands__hands_click", "toolInput": {}},
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                policy.run("UserPromptSubmit", "codex", payload)
+            message = json.loads(stdout.getvalue())["hookSpecificOutput"][
+                "additionalContext"
+            ]
+            self.assertIn("1 successful mutation", message)
+
+            policy.run(
+                "PostToolUse",
+                "codex",
+                {**payload, "toolName": "hands__hands_verify", "toolInput": {}},
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                policy.run("UserPromptSubmit", "codex", payload)
+            message = json.loads(stdout.getvalue())["hookSpecificOutput"][
+                "additionalContext"
+            ]
+            self.assertIn("no unverified mutation streak", message)
 
 
 if __name__ == "__main__":

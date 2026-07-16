@@ -17,124 +17,160 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
       - uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: cargo test --release --locked
+      - name: Run Rust tests and build check through the repository batch wrapper
+        run: scripts\build-template.bat
         timeout-minutes: 15
+      - name: Validate plugin profiles and hook policy
+        run: |
+          python plugins/test_plugin_profiles.py
+          python plugins/ai-hands/tests/test_hands_policy.py
 
   build:
     needs: test
     strategy:
+      fail-fast: false
       matrix:
         include:
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             suffix: x64
+            binary_suffix: x64
             installer_arch: x64compatible
           - runner: windows-11-arm
             target: aarch64-pc-windows-msvc
-            suffix: aarch64
+            suffix: arm64
+            binary_suffix: aarch64
             installer_arch: arm64
-      fail-fast: false
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+      - name: Read pinned Voice-Command source
+        id: voice-lock
+        shell: pwsh
+        run: |
+          $lock = Get-Content integrations/voice-command.lock.json -Raw | ConvertFrom-Json
+          "repository=$($lock.repository)" >> $env:GITHUB_OUTPUT
+          "commit=$($lock.commit)" >> $env:GITHUB_OUTPUT
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.voice-lock.outputs.repository }}
+          ref: ${{ steps.voice-lock.outputs.commit }}
+          path: _voice-command
+      - name: Verify pinned Voice-Command checkout
+        shell: pwsh
+        run: |
+          $actual = git -C _voice-command rev-parse HEAD
+          if ($actual -ne '${{ steps.voice-lock.outputs.commit }}') {
+            throw "Voice-Command checkout drifted: $actual"
+          }
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - name: Build release
-        run: cargo build --release --locked --target ${{ matrix.target }}
-      - name: Rename binary
+      - name: Build signed payload candidates through the repository batch wrapper
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}"
-          Copy-Item "target/${{ matrix.target }}/release/hands.exe" "AI-Hands-$version-${{ matrix.suffix }}.exe"
+          $outputRoot = Join-Path $env:GITHUB_WORKSPACE '_release-payloads/${{ matrix.suffix }}'
+          & scripts/build-release-payloads.bat '${{ matrix.target }}' (Resolve-Path _voice-command).Path $outputRoot
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $signedRoot = Join-Path $env:GITHUB_WORKSPACE '_signed-payloads/${{ matrix.suffix }}'
+          New-Item -ItemType Directory -Path $signedRoot -Force | Out-Null
+          $hands = Join-Path $signedRoot 'hands.exe'
+          $voice = Join-Path $signedRoot 'voice-mcp.exe'
+          Copy-Item (Join-Path $outputRoot 'hands/${{ matrix.target }}/release/hands.exe') $hands
+          Copy-Item (Join-Path $outputRoot 'voice/${{ matrix.target }}/release/voice-mcp.exe') $voice
+          "HANDS_EXE=$hands" >> $env:GITHUB_ENV
+          "VOICE_EXE=$voice" >> $env:GITHUB_ENV
+      - name: Require Authenticode signing credentials
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          foreach ($name in 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET') {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Required Authenticode secret is missing: $name"
+            }
+          }
+      - name: Authenticode sign Rust executables
+        uses: azure/trusted-signing-action@v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://eus.codesigning.azure.net
+          trusted-signing-account-name: AIWander
+          certificate-profile-name: cpc-signing
+          files-folder: ${{ github.workspace }}/_signed-payloads/${{ matrix.suffix }}
+          files-folder-filter: exe
+      - name: Verify Rust Authenticode signatures
+        shell: pwsh
+        run: |
+          $files = @(
+            (Resolve-Path $env:HANDS_EXE).Path,
+            (Resolve-Path $env:VOICE_EXE).Path
+          )
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $file
+            if ($signature.Status -ne 'Valid') {
+              throw "Authenticode verification failed for $file: $($signature.Status)"
+            }
+          }
+          Copy-Item $env:HANDS_EXE "hands-${{ github.ref_name }}-${{ matrix.binary_suffix }}.exe"
+      - name: Smoke-test signed MCP payloads
+        shell: pwsh
+        run: |
+          & scripts/smoke-test.ps1 -ExePath $env:HANDS_EXE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & scripts/smoke-test-voice.ps1 -ExePath $env:VOICE_EXE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install Inno Setup compiler
         shell: pwsh
         run: choco install innosetup --yes --no-progress
-      - name: Build self-installing plugin package
+      - name: Build four installer variants
         shell: pwsh
         run: |
-          $binary = (Resolve-Path "target/${{ matrix.target }}/release/hands.exe").Path
-          & "installers/inno/build-installer.bat" $binary "${{ matrix.installer_arch }}"
+          $hands = (Resolve-Path $env:HANDS_EXE).Path
+          $voice = (Resolve-Path $env:VOICE_EXE).Path
+          $voiceRoot = (Resolve-Path _voice-command).Path
+          & installers/inno/build-package-matrix.bat $hands '${{ matrix.installer_arch }}' $voiceRoot $voice
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $installer = Get-ChildItem "dist/AIHands-Setup-*-${{ matrix.installer_arch }}.exe" |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-          if (-not $installer) { throw "Inno Setup did not produce the expected installer" }
-          Copy-Item $installer.FullName "AIHands-Setup-${{ github.ref_name }}-${{ matrix.suffix }}.exe"
-      - name: Smoke-test self-installing plugin package
+          $installers = @(Get-ChildItem "dist/AIHands-Setup-*-*-${{ matrix.suffix }}.exe")
+          if ($installers.Count -ne 4) {
+            throw "Expected four installer variants, found $($installers.Count)."
+          }
+      - name: Authenticode sign installers
+        uses: azure/trusted-signing-action@v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://eus.codesigning.azure.net
+          trusted-signing-account-name: AIWander
+          certificate-profile-name: cpc-signing
+          files-folder: ${{ github.workspace }}/dist
+          files-folder-filter: exe
+      - name: Verify and cold-test every installer variant
         shell: pwsh
         run: |
-          $installer = Get-ChildItem "dist/AIHands-Setup-*-${{ matrix.installer_arch }}.exe" |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-          if (-not $installer) { throw "Installer smoke test could not find the package" }
-
-          $testRoot = Join-Path $env:RUNNER_TEMP "aihands-installer-${{ matrix.suffix }}"
-          New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
-          $install = Start-Process -FilePath $installer.FullName -ArgumentList @(
-            '/VERYSILENT',
-            '/SUPPRESSMSGBOXES',
-            '/NORESTART',
-            "/DIR=$testRoot",
-            '/MERGETASKS=!addtopath'
-          ) -WindowStyle Hidden -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "Installer exited $($install.ExitCode)" }
-
-          $resultPath = Join-Path $testRoot 'install-result.json'
-          $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
-          if ($result.success -ne $true -or
-              $result.client_configs_changed -ne $false -or
-              $result.hooks_enabled -ne $false -or
-              $result.server_started -ne $false) {
-            throw "Installer truth record is unsafe or incomplete: $($result | ConvertTo-Json -Compress)"
-          }
-
-          $builtBinary = (Resolve-Path "target/${{ matrix.target }}/release/hands.exe").Path
-          $installedBinary = (Resolve-Path (Join-Path $testRoot 'bin/hands.exe')).Path
-          $builtHash = (Get-FileHash -LiteralPath $builtBinary -Algorithm SHA256).Hash
-          $installedHash = (Get-FileHash -LiteralPath $installedBinary -Algorithm SHA256).Hash
-          if ($builtHash -ne $installedHash) { throw "Installed binary does not match the release build" }
-
-          $mcpPath = Join-Path $testRoot 'marketplace/plugins/ai-hands/.mcp.json'
-          $mcp = Get-Content -LiteralPath $mcpPath -Raw | ConvertFrom-Json
-          if ([IO.Path]::GetFullPath($mcp.mcpServers.hands.command) -ne $installedBinary) {
-            throw "Installed MCP registration does not use the absolute packaged binary path"
-          }
-          foreach ($required in @(
-            'marketplace/plugins/ai-hands/.codex-plugin/plugin.json',
-            'marketplace/plugins/ai-hands/.claude-plugin/plugin.json',
-            'marketplace/plugins/ai-hands/instructions/APPLY_TO_YOUR_AI.txt',
-            'marketplace/plugins/ai-hands/skills/ai-hands/SKILL.md',
-            'marketplace/plugins/ai-hands/hooks/opt-in/codex-hooks.fragment.json'
-          )) {
-            if (-not (Test-Path -LiteralPath (Join-Path $testRoot $required) -PathType Leaf)) {
-              throw "Installer omitted required payload: $required"
-            }
-          }
-
-          $uninstaller = (Resolve-Path (Join-Path $testRoot 'unins000.exe')).Path
-          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList @(
-            '/VERYSILENT',
-            '/SUPPRESSMSGBOXES',
-            '/NORESTART'
-          ) -WindowStyle Hidden -Wait -PassThru
-          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller exited $($uninstall.ExitCode)" }
-          for ($attempt = 0; $attempt -lt 20 -and (Test-Path -LiteralPath $testRoot); $attempt++) {
-            Start-Sleep -Milliseconds 250
-          }
-          if (Test-Path -LiteralPath $testRoot) {
-            throw "Uninstaller left the isolated installation directory behind: $testRoot"
-          }
-      - name: Upload artifact
+          & scripts/cold-test-installers.ps1 `
+            -InstallerDir dist `
+            -Architecture '${{ matrix.suffix }}' `
+            -HandsPayload $env:HANDS_EXE `
+            -VoicePayload $env:VOICE_EXE `
+            -TestRoot (Join-Path $env:RUNNER_TEMP 'aihands-cold-${{ matrix.suffix }}')
+      - name: Upload signed artifacts
         uses: actions/upload-artifact@v7
         with:
           name: ${{ github.event.repository.name }}-${{ matrix.suffix }}
           path: |
-            AI-Hands-*-${{ matrix.suffix }}.exe
-            AIHands-Setup-*-${{ matrix.suffix }}.exe
+            hands-*-${{ matrix.binary_suffix }}.exe
+            dist/AIHands-Setup-*-${{ matrix.suffix }}.exe
           if-no-files-found: error
           retention-days: 1
 
@@ -143,19 +179,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write # keyless cosign signing via Sigstore OIDC
+      id-token: write
     steps:
-      - name: Download all artifacts
+      - name: Download all signed artifacts
         uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
       - name: Generate SHA256SUMS
         working-directory: dist
-        run: sha256sum * > SHA256SUMS
+        run: sha256sum *.exe > SHA256SUMS
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
-      - name: Sign binaries + checksums (keyless / Sigstore)
+      - name: Add keyless Sigstore signatures
         working-directory: dist
         run: |
           for f in *.exe SHA256SUMS; do
@@ -163,7 +199,7 @@ jobs:
               --output-signature "$f.sig" \
               --output-certificate "$f.pem"
           done
-      - name: Create release
+      - name: Create draft release
         uses: softprops/action-gh-release@v3
         with:
           files: |

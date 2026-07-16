@@ -11,6 +11,32 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  plugin-profiles:
+    name: Plugin profiles and hook policy
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Validate the two current plugin profiles
+        run: python plugins/test_plugin_profiles.py
+      - name: Test shared lifecycle and safety policy
+        run: python plugins/ai-hands/tests/test_hands_policy.py
+      - name: Parse installer finalizer
+        shell: pwsh
+        run: |
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'installers/scripts/Finalize-InstalledPlugin.ps1'),
+            [ref]$null,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
   mojibake-scan:
     name: Mojibake Scanner
     runs-on: ubuntu-latest

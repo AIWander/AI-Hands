@@ -1,12 +1,36 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event SessionStart",
+            "timeout": 5,
+            "statusMessage": "AI-Hands session orientation"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event UserPromptSubmit",
+            "timeout": 5,
+            "statusMessage": "AI-Hands verification state"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "mcp__hands__.*|hands__.*|AI-Hands__.*|use_tool|CallMcpTool",
         "hooks": [
           {
             "type": "command",
-            "command": "py -3.11 \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event PreToolUse",
+            "command": "python \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event PreToolUse",
             "timeout": 5,
             "statusMessage": "AI-Hands safety policy"
           }
@@ -19,9 +43,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "py -3.11 \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event PostToolUse",
+            "command": "python \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event PostToolUse",
             "timeout": 5,
             "statusMessage": "AI-Hands redacted audit"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "mcp__hands__.*|hands__.*|AI-Hands__.*|use_tool|CallMcpTool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"__AI_HANDS_PLUGIN_ROOT__/hooks/opt-in/adapters/codex/hook_adapter.py\" --event PostToolUseFailure",
+            "timeout": 5,
+            "statusMessage": "AI-Hands failure audit"
           }
         ]
       }
