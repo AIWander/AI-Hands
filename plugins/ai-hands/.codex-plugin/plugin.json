@@ -1,7 +1,7 @@
 {
   "name": "ai-hands",
-  "version": "1.1.0",
-  "description": "Optional AI-Hands MCP plugin for current browser, Windows UIA, vision, live network inspection, and strict monitor scoping.",
+  "version": "1.1.0-unified.2",
+  "description": "Hook-capable AI-Hands MCP plugin with dense ability routing, safety, workflows, and reviewed lifecycle-hook templates.",
   "author": {
     "name": "AIWander",
     "url": "https://github.com/AIWander/AI-Hands"
@@ -20,8 +20,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "AI-Hands",
-    "shortDescription": "Operate browser and desktop interfaces safely.",
-    "longDescription": "Routes current-state browser, Windows UIA, vision, monitor-scoped, and live network work through AI-Hands while keeping durable API and credential work in Workflow.",
+    "shortDescription": "Operate interfaces with optional reviewed hooks.",
+    "longDescription": "Routes current-state browser, Windows UIA, vision, monitor-scoped, and live network work through AI-Hands and includes inert lifecycle-hook templates for hosts that can review, trust, and prove them.",
     "developerName": "AIWander",
     "category": "Productivity",
     "capabilities": [
@@ -29,7 +29,8 @@
       "Desktop automation",
       "Vision and OCR",
       "Monitor scoping",
-      "Live network inspection"
+      "Live network inspection",
+      "Optional lifecycle hooks"
     ],
     "defaultPrompt": [
       "Inspect this interface, act safely, and verify the result.",

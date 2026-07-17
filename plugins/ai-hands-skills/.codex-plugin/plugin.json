@@ -1,0 +1,27 @@
+{
+  "name": "ai-hands-skills",
+  "version": "1.1.0-unified.2",
+  "description": "Hookless AI-Hands MCP plugin with dense ability routing, safety, workflows, and behavioral lifecycle guidance.",
+  "author": {
+    "name": "AIWander",
+    "url": "https://github.com/AIWander/AI-Hands"
+  },
+  "homepage": "https://github.com/AIWander/AI-Hands",
+  "repository": "https://github.com/AIWander/AI-Hands",
+  "license": "Apache-2.0",
+  "keywords": ["ai-hands", "browser", "desktop", "uia", "vision", "mcp", "skills"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "AI-Hands Skills",
+    "shortDescription": "Operate interfaces on hosts without lifecycle hooks.",
+    "longDescription": "Adds AI-Hands and four narrowly triggered skills for current browser, Windows UIA, vision, monitor scoping, safety, and verified workflows without installing hook code.",
+    "developerName": "AIWander",
+    "category": "Productivity",
+    "capabilities": ["Browser automation", "Desktop automation", "Vision and OCR", "Monitor scoping", "Behavioral skill dispatch"],
+    "defaultPrompt": [
+      "Inspect this interface, act safely, and verify the result.",
+      "Apply the AI-Hands skill dispatch block for this task."
+    ]
+  }
+}

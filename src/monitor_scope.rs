@@ -209,6 +209,12 @@ fn initial_state_from_env() -> ScopeState {
     }
 }
 
+fn opaque_physical_stable_id(raw: &str) -> String {
+    use sha2::{Digest, Sha256};
+
+    format!("physical:v1:{:x}", Sha256::digest(raw.as_bytes()))
+}
+
 #[cfg(windows)]
 fn stable_display_identity(x: i32, y: i32, fallback_id: u32) -> (String, bool) {
     use windows::core::PCWSTR;
@@ -258,11 +264,17 @@ fn stable_display_identity(x: i32, y: i32, fallback_id: u32) -> (String, bool) {
 
     let interface_path = utf16(&device.DeviceID);
     if !interface_path.is_empty() {
-        return (interface_path.to_ascii_lowercase(), true);
+        return (
+            opaque_physical_stable_id(&interface_path.to_ascii_lowercase()),
+            true,
+        );
     }
     let device_key = utf16(&device.DeviceKey);
     if !device_key.is_empty() {
-        return (device_key.to_ascii_lowercase(), true);
+        return (
+            opaque_physical_stable_id(&device_key.to_ascii_lowercase()),
+            true,
+        );
     }
     (format!("logical:{fallback_id}"), false)
 }
@@ -498,7 +510,7 @@ pub fn tool_definition() -> Value {
                 "mode": {"type": "string", "enum": ["fixed", "primary"], "default": "fixed"},
                 "monitor": {"type": "integer", "description": "Current monitor index to resolve and bind when mode=fixed"},
                 "display_id": {"type": "integer", "description": "Current logical display ID from action=list; accepted for selection but not stored as the physical binding"},
-                "stable_id": {"type": "string", "description": "Physical monitor interface identity from action=list; strongest unattended selector"},
+                "stable_id": {"type": "string", "description": "Opaque deterministic physical-monitor identity token from action=list; strongest unattended selector without exposing a Windows device path"},
                 "browser_window_title": {"type": "string", "description": "Optional dedicated visible browser window title. Required before visible browser/CDP tools can run under the fence."}
             }
         }
@@ -1671,5 +1683,20 @@ mod tests {
         };
         assert!(point_inside(&monitor, -1400, -1000));
         assert!(!point_inside(&monitor, 600, 0));
+    }
+
+    #[test]
+    fn physical_stable_ids_are_deterministic_opaque_and_redaction_safe() {
+        let raw = r"\\?\DISPLAY#PANEL123#INSTANCE456#{GUID}";
+        let stable_id = opaque_physical_stable_id(raw);
+
+        assert_eq!(stable_id, opaque_physical_stable_id(raw));
+        assert!(stable_id.starts_with("physical:v1:"));
+        assert_eq!(stable_id.len(), "physical:v1:".len() + 64);
+        assert!(!stable_id.contains("DISPLAY"));
+        assert_eq!(
+            crate::network_redaction::redact_network_value(&json!(stable_id.clone())),
+            json!(stable_id)
+        );
     }
 }

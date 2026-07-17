@@ -411,13 +411,25 @@ pub fn unsafe_call_block_response(name: &str, args: &Value) -> Option<Value> {
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
             (!env_enabled || !call_enabled).then(|| {
-                json!({
-                    "capability_kind": kind,
-                    "required_env": env_name,
-                    "required_env_value": "1",
-                    "required_argument": argument_name,
-                    "required_argument_value": true
-                })
+                let mut gate = serde_json::Map::new();
+                gate.insert(
+                    "capability_kind".to_owned(),
+                    Value::String((*kind).to_owned()),
+                );
+                gate.insert(
+                    "required_env".to_owned(),
+                    Value::String((*env_name).to_owned()),
+                );
+                gate.insert(
+                    "required_env_value".to_owned(),
+                    Value::String("1".to_owned()),
+                );
+                gate.insert(
+                    "required_argument".to_owned(),
+                    Value::String((*argument_name).to_owned()),
+                );
+                gate.insert("required_argument_value".to_owned(), Value::Bool(true));
+                Value::Object(gate)
             })
         })
         .collect::<Vec<_>>();

@@ -19,6 +19,7 @@ Windows desktop and vision layers:
 
 AI host boundary:
 - Setup stages hands.exe, the optional plugin, skills, instructions, and opt-in hook templates.
+- The optional hook adapters require Python 3.10 or newer available on PATH as python; Hands itself and the skills-only profile do not require Python.
 - Setup adds only the AI-Hands bin directory to the current user's PATH.
 - Setup does not edit Codex, Claude, Grok, ChatGPT, MCP, or hook configuration.
 - The per-AI application guide is copied to the clipboard during an interactive install and a popup explains the next step.

@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI-Hands Workflows"
+  short_description: "Run short verified browser and desktop recipes"
+  default_prompt: "Use $ai-hands-workflows for a short observe-act-verify automation plan."
+
+policy:
+  allow_implicit_invocation: true

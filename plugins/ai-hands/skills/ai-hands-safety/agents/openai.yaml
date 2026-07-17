@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI-Hands Safety"
+  short_description: "Check consent and origin before real UI actions"
+  default_prompt: "Use $ai-hands-safety to check this exact Hands action before it changes the real interface."
+
+policy:
+  allow_implicit_invocation: true

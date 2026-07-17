@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI-Hands"
+  short_description: "Operate current browser and desktop interfaces"
+  default_prompt: "Use $ai-hands to inspect this interface, act safely, and verify the result."
+
+policy:
+  allow_implicit_invocation: true

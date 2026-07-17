@@ -1,7 +1,7 @@
 {
   "name": "ai-hands",
-  "version": "1.1.0",
-  "description": "Optional AI-Hands skills and MCP registration for current browser, desktop, vision, and live network work.",
+  "version": "1.1.0-unified.2",
+  "description": "Hook-capable AI-Hands skills and MCP registration for current browser, desktop, vision, and live network work.",
   "author": {
     "name": "AIWander",
     "url": "https://github.com/AIWander/AI-Hands"

@@ -41,6 +41,9 @@ base64 = "0.22"
 # Regex for URL pattern detection in browser_learn_api
 regex = "1"
 
+# Opaque, deterministic physical-monitor identities
+sha2 = "0.10"
+
 # QR code decoding for TOTP 2FA registration
 # v1.0.1 dep-bump: 0.7 → 0.10 to pull lru ^0.16 (GHSA-rhfx-m35p-ff5j, lru < 0.16.3)
 rqrr = { version = "0.10", default-features = false }

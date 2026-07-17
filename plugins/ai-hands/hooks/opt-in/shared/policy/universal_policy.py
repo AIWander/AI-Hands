@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single policy owner for the AIWander portable agent pack.
+"""Single policy owner for the AI-Hands hook-capable plugin.
 
 Host adapters only identify the host and event. All name normalization, safety
 decisions, redaction, cooldown state, and auditing live here. Risk consent is
@@ -25,12 +25,6 @@ from typing import Any
 
 
 HANDS_PREFIXES = ("mcp__hands__", "AI-Hands__", "hands__")
-PROGRAMMER_PREFIXES = (
-    "mcp__programmer-wander__",
-    "mcp__programmer__",
-    "programmer-wander__",
-    "programmer__",
-)
 WRAPPER_NAMES = {"use_tool", "CallMcpTool"}
 CONSENT_FIELD = "_aiwander_host_consent"
 CONSENT_PURPOSE = "risky-action"
@@ -151,26 +145,15 @@ HANDS_ALWAYS_CONSENT = {
     "hands_plugin_load": "native plugin loading",
     "hands_plugin_unload": "native plugin unloading",
 }
-
-PROGRAMMER_COMMAND_TOOLS = {
-    "bash",
-    "chain",
-    "powershell",
-    "psession_run",
-    "run",
-    "session_create",
-    "shortcut",
-    "shortcut_chain",
-    "smart_exec",
-    "wsl_bg",
-    "wsl_run",
-}
-PROGRAMMER_ALWAYS_CONSENT = {
-    "git_push": "external git push",
-    "kill_process": "process termination",
-    "psession_destroy": "process-session termination",
-    "session_clear_recovery": "recovery-state deletion",
-    "session_destroy": "process-session termination",
+HANDS_VERIFIER_TOOLS = {
+    "browser_extract_content",
+    "browser_get_text",
+    "hands_capture",
+    "hands_find",
+    "hands_monitor_scope",
+    "hands_status",
+    "hands_verify",
+    "vision_diff",
 }
 
 FINANCIAL_ACTION_RE = re.compile(
@@ -209,40 +192,6 @@ SECURITY_ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 
-COMMAND_PREFIX_RE = (
-    r"(?:^|[;&|{(]\s*|(?:sudo|command|env)\s+|"
-    r"(?:cmd(?:\.exe)?\s+/[ck]|(?:ba)?sh\s+-[lc]+|"
-    r"(?:pwsh|powershell)(?:\.exe)?\s+(?:-[a-z]*command|-c))\s+[\"']?)"
-)
-DELETE_COMMAND_RE = re.compile(
-    rf"(?ix){COMMAND_PREFIX_RE}(?:"
-    r"remove-item|rm|rmdir|rd|del|erase|unlink"
-    r")\b|\bcurl\b[^\r\n]*\s-X\s+DELETE\b|"
-    r"\binvoke-(?:restmethod|webrequest)\b[^\r\n]*\s-method\s+delete\b"
-)
-GIT_IRREVERSIBLE_RE = re.compile(
-    rf"(?ix){COMMAND_PREFIX_RE}git\b[^\r\n]*\b(?:"
-    r"reset\s+--hard|clean\s+-[a-z]*f|checkout\b[^\r\n]*--force|"
-    r"branch\s+-D|push\b"
-    r")"
-)
-PROCESS_KILL_RE = re.compile(
-    rf"(?ix){COMMAND_PREFIX_RE}(?:"
-    r"kill|killall|pkill|taskkill|stop-process|terminate-process"
-    r")\b"
-)
-DEPLOY_COMMAND_RE = re.compile(
-    rf"(?ix){COMMAND_PREFIX_RE}(?:"
-    r"docker\s+push|npm\s+publish|cargo\s+publish|twine\s+upload|"
-    r"dotnet\s+nuget\s+push|gh\s+release\s+create|"
-    r"kubectl\s+(?:apply|create|delete|patch|replace)|"
-    r"helm\s+(?:install|upgrade|uninstall)|"
-    r"terraform\s+(?:apply|destroy)|pulumi\s+up|"
-    r"vercel(?:\s+deploy|\s+--prod)|netlify\s+deploy|"
-    r"fly(?:ctl)?\s+deploy|gcloud\b[^\r\n]*\s+deploy|"
-    r"aws\b[^\r\n]*\s+deploy|az\b[^\r\n]*\s+deploy"
-    r")\b"
-)
 NETWORK_TOOL_RE = re.compile(
     r"(network|route|trace|learn_api|performance_log)", re.IGNORECASE
 )
@@ -281,6 +230,105 @@ def data_dir() -> Path:
     )
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _session_key(payload: dict[str, Any]) -> str:
+    value = (
+        payload.get("session_id")
+        or payload.get("sessionId")
+        or os.environ.get("CODEX_THREAD_ID")
+        or os.environ.get("CLAUDE_SESSION_ID")
+        or os.environ.get("GROK_SESSION_ID")
+        or "default"
+    )
+    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+
+
+def _read_lifecycle_state() -> dict[str, Any]:
+    path = data_dir() / "session-state.json"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"sessions": {}}
+    if not isinstance(value, dict) or not isinstance(value.get("sessions"), dict):
+        return {"sessions": {}}
+    return value
+
+
+def _write_lifecycle_state(state: dict[str, Any]) -> bool:
+    path = data_dir() / "session-state.json"
+    temporary = path.with_suffix(".tmp")
+    try:
+        temporary.write_text(
+            json.dumps(state, ensure_ascii=True, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(path)
+    except OSError:
+        return False
+    return True
+
+
+def _lifecycle_entry(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    state = _read_lifecycle_state()
+    sessions = state.setdefault("sessions", {})
+    key = _session_key(payload)
+    entry = sessions.setdefault(key, {"unverified_mutations": 0})
+    if not isinstance(entry, dict):
+        entry = {"unverified_mutations": 0}
+        sessions[key] = entry
+    return state, entry
+
+
+def emit_context(event: str, message: str) -> None:
+    output = {
+        "hookSpecificOutput": {
+            "hookEventName": event,
+            "additionalContext": message,
+        }
+    }
+    sys.stdout.write(json.dumps(output, ensure_ascii=True))
+
+
+def handle_lifecycle_event(event: str, payload: dict[str, Any]) -> str:
+    state, entry = _lifecycle_entry(payload)
+    normalized = event.lower()
+    if normalized == "sessionstart":
+        entry["unverified_mutations"] = 0
+        entry["started_at"] = utc_now().isoformat()
+        if not _write_lifecycle_state(state):
+            return "AI-Hands hook profile loaded, but lifecycle state could not be recorded."
+        return (
+            "AI-Hands hook profile loaded. Observe current state before acting, "
+            "use the default safe profile, and verify after short mutation bursts."
+        )
+    streak = int(entry.get("unverified_mutations", 0) or 0)
+    if streak > 0:
+        return (
+            f"AI-Hands has {streak} successful mutation(s) without a recorded "
+            "verification call. Re-observe before the next mutation."
+        )
+    return "AI-Hands lifecycle check: no unverified mutation streak is recorded."
+
+
+def update_mutation_streak(
+    event: str,
+    namespace: str | None,
+    tool: str,
+    payload: dict[str, Any],
+) -> bool:
+    if event.lower() != "posttooluse" or namespace != "hands":
+        return True
+    state, entry = _lifecycle_entry(payload)
+    current = int(entry.get("unverified_mutations", 0) or 0)
+    if tool in HANDS_VERIFIER_TOOLS:
+        entry["unverified_mutations"] = 0
+    elif tool in HANDS_ACTION_TOOLS:
+        entry["unverified_mutations"] = current + 1
+    else:
+        return True
+    entry["updated_at"] = utc_now().isoformat()
+    return _write_lifecycle_state(state)
 
 
 def _payload_tool_name(payload: dict[str, Any]) -> str:
@@ -332,8 +380,6 @@ def resolve_call(payload: dict[str, Any]) -> ResolvedCall:
         if qualified and canonicalize_tool_name(qualified)[0] is None:
             if server_key in {"ai-hands", "hands"}:
                 qualified = f"hands__{qualified}"
-            elif server_key in {"programmer", "programmer-wander"}:
-                qualified = f"programmer-wander__{qualified}"
         raw_name = qualified
         namespace, _ = canonicalize_tool_name(raw_name)
         nested_raw = _first_present(outer, ("tool_input", "arguments", "input"), {})
@@ -360,9 +406,6 @@ def canonicalize_tool_name(name: str) -> tuple[str | None, str]:
     for prefix in HANDS_PREFIXES:
         if name.startswith(prefix):
             return "hands", name[len(prefix) :]
-    for prefix in PROGRAMMER_PREFIXES:
-        if name.startswith(prefix):
-            return "programmer-wander", name[len(prefix) :]
     return None, name
 
 
@@ -658,66 +701,6 @@ def _hands_risk_reason(tool: str, args: dict[str, Any]) -> str | None:
     return None
 
 
-def _programmer_risk_reason(tool: str, args: dict[str, Any]) -> str | None:
-    if tool in PROGRAMMER_ALWAYS_CONSENT:
-        return PROGRAMMER_ALWAYS_CONSENT[tool]
-    lowered_tool = tool.lower()
-    if lowered_tool.startswith(("delete_", "remove_", "kill_", "terminate_")):
-        return "deletion or process termination"
-    if "deploy" in lowered_tool and tool != "deploy_preflight":
-        return "external deployment"
-    if tool == "http_request":
-        method = str(args.get("method", "GET")).upper()
-        if method not in {"GET", "HEAD", "OPTIONS"}:
-            return f"external HTTP {method} request"
-    if tool == "transform_sync_dir" and any(
-        args.get(key) is True
-        for key in ("delete_extra", "delete_extras", "mirror", "prune")
-    ):
-        return "synchronization that can delete destination content"
-    if tool == "git_checkout" and args.get("force") is True:
-        return "forced git checkout"
-    if tool == "git_branch" and (
-        args.get("delete") is True
-        or str(args.get("action") or args.get("operation") or "").lower()
-        in {"delete", "remove"}
-    ):
-        return "git branch deletion"
-    if tool == "git_stash" and str(args.get("action") or "").lower() in {
-        "clear",
-        "drop",
-    }:
-        return "git stash deletion"
-    if tool in PROGRAMMER_COMMAND_TOOLS or tool in {
-        "git_branch",
-        "git_checkout",
-        "git_clean",
-        "git_reset",
-        "git_stash",
-    }:
-        command_values: list[str] = []
-        for key, value in args.items():
-            if _metadata_only_key(key):
-                if isinstance(value, str):
-                    command_values.append(value)
-                elif isinstance(value, list):
-                    command_values.extend(
-                        str(item) for item in value if isinstance(item, str)
-                    )
-        if not command_values:
-            command_values.append(_flatten_text(args))
-        for text in command_values:
-            for label, pattern in (
-                ("ordinary deletion", DELETE_COMMAND_RE),
-                ("force, hard reset, clean, or git push", GIT_IRREVERSIBLE_RE),
-                ("process termination", PROCESS_KILL_RE),
-                ("external deployment or publication", DEPLOY_COMMAND_RE),
-            ):
-                if pattern.search(text):
-                    return label
-    return None
-
-
 def evaluate(
     namespace: str | None,
     tool: str,
@@ -725,7 +708,7 @@ def evaluate(
     *,
     host_consent: bool = False,
 ) -> tuple[str, str | None]:
-    if namespace in {"hands", "programmer-wander"} and _has_plaintext_secret(args):
+    if namespace == "hands" and _has_plaintext_secret(args):
         return (
             "deny",
             "Plaintext secrets are not accepted; use a credential reference owned by Workflow",
@@ -744,13 +727,6 @@ def evaluate(
             return (
                 "deny",
                 f"Hands {reason} requires a trusted host consent token bound to this exact call",
-            )
-    elif namespace == "programmer-wander":
-        reason = _programmer_risk_reason(tool, args)
-        if reason and not host_consent:
-            return (
-                "deny",
-                f"Programmer-Wander {reason} requires a trusted host consent token bound to this exact call",
             )
     return "allow", None
 
@@ -806,6 +782,12 @@ def audit(
 
 
 def run(event: str, host: str, payload: dict[str, Any]) -> int:
+    if event.lower() in {"sessionstart", "userpromptsubmit"}:
+        message = handle_lifecycle_event(event, payload)
+        audit(event, host, "", None, "", {}, "allow", None, payload)
+        emit_context(event, message)
+        return 0
+
     resolved = resolve_call(payload)
     namespace, tool = canonicalize_tool_name(resolved.raw_name)
     is_pre = event.lower().startswith("pre")
@@ -849,6 +831,7 @@ def run(event: str, host: str, payload: dict[str, Any]) -> int:
     if is_pre and not audit_ok:
         decision = "deny"
         reason = "Policy audit could not be written; refusing the managed call"
+    update_mutation_streak(event, namespace, tool, payload)
     if is_pre:
         emit_decision(decision, reason, event)
     return 0
