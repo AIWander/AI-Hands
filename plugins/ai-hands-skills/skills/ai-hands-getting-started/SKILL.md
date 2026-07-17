@@ -10,7 +10,7 @@ description: Install, connect, and verify the skills-only AI-Hands Windows MCP p
 3. Keep `HANDS_TOOL_PROFILE=default` for the recommended safe-advertised surface: 104 operational tools plus the catalog (105 entries). `full` and `strict` are also safe-advertised at 107 and 109 entries including the catalog.
 4. Start a fresh host session and confirm the `hands` MCP server appears in the tool list.
 5. Call a read-only status tool, then `hands_monitor_scope(action="list")`.
-6. For interactive use, select primary scope. For unattended use, select a physical stable ID and lock it.
+6. For interactive use, select primary scope. For unattended use, copy the opaque `physical:v1:<sha256>` stable ID returned by `hands_monitor_scope action=list` exactly and lock it; never substitute a raw Windows device path.
 7. Run a harmless capture or element lookup inside the chosen display and verify the returned bounds stay within scope.
 8. Review the behavioral dispatch block in `../../instructions/APPLY_TO_YOUR_AI.txt` and add it to the host's instructions only through the user's normal supported path.
 

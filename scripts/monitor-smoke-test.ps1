@@ -279,6 +279,7 @@ try {
                 HANDS_MONITOR_SCOPE_LOCKED = '1'
             }
             Send-McpRequests $handle @(
+                (Tool-Request 29 'hands_monitor_scope' @{ action = 'list' }),
                 (Tool-Request 30 'hands_monitor_scope' @{ action = 'get' }),
                 (Tool-Request 31 'vision_screenshot' @{}),
                 (Tool-Request 32 'vision_screenshot' @{ monitor = $mismatchIndex }),
@@ -286,13 +287,23 @@ try {
                 (Tool-Request 34 'hands_monitor_scope' @{ action = 'clear' })
             )
             $responses = Complete-HandProcess $handle
+            $fixedList = Tool-Payload (Response-ById $responses 29)
             $scope = Tool-Payload (Response-ById $responses 30)
             $capture = Tool-Payload (Response-ById $responses 31)
             $mismatch = Tool-Payload (Response-ById $responses 32)
             $setAttempt = Tool-Payload (Response-ById $responses 33)
             $clearAttempt = Tool-Payload (Response-ById $responses 34)
             if (-not $scope.success -or -not $capture.success) {
-                throw "Fixed locked monitor test failed for monitor $($monitor.index)"
+                $diagnostic = [ordered]@{
+                    requested_stable_id = [string] $monitor.stable_id
+                    requested_stable_id_length = ([string] $monitor.stable_id).Length
+                    current_monitors = @($fixedList.monitors)
+                    current_stable_id_lengths = @($fixedList.monitors | ForEach-Object { ([string] $_.stable_id).Length })
+                    current_stable_id_match = @($fixedList.monitors | Where-Object { [string] $_.stable_id -eq [string] $monitor.stable_id }).Count -gt 0
+                    scope = $scope
+                    capture = $capture
+                } | ConvertTo-Json -Depth 20 -Compress
+                throw "Fixed locked monitor test failed for monitor $($monitor.index): $diagnostic"
             }
             if ([string] $scope.scope.resolved_monitor.stable_id -ne [string] $monitor.stable_id -or
                 [string] $capture.stable_id -ne [string] $monitor.stable_id -or

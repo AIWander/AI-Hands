@@ -48,6 +48,8 @@ HANDS_MONITOR_SCOPE=stable:<physical-stable-id>
 HANDS_MONITOR_SCOPE_LOCKED=1
 ```
 
+Copy the opaque `physical:v1:<sha256>` token returned by `hands_monitor_scope action=list` exactly. It is a deterministic selector, not a Windows device path.
+
 Use `mode="primary"` for interactive work that should follow whichever display Windows marks primary. Under a strict fence, bind one unique visible browser window with `browser_window_title` before visible browser or CDP actions. A fixed physical fence is the safer unattended default; topology drift or an out-of-scope target must fail closed.
 
 ## Apply safety gates
