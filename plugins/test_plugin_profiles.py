@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import py_compile
 import re
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -53,6 +55,21 @@ class PluginProfileTests(unittest.TestCase):
                         command = hook["command"]
                         self.assertTrue(command.startswith('python "'))
                         self.assertNotIn("py -3.11", command)
+
+    def test_all_hook_python_entrypoints_compile(self) -> None:
+        hook_root = HOOKS / "hooks" / "opt-in"
+        sources = (
+            hook_root / "adapters" / "codex" / "hook_adapter.py",
+            hook_root / "adapters" / "claude-grok" / "hook_adapter.py",
+            hook_root / "shared" / "policy" / "universal_policy.py",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for index, source in enumerate(sources):
+                py_compile.compile(
+                    str(source),
+                    cfile=str(Path(temp_dir) / f"hook-{index}.pyc"),
+                    doraise=True,
+                )
 
     def test_hands_policy_does_not_claim_other_tool_servers(self) -> None:
         policy = (
