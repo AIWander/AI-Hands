@@ -218,7 +218,9 @@ function Is-Destructive([string]$toolName, [string]$text) {
   if ($toolName -notmatch '(?i)(click|press|key|submit|app_action|api_call|script|route|evaluate|eval)') {
     return $false
   }
-  return ($text -match '(?i)\b(delete|remove|destroy|drop|wipe|purge|archive|submit|confirm|approve|authorize|transfer|pay|purchase|buy|sell|cancel|discard|overwrite|reset)\b')
+  # Retune 2026-08-12: plain UI words (confirm/cancel/reset/discard) removed - they are everyday
+  # game/app chrome and payment entry is hard-blocked separately. Commerce words stay.
+  return ($text -match '(?i)\b(delete|remove|destroy|drop|wipe|purge|archive|submit|approve|authorize|transfer|pay|purchase|buy|sell|overwrite)\b')
 }
 
 function Has-ExplicitConfirm([string]$text) {
@@ -230,6 +232,22 @@ function Has-PlaintextCredential([string]$toolName, [string]$text) {
     return $false
   }
   if ($text -match '(?i)"(password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|secret|credential)"\s*:\s*"[^"]{4,}"') {
+    return $true
+  }
+  return $false
+}
+
+# Payment-information entry is HUMAN-ONLY. No override marker - unlike the destructive gate,
+# allow_destructive does not bypass this. Card/bank field names or PAN-like digit runs in
+# typing/fill/script inputs are denied outright.
+function Is-PaymentEntry([string]$toolName, [string]$text) {
+  if ($toolName -notmatch '(?i)(hands_type|hands_fill_form|browser_type|browser_fill|browser_fill_form|uia_type|type_into_window|hands_script|uia_batch|browser_batch)') {
+    return $false
+  }
+  if ($text -match '(?i)(card[_\s-]?number|cardnum|credit[_\s-]?card|debit[_\s-]?card|cvv2?|cvc|security[_\s-]?code|card[_\s-]?verification|expir(y|ation)|name[_\s-]?on[_\s-]?card|iban|swift|bic\b|routing[_\s-]?number|account[_\s-]?number|billing[_\s-]?(zip|address)|payment[_\s-]?(method|info|details))') {
+    return $true
+  }
+  if ($text -match '\b(?:\d[ -]?){13,19}\b') {
     return $true
   }
   return $false
@@ -341,7 +359,13 @@ try {
 
   # VERIFY MODEL (2026-07-14): no hard PreToolUse chain.
   # Verification is skill/batch discipline + audit streak, not a blocking gate.
-  # Hard gates below remain: destructive confirm, plaintext creds, network->Volumes, list cooldown.
+  # Hard gates below remain: payment entry (no override), destructive confirm, plaintext creds,
+  # network->Volumes, list cooldown.
+
+  if (Is-PaymentEntry $toolName $text) {
+    Emit-Deny "AI-Hands MUST-gate: payment information entry (card/bank numbers, CVV, expiry, billing fields) is human-only. No override. Hand control to the user for this step. $doctrinePointer"
+    exit 0
+  }
 
   if ((Is-Destructive $toolName $text) -and -not (Has-ExplicitConfirm $text)) {
     Emit-Deny "CPC Hands MUST-gate: destructive-tagged action needs explicit user confirmation or allow_destructive=true. $doctrinePointer"

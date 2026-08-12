@@ -8,9 +8,14 @@ with per-client state under `%LOCALAPPDATA%\AI-Hands\hook_state\<client>` (overr
 What it enforces (PreToolUse, deny-only — allow paths exit silently so the host's own
 permission flow is preserved):
 
-- **Destructive-action gate** — click/press/key/submit calls whose input matches
-  destructive words (delete, submit, confirm, buy, sell, transfer, reset, ...) are denied
-  unless the input carries `allow_destructive: true` or an explicit user-confirm marker.
+- **Destructive/commerce-action gate** — click/press/key/submit calls whose input matches
+  destruction or commerce words (delete, wipe, submit, approve, buy, sell, purchase, pay,
+  transfer, ...) are denied unless the input carries `allow_destructive: true` or an
+  explicit user-confirm marker. Everyday UI words (confirm, cancel, reset, discard)
+  intentionally do not trip it.
+- **Payment-entry gate** — typing/fill/script inputs containing card or bank field names
+  (card number, CVV, expiry, IBAN, routing number, ...) or PAN-like digit runs are denied
+  with **no override marker**; payment information is entered by the human.
 - **Plaintext-credential gate** — secrets in ordinary tool inputs are denied; only
   keyring/vault credential operations may carry them. Use `credential_name` /
   `credential_ref` instead.

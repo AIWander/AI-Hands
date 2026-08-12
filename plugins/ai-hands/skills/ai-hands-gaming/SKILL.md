@@ -51,11 +51,13 @@ action bursts; batch only verified-stable sequences with `hands_script` /
 
 The enforcement hook is active during games; three gates matter:
 
-- **Destructive-word gate**: game buttons labeled Buy, Sell, Confirm, Cancel,
-  Reset, Discard trip the PreToolUse deny. When the user has sanctioned the game
-  session and the click stays inside the game, include `allow_destructive: true`
-  in the tool input. Never blanket-apply it outside the game window; real-money
-  purchase flows still require the human.
+- **Commerce-word gate**: everyday UI words (Confirm, Cancel, Reset, Discard) do
+  not trip the hook. Commerce words do: buttons labeled Buy, Sell, Purchase, Pay,
+  Transfer are denied unless the input carries `allow_destructive: true`. Use the
+  marker only for in-game purchases with play currency, inside the game window.
+  Real-money flows stay with the human, and payment-information entry (card/bank
+  numbers, CVV, expiry, billing fields) is hard-blocked with no override — hand
+  control to the user for that step.
 - **`uia_list_window` cooldown** (45 s): find the game window once with
   `uia_focus_window(title=...)` and keep acting inside it; do not re-enumerate
   windows each turn. If a session genuinely needs rapid re-lists, set
