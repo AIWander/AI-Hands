@@ -1365,7 +1365,8 @@ async fn handle_window_screenshot_behind(
 
     // Step 6: Convert BGRA to RGBA
     let mut rgba_pixels = pixels_bgra;
-    for chunk in rgba_pixels.chunks_exact_mut(4) {
+    let (rgba_chunks, _) = rgba_pixels.as_chunks_mut::<4>();
+    for chunk in rgba_chunks {
         chunk.swap(0, 2); // B <-> R
     }
 
