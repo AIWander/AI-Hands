@@ -1,11 +1,28 @@
 {
   "marketplaceName": "aiwander-ai-hands",
-  "marketplaces": [".claude-plugin/marketplace.json", ".agents/plugins/marketplace.json"],
-  "advertisedProfiles": ["ai-hands", "ai-hands-skills"],
+  "marketplaces": [
+    ".claude-plugin/marketplace.json",
+    ".agents/plugins/marketplace.json"
+  ],
+  "advertisedProfiles": [
+    "ai-hands",
+    "ai-hands-skills"
+  ],
   "profiles": {
-    "ai-hands": { "skills": 4, "mcp": true, "hookHosts": ["claude-grok", "codex"] },
-    "ai-hands-skills": { "skills": 4, "mcp": true, "hookHosts": [] }
+    "ai-hands": {
+      "skills": 4,
+      "mcp": true,
+      "hookHosts": [
+        "claude-grok",
+        "codex"
+      ]
+    },
+    "ai-hands-skills": {
+      "skills": 4,
+      "mcp": true,
+      "hookHosts": []
+    }
   },
   "parityGroups": [],
-  "notes": "No byte-parity group on purpose. Unlike the programmer kit, these two profiles must NOT ship identical skills: each states the enforcement reality of its own profile, so the hook-capable copy says covered risky calls stay denied while the hookless copy says the skill cannot block and confirmation must come from the host. Byte-parity would force one of those two truths to be a lie. The cross-profile phrase contract is owned by plugins/test_plugin_profiles.py. grok-ai-hands is a legacy compatibility package, deliberately absent from both marketplaces and outside this contract."
+  "notes": "No byte-parity group on purpose. Unlike the programmer kit, these two profiles must NOT ship identical skills: each states the enforcement reality of its own profile, so the hook-capable copy says covered risky calls stay denied while the hookless copy says the skill cannot block and confirmation must come from the host. Byte-parity would force one of those two truths to be a lie. The cross-profile phrase contract is owned by plugins/test_plugin_profiles.py. The superseded grok-ai-hands package now lives in legacy/, out of the installable plugins/ tree, because it carries a model-supplied allow_destructive bypass; see legacy/README.md."
 }

@@ -11,6 +11,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  live-handshake:
+    # Ground truth for every advertised count and tool name comes from the server
+    # itself, never from documentation. The smoke test already performs an MCP
+    # initialize + tools/list and diffs the result against manifest/ - it just ran
+    # only at release, which is why documentation drift survived in sibling repos
+    # until a human noticed. Building debug is enough: the handshake does not care
+    # about optimization or signing.
+    name: Live tool handshake
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the server
+        run: cargo build --bin hands
+      - name: Handshake and compare against the shipped manifest
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD "target/debug/hands.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "build produced no hands.exe at $exe" }
+          & scripts/smoke-test.ps1 -ExePath $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   plugin-profiles:
     name: Plugin profiles and hook policy
     runs-on: windows-latest

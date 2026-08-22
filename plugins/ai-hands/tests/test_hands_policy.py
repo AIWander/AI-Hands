@@ -127,6 +127,24 @@ class HandsPolicyTests(unittest.TestCase):
             self.assertEqual("deny", decision)
             self.assertIn("secrets", reason)
 
+    def test_locators_are_structure_not_intent(self) -> None:
+        """An element id containing "post" is not an external send. Classifying prose
+        patterns against locators produced confident nonsense, so locator-shaped
+        values carry no risk text - while real intent still routes to the human."""
+        for locator in ("#post-list", ".send-button-wrapper", "[data-action=delete]",
+                        "//a[@id='send']", "css=.pay-now"):
+            with self.subTest(locator=locator):
+                self.assertEqual(
+                    "allow",
+                    policy.evaluate("hands", "hands_click", {"target": locator})[0],
+                )
+        for intent in ("Delete account", "Send payment now", "Transfer funds"):
+            with self.subTest(intent=intent):
+                self.assertEqual(
+                    "ask",
+                    policy.evaluate("hands", "hands_click", {"target": intent})[0],
+                )
+
     def test_fragments_do_not_inject_consent_or_claim_auto_install(self) -> None:
         for path in (
             PLUGIN_ROOT / "hooks" / "opt-in" / "codex-hooks.fragment.json",

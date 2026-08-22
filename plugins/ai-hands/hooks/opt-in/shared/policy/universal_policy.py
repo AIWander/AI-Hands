@@ -526,6 +526,22 @@ def validate_host_consent(
     return True, None, True
 
 
+# A locator is structure, not intent. "#post-list" is an element id that happens to
+# contain "post"; "//a[@id='send']" is an xpath. Classifying prose patterns against
+# them produced confident nonsense - a click on a list container read as an external
+# send - while the genuinely dangerous case, a coordinate click on a Pay Now button,
+# carries no text to classify at all. Locator-shaped values are therefore excluded
+# from risk text; SECURITY.md states plainly that coordinate intent is out of scope.
+LOCATOR_RE = re.compile(
+    r"^\s*(?:#[\w-]+|\.[\w-]+|\[[^\]]+\]|//|/html|css=|xpath=|text=|role=|aria/|"
+    r"[\w-]+\s*(?:>|\+|~)\s*[\w.#-]+)"
+)
+
+
+def _is_locator(value: Any) -> bool:
+    return isinstance(value, str) and bool(LOCATOR_RE.match(value))
+
+
 def _flatten_text(value: Any, depth: int = 0) -> str:
     if depth > 6:
         return ""
@@ -535,6 +551,8 @@ def _flatten_text(value: Any, depth: int = 0) -> str:
         )
     if isinstance(value, list):
         return " ".join(_flatten_text(item, depth + 1) for item in value[:100])
+    if _is_locator(value):
+        return ""
     return str(value) if value is not None else ""
 
 
