@@ -106,6 +106,28 @@ class HandsPolicyTests(unittest.TestCase):
             )[0],
         )
 
+    def test_protected_sinks_are_operator_configurable(self) -> None:
+        """A hardcoded "Volumes" rule protected a folder most users do not have while
+        leaving theirs open. The default still applies; operators add their own."""
+        customer = {"save_path": "C:/secrets/capture.json"}
+        self.assertEqual(
+            "allow", policy.evaluate("hands", "browser_get_network_log", customer)[0]
+        )
+        with patch.dict(
+            os.environ, {policy.PROTECTED_SINKS_ENV: "secrets"}, clear=False
+        ):
+            decision, reason = policy.evaluate(
+                "hands", "browser_get_network_log", customer
+            )
+            self.assertEqual("deny", decision)
+            self.assertIn("secrets", reason)
+        # the shipped default keeps working and names what it matched
+        decision, reason = policy.evaluate(
+            "hands", "browser_get_network_log", {"save_path": "C:/Data/Volumes/x.json"}
+        )
+        self.assertEqual("deny", decision)
+        self.assertIn("Volumes", reason)
+
     def test_fragments_do_not_inject_consent_or_claim_auto_install(self) -> None:
         for path in (
             PLUGIN_ROOT / "hooks" / "opt-in" / "codex-hooks.fragment.json",

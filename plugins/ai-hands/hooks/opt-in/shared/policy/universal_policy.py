@@ -206,7 +206,30 @@ SECURITY_ACTION_RE = re.compile(
 NETWORK_TOOL_RE = re.compile(
     r"(network|route|trace|learn_api|performance_log)", re.IGNORECASE
 )
-VOLUMES_PATH_RE = re.compile(r"(?i)(?:^|[\\/])Volumes(?:[\\/]|$)")
+# Durable sinks that raw network capture must never be written into.
+#
+# "Volumes" is the AIWander knowledge base and means nothing to anyone else, so a
+# hardcoded rule protected a folder most users do not have while leaving the
+# directories they actually care about wide open, and the denial named a concept
+# they had never heard of. Operators add their own with AI_HANDS_PROTECTED_SINKS,
+# separated by os.pathsep (";" on Windows).
+PROTECTED_SINKS_ENV = "AI_HANDS_PROTECTED_SINKS"
+DEFAULT_PROTECTED_SINKS = ("Volumes",)
+
+
+def protected_sinks() -> tuple[str, ...]:
+    extra = os.environ.get(PROTECTED_SINKS_ENV, "")
+    names = [p.strip().strip("/").strip(chr(92)) for p in extra.split(os.pathsep) if p.strip()]
+    return DEFAULT_PROTECTED_SINKS + tuple(dict.fromkeys(names))
+
+
+def matched_protected_sink(text: str) -> str | None:
+    """Return the name of the configured sink this text writes into, if any."""
+    sep = "[" + chr(92) + chr(92) + "/]"
+    for name in protected_sinks():
+        if re.search("(?i)(?:^|" + sep + ")" + re.escape(name) + "(?:" + sep + "|$)", text):
+            return name
+    return None
 AUTHORIZATION_SECRET_RE = re.compile(
     r"(?i)\bauthorization\s*[:=]\s*(?:bearer\s+|basic\s+)?[^\s\"']{3,}"
 )
@@ -733,10 +756,12 @@ def evaluate(
         if tool == "uia_list_window":
             return _cooldown_decision(args)
         text = _flatten_text(args)
-        if NETWORK_TOOL_RE.search(tool) and VOLUMES_PATH_RE.search(text):
+        sink = matched_protected_sink(text) if NETWORK_TOOL_RE.search(tool) else None
+        if sink:
             return (
                 "deny",
-                "Raw network capture must remain ephemeral and cannot be written into Volumes",
+                "Raw network capture must remain ephemeral and cannot be written "
+                f"into the protected location '{sink}'",
             )
         reason = _hands_risk_reason(tool, args)
         if reason and not host_consent:

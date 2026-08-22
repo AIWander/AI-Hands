@@ -333,7 +333,9 @@ jobs:
                           allowlist.add(line)
 
           scan_dirs = []
-          for d in ['skills', 'docs', 'examples', 'hooks']:
+          # plugins/ is the entire packaged surface a user installs; omitting it
+          # meant the one directory that actually ships was never scanned.
+          for d in ['skills', 'docs', 'examples', 'hooks', 'plugins']:
               if os.path.isdir(d):
                   scan_dirs.append(d)
 
