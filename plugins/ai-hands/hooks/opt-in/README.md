@@ -2,7 +2,7 @@
 
 These fragments are inert templates. The plugin and installer do not merge them into any host configuration.
 
-Use only one policy owner for AI-Hands. Replace `__AI_HANDS_PLUGIN_ROOT__` with the absolute plugin path, review the rendered JSON, archive the host's live hook file, then apply it through that host's supported mechanism.
+Use only one policy owner for AI-Hands. Replace `__PLUGIN_ROOT__` with the absolute plugin path, review the rendered JSON, archive the host's live hook file, then apply it through that host's supported mechanism.
 
 The optional adapters require Python 3.10 or newer on `PATH` as `python`; they do not require one fixed Python minor version. Run `python --version` and a harmless rendered-hook probe before enabling the definition. The Rust Hands server and skills-only profile do not require Python.
 

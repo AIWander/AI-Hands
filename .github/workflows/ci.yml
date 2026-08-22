@@ -21,6 +21,9 @@ jobs:
           python-version: "3.11"
       - name: Validate the two current plugin profiles
         run: python plugins/test_plugin_profiles.py
+      - name: Validate shared plugin-package contract
+        shell: pwsh
+        run: ./scripts/validate-plugin-package.ps1
       - name: Test shared lifecycle and safety policy
         run: python plugins/ai-hands/tests/test_hands_policy.py
       - name: Parse installer finalizer
