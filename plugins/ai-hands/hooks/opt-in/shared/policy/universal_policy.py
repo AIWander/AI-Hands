@@ -27,6 +27,17 @@ from typing import Any
 HANDS_PREFIXES = ("mcp__hands__", "AI-Hands__", "hands__")
 WRAPPER_NAMES = {"use_tool", "CallMcpTool"}
 CONSENT_FIELD = "_aiwander_host_consent"
+# Disposition for a consent-class call arriving without a trusted token.
+#
+# No consent broker or signing key ships in this package, so "deny" does not gate
+# these capabilities - it removes them permanently, and the observed result is that
+# the operator disables the whole hook. A hook that is switched off protects nothing,
+# so the default routes the call to the human instead: the model still cannot
+# self-confirm, it simply has to ask. Set AI_HANDS_CONSENT_MODE=deny to restore hard
+# blocking once a broker supplies exact-call tokens, or where an unattended host must
+# never prompt. Absolute rules - plaintext secrets, raw network capture into durable
+# storage - stay hard denies regardless of this setting.
+CONSENT_MODE_ENV = "AI_HANDS_CONSENT_MODE"
 CONSENT_PURPOSE = "risky-action"
 CONSENT_KEY_ENV = "AIWANDER_POLICY_CONSENT_HMAC_KEY"
 CONSENT_MAX_FUTURE_SECONDS = 300
@@ -665,6 +676,11 @@ def _cooldown_decision(args: dict[str, Any]) -> tuple[str, str | None]:
     return "allow", None
 
 
+def _consent_disposition() -> str:
+    """ask by default, deny when an operator opts into strict blocking."""
+    return "deny" if os.environ.get(CONSENT_MODE_ENV, "").strip().lower() == "deny" else "ask"
+
+
 def _hands_risk_reason(tool: str, args: dict[str, Any]) -> str | None:
     if tool in HANDS_ALWAYS_CONSENT:
         return HANDS_ALWAYS_CONSENT[tool]
@@ -725,8 +741,9 @@ def evaluate(
         reason = _hands_risk_reason(tool, args)
         if reason and not host_consent:
             return (
-                "deny",
-                f"Hands {reason} requires a trusted host consent token bound to this exact call",
+                _consent_disposition(),
+                f"Hands {reason} needs explicit human confirmation for this exact call; "
+                f"tool arguments and model booleans are not consent",
             )
     return "allow", None
 

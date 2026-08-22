@@ -28,12 +28,26 @@ class HandsPolicyTests(unittest.TestCase):
             self.assertEqual(("hands", "hands_click"), policy.canonicalize_tool_name(raw))
 
     def test_model_booleans_do_not_self_confirm_risky_action(self) -> None:
+        """The invariant is that the model cannot authorize itself - not that the
+        call is blocked. Default routes it to the human; strict mode hard-denies.
+        Either way the booleans buy nothing."""
         args = {
             "target": "Delete account",
             "allow_destructive": True,
             "confirmed_by_user": True,
         }
-        self.assertEqual("deny", policy.evaluate("hands", "hands_click", args)[0])
+        self.assertEqual("ask", policy.evaluate("hands", "hands_click", args)[0])
+        with patch.dict(os.environ, {policy.CONSENT_MODE_ENV: "deny"}, clear=False):
+            self.assertEqual("deny", policy.evaluate("hands", "hands_click", args)[0])
+
+    def test_consent_class_never_silently_allows(self) -> None:
+        """Whatever the mode, a consent-class call without a token must not allow."""
+        args = {"target": "Delete account"}
+        for mode in ("", "ask", "deny", "nonsense"):
+            with patch.dict(os.environ, {policy.CONSENT_MODE_ENV: mode}, clear=False):
+                self.assertIn(
+                    policy.evaluate("hands", "hands_click", args)[0], {"ask", "deny"}
+                )
 
     def test_exact_call_host_token_is_short_lived_and_argument_bound(self) -> None:
         secret = "test-only-consent-key-with-at-least-32-characters"
@@ -70,6 +84,9 @@ class HandsPolicyTests(unittest.TestCase):
             stdout = io.StringIO()
             with redirect_stdout(stdout):
                 policy.run("PreToolUse", "codex", payload)
+            # A present-but-mismatched token is a FAILED authorization attempt, not an
+            # absent one, so it hard-denies even in ask mode. Only a call arriving with
+            # no token at all is routed to the human.
             self.assertEqual("deny", json.loads(stdout.getvalue())["decision"])
 
     def test_plaintext_secret_and_network_to_volumes_are_denied(self) -> None:
