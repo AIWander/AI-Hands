@@ -12,7 +12,7 @@ The shared engine:
 - tracks successful Hands mutations until a fresh verification or observation call clears the streak;
 - normalizes `hands__`, `AI-Hands__`, and `mcp__hands__` names;
 - denies managed pre-tool calls when parsing, policy evaluation, or audit writing fails;
-- rejects plaintext secrets and raw network captures aimed at durable Volumes;
+- rejects plaintext secrets, and raw network captures aimed at any durable location the operator has listed as protected;
 - accepts risky-action consent only as a short-lived HMAC token bound to the exact host, tool, and argument hash;
 - writes metadata-only command, script, text, body, and header audit fields.
 

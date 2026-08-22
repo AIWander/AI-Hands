@@ -208,13 +208,13 @@ NETWORK_TOOL_RE = re.compile(
 )
 # Durable sinks that raw network capture must never be written into.
 #
-# "Volumes" is the AIWander knowledge base and means nothing to anyone else, so a
-# hardcoded rule protected a folder most users do not have while leaving the
-# directories they actually care about wide open, and the denial named a concept
-# they had never heard of. Operators add their own with AI_HANDS_PROTECTED_SINKS,
-# separated by os.pathsep (";" on Windows).
+# Empty by default and entirely operator-supplied. An earlier version hardcoded the
+# name of the author's private knowledge base, which protected a directory almost no
+# user has, left the ones they care about open, and denied them naming a concept they
+# had never heard of. Set AI_HANDS_PROTECTED_SINKS to your own directory names,
+# separated by os.pathsep (";" on Windows), for example: Archive;secrets
 PROTECTED_SINKS_ENV = "AI_HANDS_PROTECTED_SINKS"
-DEFAULT_PROTECTED_SINKS = ("Volumes",)
+DEFAULT_PROTECTED_SINKS: tuple[str, ...] = ()
 
 
 def protected_sinks() -> tuple[str, ...]:

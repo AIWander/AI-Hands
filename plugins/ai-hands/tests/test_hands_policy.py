@@ -89,26 +89,31 @@ class HandsPolicyTests(unittest.TestCase):
             # no token at all is routed to the human.
             self.assertEqual("deny", json.loads(stdout.getvalue())["decision"])
 
-    def test_plaintext_secret_and_network_to_volumes_are_denied(self) -> None:
+    def test_plaintext_secret_and_network_to_protected_sink_are_denied(self) -> None:
         self.assertEqual(
             "deny",
             policy.evaluate(
                 "hands", "hands_fill_form", {"password": "not-a-real-secret"}
             )[0],
         )
-        self.assertEqual(
-            "deny",
-            policy.evaluate(
-                "hands",
-                "browser_get_network_log",
-                {"save_path": "C:\\ProtectedData\\Volumes\\capture.json"},
-                host_consent=True,
-            )[0],
-        )
+        with patch.dict(
+            os.environ, {policy.PROTECTED_SINKS_ENV: "Archive"}, clear=False
+        ):
+            self.assertEqual(
+                "deny",
+                policy.evaluate(
+                    "hands",
+                    "browser_get_network_log",
+                    {"save_path": "C:/ProtectedData/Archive/capture.json"},
+                    host_consent=True,
+                )[0],
+            )
 
     def test_protected_sinks_are_operator_configurable(self) -> None:
-        """A hardcoded "Volumes" rule protected a folder most users do not have while
-        leaving theirs open. The default still applies; operators add their own."""
+        """No private default ships: an earlier version hardcoded the author's own
+        knowledge-base folder, which protected a directory almost no user has while
+        leaving theirs open. Operators name their own, and the denial says which."""
+        self.assertEqual(policy.DEFAULT_PROTECTED_SINKS, ())
         customer = {"save_path": "C:/secrets/capture.json"}
         self.assertEqual(
             "allow", policy.evaluate("hands", "browser_get_network_log", customer)[0]
@@ -121,12 +126,6 @@ class HandsPolicyTests(unittest.TestCase):
             )
             self.assertEqual("deny", decision)
             self.assertIn("secrets", reason)
-        # the shipped default keeps working and names what it matched
-        decision, reason = policy.evaluate(
-            "hands", "browser_get_network_log", {"save_path": "C:/Data/Volumes/x.json"}
-        )
-        self.assertEqual("deny", decision)
-        self.assertIn("Volumes", reason)
 
     def test_fragments_do_not_inject_consent_or_claim_auto_install(self) -> None:
         for path in (
