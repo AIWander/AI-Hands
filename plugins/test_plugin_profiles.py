@@ -47,7 +47,7 @@ class PluginProfileTests(unittest.TestCase):
         self.assertFalse((SKILLS / "hooks").exists())
 
     def test_hook_commands_use_portable_python_three_entrypoint(self) -> None:
-        for name in ("codex-hooks.fragment.json", "claude-grok-hooks.fragment.json"):
+        for name in ("codex-hooks.fragment.json", "claude-hooks.fragment.json", "grok-hooks.fragment.json"):
             fragment = load_json(HOOKS / "hooks" / "opt-in" / name)
             for registrations in fragment["hooks"].values():
                 for registration in registrations:
@@ -60,7 +60,8 @@ class PluginProfileTests(unittest.TestCase):
         hook_root = HOOKS / "hooks" / "opt-in"
         sources = (
             hook_root / "adapters" / "codex" / "hook_adapter.py",
-            hook_root / "adapters" / "claude-grok" / "hook_adapter.py",
+            hook_root / "adapters" / "claude" / "hook_adapter.py",
+            hook_root / "adapters" / "grok" / "hook_adapter.py",
             hook_root / "shared" / "policy" / "universal_policy.py",
         )
         with tempfile.TemporaryDirectory() as temp_dir:

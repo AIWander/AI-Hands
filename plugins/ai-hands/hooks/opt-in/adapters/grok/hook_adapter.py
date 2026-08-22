@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thin Claude-style and Grok adapter for the shared policy engine."""
+"""Thin grok adapter for the shared policy engine."""
 
 from __future__ import annotations
 
@@ -13,4 +13,4 @@ from universal_policy import main  # noqa: E402 - import follows portable path s
 
 
 if __name__ == "__main__":
-    raise SystemExit(main([*sys.argv[1:], "--host", "claude-grok"]))
+    raise SystemExit(main([*sys.argv[1:], "--host", "grok"]))

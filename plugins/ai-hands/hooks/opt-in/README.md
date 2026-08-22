@@ -16,7 +16,19 @@ The shared engine:
 - accepts risky-action consent only as a short-lived HMAC token bound to the exact host, tool, and argument hash;
 - writes metadata-only command, script, text, body, and header audit fields.
 
-No consent broker or signing key ships in this package. The adapters never inject consent. Enabling these hooks therefore denies covered risky calls until a separate trusted host integration supplies exact-call tokens.
+No consent broker or signing key ships in this package, and the adapters never
+inject consent. A covered risky call arriving without a trusted token is therefore
+never allowed - but what happens next depends on the host:
+
+- **Claude Code** is asked. `permissionDecision: "ask"` was verified against 2.1.233,
+  so the call routes to you rather than being removed. Tool arguments and
+  model-supplied booleans still buy nothing.
+- **Codex and Grok** are denied. Neither was verified to honour `"ask"`, and a host
+  that does not recognise it is likely to proceed - which would turn a block into an
+  allow. They fail closed until someone proves otherwise.
+
+`AI_HANDS_CONSENT_MODE=ask` or `=deny` overrides both. Add a host to
+`ASK_CAPABLE_HOSTS` only with evidence that it honours the decision.
 
 A hook definition is not enforcement merely because it exists. It becomes a hard boundary only when the host trusts that exact definition, the runtime can block that event, and a harmless probe proves the hook actually fired. The Rust monitor fence remains independent of host hooks.
 

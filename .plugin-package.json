@@ -13,7 +13,8 @@
       "skills": 4,
       "mcp": true,
       "hookHosts": [
-        "claude-grok",
+        "claude",
+        "grok",
         "codex"
       ]
     },

@@ -37,6 +37,12 @@ CONSENT_FIELD = "_aiwander_host_consent"
 # blocking once a broker supplies exact-call tokens, or where an unattended host must
 # never prompt. Absolute rules - plaintext secrets, raw network capture into durable
 # storage - stay hard denies regardless of this setting.
+# Hosts proven to honour permissionDecision "ask" on PreToolUse. Anything absent
+# fails CLOSED to deny, because a host that does not recognise "ask" is likely to
+# proceed - which would turn a block into an allow, the opposite of the intent.
+# Claude Code 2.1.233 was verified directly; Codex and Grok were not, so they keep
+# hard denial until someone proves otherwise. Add a host here only with evidence.
+ASK_CAPABLE_HOSTS = frozenset({"claude"})
 CONSENT_MODE_ENV = "AI_HANDS_CONSENT_MODE"
 CONSENT_PURPOSE = "risky-action"
 CONSENT_KEY_ENV = "AIWANDER_POLICY_CONSENT_HMAC_KEY"
@@ -526,28 +532,12 @@ def validate_host_consent(
     return True, None, True
 
 
-# A locator is structure, not intent. "#post-list" is an element id that happens to
-# contain "post"; "//a[@id='send']" is an xpath. Classifying prose patterns against
-# them produced confident nonsense - a click on a list container read as an external
-# send - while the genuinely dangerous case, a coordinate click on a Pay Now button,
-# carries no text to classify at all. Locator-shaped values are therefore excluded
-# from risk text; SECURITY.md states plainly that coordinate intent is out of scope.
-LOCATOR_RE = re.compile(
-    r"^\s*(?:#[\w-]+|\.[\w-]+|\[[^\]]+\]|//|/html|css=|xpath=|text=|role=|aria/|"
-    r"[\w-]+\s*(?:>|\+|~)\s*[\w.#-]+)"
-)
-
-
-def _is_locator(value: Any) -> bool:
-    return isinstance(value, str) and bool(LOCATOR_RE.match(value))
-
-
-# Two flatteners on purpose, because the two callers ask different questions.
-#
-# Path and sink checks must see EVERY string: a UNC path begins "//", which is also
-# how an xpath begins, so a locator-aware flattener silently excused
-# //server/share/Protected/capture.json while denying the same path spelled locally.
-# Intent classification is the opposite - a locator is structure, not intent.
+# Locator values are NOT excluded from risk text, deliberately. An earlier version
+# dropped them because "#post-list" matched the word "post" and asked about a click
+# on a list container. Removing them also silenced "#pay-now" and
+# "#delete-account-confirm", which are real intent spelled as an element id - two
+# true positives traded for one false one. The disposition is ask, not deny, so an
+# unnecessary prompt is cheap and a missed one is not.
 def _flatten_text(value: Any, depth: int = 0) -> str:
     if depth > 6:
         return ""
@@ -557,22 +547,6 @@ def _flatten_text(value: Any, depth: int = 0) -> str:
         )
     if isinstance(value, list):
         return " ".join(_flatten_text(item, depth + 1) for item in value[:100])
-    return str(value) if value is not None else ""
-
-
-def _flatten_intent_text(value: Any, depth: int = 0) -> str:
-    """Flatten for risk classification only, dropping structural locators."""
-    if depth > 6:
-        return ""
-    if isinstance(value, dict):
-        return " ".join(
-            f"{key} {_flatten_intent_text(item, depth + 1)}"
-            for key, item in value.items()
-        )
-    if isinstance(value, list):
-        return " ".join(_flatten_intent_text(item, depth + 1) for item in value[:100])
-    if _is_locator(value):
-        return ""
     return str(value) if value is not None else ""
 
 
@@ -737,9 +711,14 @@ def _cooldown_decision(args: dict[str, Any]) -> tuple[str, str | None]:
     return "allow", None
 
 
-def _consent_disposition() -> str:
-    """ask by default, deny when an operator opts into strict blocking."""
-    return "deny" if os.environ.get(CONSENT_MODE_ENV, "").strip().lower() == "deny" else "ask"
+def _consent_disposition(host: str | None = None) -> str:
+    """Ask only where the host is known to honour it; otherwise fail closed."""
+    mode = os.environ.get(CONSENT_MODE_ENV, "").strip().lower()
+    if mode == "deny":
+        return "deny"
+    if mode == "ask":
+        return "ask"
+    return "ask" if (host or "").strip().lower() in ASK_CAPABLE_HOSTS else "deny"
 
 
 def _hands_risk_reason(tool: str, args: dict[str, Any]) -> str | None:
@@ -761,7 +740,7 @@ def _hands_risk_reason(tool: str, args: dict[str, Any]) -> str | None:
         return "browser credential or security-state change"
     if tool not in HANDS_ACTION_TOOLS:
         return None
-    text = _flatten_intent_text(args)
+    text = _flatten_text(args)
     for label, pattern in (
         ("financial action", FINANCIAL_ACTION_RE),
         ("destructive action", DESTRUCTIVE_ACTION_RE),
@@ -784,6 +763,7 @@ def evaluate(
     args: dict[str, Any],
     *,
     host_consent: bool = False,
+    host: str | None = None,
 ) -> tuple[str, str | None]:
     if namespace == "hands" and _has_plaintext_secret(args):
         return (
@@ -804,7 +784,7 @@ def evaluate(
         reason = _hands_risk_reason(tool, args)
         if reason and not host_consent:
             return (
-                _consent_disposition(),
+                _consent_disposition(host),
                 f"Hands {reason} needs explicit human confirmation for this exact call; "
                 f"tool arguments and model booleans are not consent",
             )
@@ -892,7 +872,7 @@ def run(event: str, host: str, payload: dict[str, Any]) -> int:
         decision, reason = "deny", consent_error
     elif is_pre:
         decision, reason = evaluate(
-            namespace, tool, resolved.args, host_consent=consent
+            namespace, tool, resolved.args, host_consent=consent, host=host
         )
     else:
         decision, reason = "allow", None

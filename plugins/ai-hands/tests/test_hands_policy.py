@@ -36,7 +36,7 @@ class HandsPolicyTests(unittest.TestCase):
             "allow_destructive": True,
             "confirmed_by_user": True,
         }
-        self.assertEqual("ask", policy.evaluate("hands", "hands_click", args)[0])
+        self.assertEqual("ask", policy.evaluate("hands", "hands_click", args, host="claude")[0])
         with patch.dict(os.environ, {policy.CONSENT_MODE_ENV: "deny"}, clear=False):
             self.assertEqual("deny", policy.evaluate("hands", "hands_click", args)[0])
 
@@ -46,7 +46,7 @@ class HandsPolicyTests(unittest.TestCase):
         for mode in ("", "ask", "deny", "nonsense"):
             with patch.dict(os.environ, {policy.CONSENT_MODE_ENV: mode}, clear=False):
                 self.assertIn(
-                    policy.evaluate("hands", "hands_click", args)[0], {"ask", "deny"}
+                    policy.evaluate("hands", "hands_click", args, host="claude")[0], {"ask", "deny"}
                 )
 
     def test_exact_call_host_token_is_short_lived_and_argument_bound(self) -> None:
@@ -156,28 +156,40 @@ class HandsPolicyTests(unittest.TestCase):
                 )[0],
             )
 
-    def test_locators_are_structure_not_intent(self) -> None:
-        """An element id containing "post" is not an external send. Classifying prose
-        patterns against locators produced confident nonsense, so locator-shaped
-        values carry no risk text - while real intent still routes to the human."""
-        for locator in ("#post-list", ".send-button-wrapper", "[data-action=delete]",
-                        "//a[@id='send']", "css=.pay-now"):
+    def test_intent_spelled_as_a_locator_is_still_intent(self) -> None:
+        """An earlier version dropped locator-shaped values from the risk text so a
+        click on "#post-list" would stop asking. It also silenced "#pay-now" and
+        "#delete-account-confirm" - two true positives traded for one false one.
+        Element ids routinely encode exactly the intent, so they are classified."""
+        for locator in ("#delete-account-confirm", ".btn-transfer-funds",
+                        "[data-action=send-payment]", "#pay-now",
+                        "//button[@id='confirm-delete']"):
             with self.subTest(locator=locator):
                 self.assertEqual(
-                    "allow",
-                    policy.evaluate("hands", "hands_click", {"target": locator})[0],
-                )
-        for intent in ("Delete account", "Send payment now", "Transfer funds"):
-            with self.subTest(intent=intent):
-                self.assertEqual(
                     "ask",
-                    policy.evaluate("hands", "hands_click", {"target": intent})[0],
+                    policy.evaluate(
+                        "hands", "hands_click", {"target": locator}, host="claude"
+                    )[0],
+                )
+
+    def test_ask_only_where_the_host_is_known_to_honour_it(self) -> None:
+        """A host that does not recognise "ask" is likely to proceed, which would turn
+        a block into an allow. Only Claude Code was verified, so everything else
+        fails closed until someone proves otherwise."""
+        args = {"target": "Delete account"}
+        self.assertEqual("ask", policy.evaluate("hands", "hands_click", args, host="claude")[0])
+        for unverified in ("grok", "codex", "", None, "something-new"):
+            with self.subTest(host=unverified):
+                self.assertEqual(
+                    "deny",
+                    policy.evaluate("hands", "hands_click", args, host=unverified)[0],
                 )
 
     def test_fragments_do_not_inject_consent_or_claim_auto_install(self) -> None:
         for path in (
             PLUGIN_ROOT / "hooks" / "opt-in" / "codex-hooks.fragment.json",
-            PLUGIN_ROOT / "hooks" / "opt-in" / "claude-grok-hooks.fragment.json",
+            PLUGIN_ROOT / "hooks" / "opt-in" / "claude-hooks.fragment.json",
+            PLUGIN_ROOT / "hooks" / "opt-in" / "grok-hooks.fragment.json",
         ):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn(policy.CONSENT_FIELD, text)
