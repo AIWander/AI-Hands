@@ -542,6 +542,12 @@ def _is_locator(value: Any) -> bool:
     return isinstance(value, str) and bool(LOCATOR_RE.match(value))
 
 
+# Two flatteners on purpose, because the two callers ask different questions.
+#
+# Path and sink checks must see EVERY string: a UNC path begins "//", which is also
+# how an xpath begins, so a locator-aware flattener silently excused
+# //server/share/Protected/capture.json while denying the same path spelled locally.
+# Intent classification is the opposite - a locator is structure, not intent.
 def _flatten_text(value: Any, depth: int = 0) -> str:
     if depth > 6:
         return ""
@@ -551,6 +557,20 @@ def _flatten_text(value: Any, depth: int = 0) -> str:
         )
     if isinstance(value, list):
         return " ".join(_flatten_text(item, depth + 1) for item in value[:100])
+    return str(value) if value is not None else ""
+
+
+def _flatten_intent_text(value: Any, depth: int = 0) -> str:
+    """Flatten for risk classification only, dropping structural locators."""
+    if depth > 6:
+        return ""
+    if isinstance(value, dict):
+        return " ".join(
+            f"{key} {_flatten_intent_text(item, depth + 1)}"
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return " ".join(_flatten_intent_text(item, depth + 1) for item in value[:100])
     if _is_locator(value):
         return ""
     return str(value) if value is not None else ""
@@ -741,7 +761,7 @@ def _hands_risk_reason(tool: str, args: dict[str, Any]) -> str | None:
         return "browser credential or security-state change"
     if tool not in HANDS_ACTION_TOOLS:
         return None
-    text = _flatten_text(args)
+    text = _flatten_intent_text(args)
     for label, pattern in (
         ("financial action", FINANCIAL_ACTION_RE),
         ("destructive action", DESTRUCTIVE_ACTION_RE),

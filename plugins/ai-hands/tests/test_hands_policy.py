@@ -127,6 +127,35 @@ class HandsPolicyTests(unittest.TestCase):
             self.assertEqual("deny", decision)
             self.assertIn("secrets", reason)
 
+    def test_every_path_spelling_reaches_the_sink_check(self) -> None:
+        """Regression: excluding locators from the shared flattener also excused UNC
+        paths, because "//server/share" and an xpath both begin "//". A protected
+        location must be caught however the path is spelled."""
+        with patch.dict(
+            os.environ, {policy.PROTECTED_SINKS_ENV: "Archive"}, clear=False
+        ):
+            for path in (
+                "C:/Data/Archive/capture.json",
+                "//server/share/Archive/capture.json",
+                chr(92) * 2 + "server" + chr(92) + "share" + chr(92) + "Archive"
+                + chr(92) + "capture.json",
+            ):
+                with self.subTest(path=path):
+                    self.assertEqual(
+                        "deny",
+                        policy.evaluate(
+                            "hands", "browser_get_network_log", {"save_path": path}
+                        )[0],
+                    )
+            self.assertEqual(
+                "allow",
+                policy.evaluate(
+                    "hands",
+                    "browser_get_network_log",
+                    {"save_path": "C:/Data/Public/capture.json"},
+                )[0],
+            )
+
     def test_locators_are_structure_not_intent(self) -> None:
         """An element id containing "post" is not an external send. Classifying prose
         patterns against locators produced confident nonsense, so locator-shaped
