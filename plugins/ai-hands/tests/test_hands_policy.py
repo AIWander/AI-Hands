@@ -28,12 +28,26 @@ class HandsPolicyTests(unittest.TestCase):
             self.assertEqual(("hands", "hands_click"), policy.canonicalize_tool_name(raw))
 
     def test_model_booleans_do_not_self_confirm_risky_action(self) -> None:
+        """The invariant is that the model cannot authorize itself - not that the
+        call is blocked. Default routes it to the human; strict mode hard-denies.
+        Either way the booleans buy nothing."""
         args = {
             "target": "Delete account",
             "allow_destructive": True,
             "confirmed_by_user": True,
         }
-        self.assertEqual("deny", policy.evaluate("hands", "hands_click", args)[0])
+        self.assertEqual("ask", policy.evaluate("hands", "hands_click", args, host="claude")[0])
+        with patch.dict(os.environ, {policy.CONSENT_MODE_ENV: "deny"}, clear=False):
+            self.assertEqual("deny", policy.evaluate("hands", "hands_click", args)[0])
+
+    def test_consent_class_never_silently_allows(self) -> None:
+        """Whatever the mode, a consent-class call without a token must not allow."""
+        args = {"target": "Delete account"}
+        for mode in ("", "ask", "deny", "nonsense"):
+            with patch.dict(os.environ, {policy.CONSENT_MODE_ENV: mode}, clear=False):
+                self.assertIn(
+                    policy.evaluate("hands", "hands_click", args, host="claude")[0], {"ask", "deny"}
+                )
 
     def test_exact_call_host_token_is_short_lived_and_argument_bound(self) -> None:
         secret = "test-only-consent-key-with-at-least-32-characters"
@@ -70,29 +84,112 @@ class HandsPolicyTests(unittest.TestCase):
             stdout = io.StringIO()
             with redirect_stdout(stdout):
                 policy.run("PreToolUse", "codex", payload)
+            # A present-but-mismatched token is a FAILED authorization attempt, not an
+            # absent one, so it hard-denies even in ask mode. Only a call arriving with
+            # no token at all is routed to the human.
             self.assertEqual("deny", json.loads(stdout.getvalue())["decision"])
 
-    def test_plaintext_secret_and_network_to_volumes_are_denied(self) -> None:
+    def test_plaintext_secret_and_network_to_protected_sink_are_denied(self) -> None:
         self.assertEqual(
             "deny",
             policy.evaluate(
                 "hands", "hands_fill_form", {"password": "not-a-real-secret"}
             )[0],
         )
+        with patch.dict(
+            os.environ, {policy.PROTECTED_SINKS_ENV: "Archive"}, clear=False
+        ):
+            self.assertEqual(
+                "deny",
+                policy.evaluate(
+                    "hands",
+                    "browser_get_network_log",
+                    {"save_path": "C:/ProtectedData/Archive/capture.json"},
+                    host_consent=True,
+                )[0],
+            )
+
+    def test_protected_sinks_are_operator_configurable(self) -> None:
+        """No private default ships: an earlier version hardcoded the author's own
+        knowledge-base folder, which protected a directory almost no user has while
+        leaving theirs open. Operators name their own, and the denial says which."""
+        self.assertEqual(policy.DEFAULT_PROTECTED_SINKS, ())
+        customer = {"save_path": "C:/secrets/capture.json"}
         self.assertEqual(
-            "deny",
-            policy.evaluate(
-                "hands",
-                "browser_get_network_log",
-                {"save_path": "C:\\ProtectedData\\Volumes\\capture.json"},
-                host_consent=True,
-            )[0],
+            "allow", policy.evaluate("hands", "browser_get_network_log", customer)[0]
         )
+        with patch.dict(
+            os.environ, {policy.PROTECTED_SINKS_ENV: "secrets"}, clear=False
+        ):
+            decision, reason = policy.evaluate(
+                "hands", "browser_get_network_log", customer
+            )
+            self.assertEqual("deny", decision)
+            self.assertIn("secrets", reason)
+
+    def test_every_path_spelling_reaches_the_sink_check(self) -> None:
+        """Regression: excluding locators from the shared flattener also excused UNC
+        paths, because "//server/share" and an xpath both begin "//". A protected
+        location must be caught however the path is spelled."""
+        with patch.dict(
+            os.environ, {policy.PROTECTED_SINKS_ENV: "Archive"}, clear=False
+        ):
+            for path in (
+                "C:/Data/Archive/capture.json",
+                "//server/share/Archive/capture.json",
+                chr(92) * 2 + "server" + chr(92) + "share" + chr(92) + "Archive"
+                + chr(92) + "capture.json",
+            ):
+                with self.subTest(path=path):
+                    self.assertEqual(
+                        "deny",
+                        policy.evaluate(
+                            "hands", "browser_get_network_log", {"save_path": path}
+                        )[0],
+                    )
+            self.assertEqual(
+                "allow",
+                policy.evaluate(
+                    "hands",
+                    "browser_get_network_log",
+                    {"save_path": "C:/Data/Public/capture.json"},
+                )[0],
+            )
+
+    def test_intent_spelled_as_a_locator_is_still_intent(self) -> None:
+        """An earlier version dropped locator-shaped values from the risk text so a
+        click on "#post-list" would stop asking. It also silenced "#pay-now" and
+        "#delete-account-confirm" - two true positives traded for one false one.
+        Element ids routinely encode exactly the intent, so they are classified."""
+        for locator in ("#delete-account-confirm", ".btn-transfer-funds",
+                        "[data-action=send-payment]", "#pay-now",
+                        "//button[@id='confirm-delete']"):
+            with self.subTest(locator=locator):
+                self.assertEqual(
+                    "ask",
+                    policy.evaluate(
+                        "hands", "hands_click", {"target": locator}, host="claude"
+                    )[0],
+                )
+
+    def test_ask_only_where_the_host_is_known_to_honour_it(self) -> None:
+        """A host that does not recognise "ask" is likely to proceed, which would turn
+        a block into an allow. Only Claude Code was verified, so everything else
+        fails closed until someone proves otherwise."""
+        args = {"target": "Delete account"}
+        self.assertEqual("ask", policy.evaluate("hands", "hands_click", args, host="claude")[0])
+        for unverified in ("grok", "codex", "", None, "something-new"):
+            with self.subTest(host=unverified):
+                self.assertEqual(
+                    "deny",
+                    policy.evaluate("hands", "hands_click", args, host=unverified)[0],
+                )
 
     def test_fragments_do_not_inject_consent_or_claim_auto_install(self) -> None:
         for path in (
             PLUGIN_ROOT / "hooks" / "opt-in" / "codex-hooks.fragment.json",
-            PLUGIN_ROOT / "hooks" / "opt-in" / "claude-grok-hooks.fragment.json",
+            PLUGIN_ROOT / "hooks" / "opt-in" / "claude-hooks.fragment.json",
+            PLUGIN_ROOT / "hooks" / "opt-in" / "grok-hooks.fragment.json",
         ):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn(policy.CONSENT_FIELD, text)

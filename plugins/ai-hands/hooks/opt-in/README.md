@@ -2,7 +2,7 @@
 
 These fragments are inert templates. The plugin and installer do not merge them into any host configuration.
 
-Use only one policy owner for AI-Hands. Replace `__AI_HANDS_PLUGIN_ROOT__` with the absolute plugin path, review the rendered JSON, archive the host's live hook file, then apply it through that host's supported mechanism.
+Use only one policy owner for AI-Hands. Replace `__PLUGIN_ROOT__` with the absolute plugin path, review the rendered JSON, archive the host's live hook file, then apply it through that host's supported mechanism.
 
 The optional adapters require Python 3.10 or newer on `PATH` as `python`; they do not require one fixed Python minor version. Run `python --version` and a harmless rendered-hook probe before enabling the definition. The Rust Hands server and skills-only profile do not require Python.
 
@@ -12,11 +12,23 @@ The shared engine:
 - tracks successful Hands mutations until a fresh verification or observation call clears the streak;
 - normalizes `hands__`, `AI-Hands__`, and `mcp__hands__` names;
 - denies managed pre-tool calls when parsing, policy evaluation, or audit writing fails;
-- rejects plaintext secrets and raw network captures aimed at durable Volumes;
+- rejects plaintext secrets, and raw network captures aimed at any durable location the operator has listed as protected;
 - accepts risky-action consent only as a short-lived HMAC token bound to the exact host, tool, and argument hash;
 - writes metadata-only command, script, text, body, and header audit fields.
 
-No consent broker or signing key ships in this package. The adapters never inject consent. Enabling these hooks therefore denies covered risky calls until a separate trusted host integration supplies exact-call tokens.
+No consent broker or signing key ships in this package, and the adapters never
+inject consent. A covered risky call arriving without a trusted token is therefore
+never allowed - but what happens next depends on the host:
+
+- **Claude Code** is asked. `permissionDecision: "ask"` was verified against 2.1.233,
+  so the call routes to you rather than being removed. Tool arguments and
+  model-supplied booleans still buy nothing.
+- **Codex and Grok** are denied. Neither was verified to honour `"ask"`, and a host
+  that does not recognise it is likely to proceed - which would turn a block into an
+  allow. They fail closed until someone proves otherwise.
+
+`AI_HANDS_CONSENT_MODE=ask` or `=deny` overrides both. Add a host to
+`ASK_CAPABLE_HOSTS` only with evidence that it honours the decision.
 
 A hook definition is not enforcement merely because it exists. It becomes a hard boundary only when the host trusts that exact definition, the runtime can block that event, and a harmless probe proves the hook actually fired. The Rust monitor fence remains independent of host hooks.
 

@@ -27,6 +27,23 @@ from typing import Any
 HANDS_PREFIXES = ("mcp__hands__", "AI-Hands__", "hands__")
 WRAPPER_NAMES = {"use_tool", "CallMcpTool"}
 CONSENT_FIELD = "_aiwander_host_consent"
+# Disposition for a consent-class call arriving without a trusted token.
+#
+# No consent broker or signing key ships in this package, so "deny" does not gate
+# these capabilities - it removes them permanently, and the observed result is that
+# the operator disables the whole hook. A hook that is switched off protects nothing,
+# so the default routes the call to the human instead: the model still cannot
+# self-confirm, it simply has to ask. Set AI_HANDS_CONSENT_MODE=deny to restore hard
+# blocking once a broker supplies exact-call tokens, or where an unattended host must
+# never prompt. Absolute rules - plaintext secrets, raw network capture into durable
+# storage - stay hard denies regardless of this setting.
+# Hosts proven to honour permissionDecision "ask" on PreToolUse. Anything absent
+# fails CLOSED to deny, because a host that does not recognise "ask" is likely to
+# proceed - which would turn a block into an allow, the opposite of the intent.
+# Claude Code 2.1.233 was verified directly; Codex and Grok were not, so they keep
+# hard denial until someone proves otherwise. Add a host here only with evidence.
+ASK_CAPABLE_HOSTS = frozenset({"claude"})
+CONSENT_MODE_ENV = "AI_HANDS_CONSENT_MODE"
 CONSENT_PURPOSE = "risky-action"
 CONSENT_KEY_ENV = "AIWANDER_POLICY_CONSENT_HMAC_KEY"
 CONSENT_MAX_FUTURE_SECONDS = 300
@@ -195,7 +212,30 @@ SECURITY_ACTION_RE = re.compile(
 NETWORK_TOOL_RE = re.compile(
     r"(network|route|trace|learn_api|performance_log)", re.IGNORECASE
 )
-VOLUMES_PATH_RE = re.compile(r"(?i)(?:^|[\\/])Volumes(?:[\\/]|$)")
+# Durable sinks that raw network capture must never be written into.
+#
+# Empty by default and entirely operator-supplied. An earlier version hardcoded the
+# name of the author's private knowledge base, which protected a directory almost no
+# user has, left the ones they care about open, and denied them naming a concept they
+# had never heard of. Set AI_HANDS_PROTECTED_SINKS to your own directory names,
+# separated by os.pathsep (";" on Windows), for example: Archive;secrets
+PROTECTED_SINKS_ENV = "AI_HANDS_PROTECTED_SINKS"
+DEFAULT_PROTECTED_SINKS: tuple[str, ...] = ()
+
+
+def protected_sinks() -> tuple[str, ...]:
+    extra = os.environ.get(PROTECTED_SINKS_ENV, "")
+    names = [p.strip().strip("/").strip(chr(92)) for p in extra.split(os.pathsep) if p.strip()]
+    return DEFAULT_PROTECTED_SINKS + tuple(dict.fromkeys(names))
+
+
+def matched_protected_sink(text: str) -> str | None:
+    """Return the name of the configured sink this text writes into, if any."""
+    sep = "[" + chr(92) + chr(92) + "/]"
+    for name in protected_sinks():
+        if re.search("(?i)(?:^|" + sep + ")" + re.escape(name) + "(?:" + sep + "|$)", text):
+            return name
+    return None
 AUTHORIZATION_SECRET_RE = re.compile(
     r"(?i)\bauthorization\s*[:=]\s*(?:bearer\s+|basic\s+)?[^\s\"']{3,}"
 )
@@ -492,6 +532,12 @@ def validate_host_consent(
     return True, None, True
 
 
+# Locator values are NOT excluded from risk text, deliberately. An earlier version
+# dropped them because "#post-list" matched the word "post" and asked about a click
+# on a list container. Removing them also silenced "#pay-now" and
+# "#delete-account-confirm", which are real intent spelled as an element id - two
+# true positives traded for one false one. The disposition is ask, not deny, so an
+# unnecessary prompt is cheap and a missed one is not.
 def _flatten_text(value: Any, depth: int = 0) -> str:
     if depth > 6:
         return ""
@@ -665,6 +711,16 @@ def _cooldown_decision(args: dict[str, Any]) -> tuple[str, str | None]:
     return "allow", None
 
 
+def _consent_disposition(host: str | None = None) -> str:
+    """Ask only where the host is known to honour it; otherwise fail closed."""
+    mode = os.environ.get(CONSENT_MODE_ENV, "").strip().lower()
+    if mode == "deny":
+        return "deny"
+    if mode == "ask":
+        return "ask"
+    return "ask" if (host or "").strip().lower() in ASK_CAPABLE_HOSTS else "deny"
+
+
 def _hands_risk_reason(tool: str, args: dict[str, Any]) -> str | None:
     if tool in HANDS_ALWAYS_CONSENT:
         return HANDS_ALWAYS_CONSENT[tool]
@@ -707,6 +763,7 @@ def evaluate(
     args: dict[str, Any],
     *,
     host_consent: bool = False,
+    host: str | None = None,
 ) -> tuple[str, str | None]:
     if namespace == "hands" and _has_plaintext_secret(args):
         return (
@@ -717,16 +774,19 @@ def evaluate(
         if tool == "uia_list_window":
             return _cooldown_decision(args)
         text = _flatten_text(args)
-        if NETWORK_TOOL_RE.search(tool) and VOLUMES_PATH_RE.search(text):
+        sink = matched_protected_sink(text) if NETWORK_TOOL_RE.search(tool) else None
+        if sink:
             return (
                 "deny",
-                "Raw network capture must remain ephemeral and cannot be written into Volumes",
+                "Raw network capture must remain ephemeral and cannot be written "
+                f"into the protected location '{sink}'",
             )
         reason = _hands_risk_reason(tool, args)
         if reason and not host_consent:
             return (
-                "deny",
-                f"Hands {reason} requires a trusted host consent token bound to this exact call",
+                _consent_disposition(host),
+                f"Hands {reason} needs explicit human confirmation for this exact call; "
+                f"tool arguments and model booleans are not consent",
             )
     return "allow", None
 
@@ -812,7 +872,7 @@ def run(event: str, host: str, payload: dict[str, Any]) -> int:
         decision, reason = "deny", consent_error
     elif is_pre:
         decision, reason = evaluate(
-            namespace, tool, resolved.args, host_consent=consent
+            namespace, tool, resolved.args, host_consent=consent, host=host
         )
     else:
         decision, reason = "allow", None
