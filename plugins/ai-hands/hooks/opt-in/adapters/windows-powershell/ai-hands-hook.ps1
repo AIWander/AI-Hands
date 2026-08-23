@@ -15,14 +15,12 @@ param(
 #   3. Deny shape: emits legacy decision 'block' plus hookSpecificOutput.permissionDecision 'deny'
 #      (belt and suspenders - covers both hook API generations).
 #   4. Per-client state root: %LOCALAPPDATA%\AI-Hands\hook_state\<client>; AI_HANDS_HOOK_ROOT
-#      overrides for tests (CPC_HANDS_HOOK_ROOT / CPC_GROK_HOOK_ROOT honored for back-compat).
+#      overrides for tests.
 
 $ErrorActionPreference = 'Stop'
 $root = if ($env:AI_HANDS_HOOK_ROOT) { $env:AI_HANDS_HOOK_ROOT }
-        elseif ($env:CPC_HANDS_HOOK_ROOT) { $env:CPC_HANDS_HOOK_ROOT }
-        elseif ($env:CPC_GROK_HOOK_ROOT) { $env:CPC_GROK_HOOK_ROOT }
         else { Join-Path (Join-Path $env:LOCALAPPDATA 'AI-Hands\hook_state') $Client }
-$logPath = Join-Path $root 'cpc-hands-events.jsonl'
+$logPath = Join-Path $root 'ai-hands-events.jsonl'
 $streakPath = Join-Path $root 'unverified-mutation-streak.json'
 $listWindowStatePath = Join-Path $root 'list_window_last.json'
 # Legacy path - clear on session start so old hard-gate markers never resurrect
@@ -253,11 +251,11 @@ function Is-PaymentEntry([string]$toolName, [string]$text) {
   return $false
 }
 
-function Persists-NetworkToVolumes([string]$toolName, [string]$text) {
+function Persists-NetworkToDurableStore([string]$toolName, [string]$text) {
   if ($toolName -notmatch '(?i)(network|trace|route|learn_api|browser_get_all_network|browser_get_network_log)') {
     return $false
   }
-  return ($text -match '(?i)(c:\\\\my drive\\\\volumes|c:/my drive/volumes|/volumes/|\\\\volumes\\\\)')
+  return ($text -match '(?i)([/]|\\\\)volumes(?![a-z0-9])')
 }
 
 # Hooks fail OPEN on script error (only an explicit deny decision blocks).
@@ -348,7 +346,7 @@ try {
   # Anti-stuck: rate-limit full desktop window enumeration (do not ban).
   if (Is-ListWindow $toolName) {
     if ((-not (Is-ListWindowBypass)) -and (Test-ListWindowCooldown)) {
-      $reason = "CPC Hands anti-stuck: uia_list_window rate-limited (cooldown ${listWindowCooldownS}s). Cache the previous list or use uia_focus_window(title=...) / hands_app_action(focus|open). Need another list now: set HANDS_ALLOW_UIA_LIST=1 (or AI_HANDS_ALLOW_UIA_LIST=1), or wait for cooldown. $doctrinePointer"
+      $reason = "AI-Hands anti-stuck: uia_list_window rate-limited (cooldown ${listWindowCooldownS}s). Cache the previous list or use uia_focus_window(title=...) / hands_app_action(focus|open). Need another list now: set HANDS_ALLOW_UIA_LIST=1 (or AI_HANDS_ALLOW_UIA_LIST=1), or wait for cooldown. $doctrinePointer"
       Write-Event 'list_window_rate_limited' $inputObj
       Emit-Deny $reason
       exit 0
@@ -360,7 +358,7 @@ try {
   # VERIFY MODEL (2026-07-14): no hard PreToolUse chain.
   # Verification is skill/batch discipline + audit streak, not a blocking gate.
   # Hard gates below remain: payment entry (no override), destructive confirm, plaintext creds,
-  # network->Volumes, list cooldown.
+  # network->durable store, list cooldown.
 
   if (Is-PaymentEntry $toolName $text) {
     Emit-Deny "AI-Hands MUST-gate: payment information entry (card/bank numbers, CVV, expiry, billing fields) is human-only. No override. Hand control to the user for this step. $doctrinePointer"
@@ -368,17 +366,17 @@ try {
   }
 
   if ((Is-Destructive $toolName $text) -and -not (Has-ExplicitConfirm $text)) {
-    Emit-Deny "CPC Hands MUST-gate: destructive-tagged action needs explicit user confirmation or allow_destructive=true. $doctrinePointer"
+    Emit-Deny "AI-Hands MUST-gate: destructive-tagged action needs explicit user confirmation or allow_destructive=true. $doctrinePointer"
     exit 0
   }
 
   if (Has-PlaintextCredential $toolName $text) {
-    Emit-Deny "CPC Hands MUST-gate: plaintext secrets are allowed only for workflow credential_store/refresh/keyring/vault operations that write to the OS keyring. Ordinary hands/browser/workflow action calls must reference credential_name or credential_ref. $doctrinePointer"
+    Emit-Deny "AI-Hands MUST-gate: plaintext secrets are allowed only for workflow credential_store/refresh/keyring/vault operations that write to the OS keyring. Ordinary hands/browser/workflow action calls must reference credential_name or credential_ref. $doctrinePointer"
     exit 0
   }
 
-  if (Persists-NetworkToVolumes $toolName $text) {
-    Emit-Deny "CPC Hands MUST-gate: captured network traffic cannot be persisted to Volumes or durable logs. Redact tokens/PII and keep capture ephemeral. $doctrinePointer"
+  if (Persists-NetworkToDurableStore $toolName $text) {
+    Emit-Deny "AI-Hands MUST-gate: captured network traffic cannot be persisted to a durable knowledge store or logs. Redact tokens/PII and keep capture ephemeral. $doctrinePointer"
     exit 0
   }
 
