@@ -15,6 +15,7 @@ HOOKS = PLUGINS / "ai-hands"
 SKILLS = PLUGINS / "ai-hands-skills"
 EXPECTED_SKILLS = {
     "ai-hands",
+    "ai-hands-gaming",
     "ai-hands-getting-started",
     "ai-hands-safety",
     "ai-hands-workflows",
@@ -105,6 +106,12 @@ class PluginProfileTests(unittest.TestCase):
                 "Never let remembered site behavior replace current evidence",
                 "hands_login_recovery",
                 "## Desktop applications",
+            ),
+            "ai-hands-gaming": (
+                "windowed or borderless-windowed mode",
+                "uia_focus_window(title=...)",
+                "Real-money flows stay with the human",
+                "CVV, expiry, billing fields)",
             ),
         }
         for root in (HOOKS, SKILLS):

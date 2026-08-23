@@ -4,7 +4,7 @@ Installable agent harness packages for AI-Hands.
 
 | Plugin | Status | Purpose |
 |--------|--------|---------|
-| [`ai-hands/`](./ai-hands/) | Current: hook-capable | MCP registration, four ability-separated skills, and inert SessionStart, prompt, pre-tool, post-tool, and failure hook templates |
+| [`ai-hands/`](./ai-hands/) | Current: hook-capable | MCP registration, five ability-separated skills, and inert SessionStart, prompt, pre-tool, post-tool, and failure hook templates |
 | [`ai-hands-skills/`](./ai-hands-skills/) | Current: skills-only | The same MCP and skill coverage with no hook code, plus a behavioral instruction adapter for hookless hosts |
 | [`grok-ai-hands/`](./grok-ai-hands/) | Legacy compatibility | Original Grok-oriented package retained for existing installations; do not use for new installs |
 
