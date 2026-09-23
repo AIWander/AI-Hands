@@ -137,6 +137,7 @@ if ($distinct.Count -gt 1) {
 # ---------------------------------------------------------------------- skills
 foreach ($profile in $advertised) {
     $spec = $config.profiles.$profile
+    $label = Get-ProfileLabel $profile
     $skillsDir = Join-Path (Get-ProfileRoot $profile) "skills"
     if (-not (Test-Path -LiteralPath $skillsDir)) { Add-Problem "$label has no skills directory."; continue }
     $skills = @(Get-ChildItem -LiteralPath $skillsDir -Directory)
@@ -188,6 +189,7 @@ foreach ($group in @($config.parityGroups)) {
 # ----------------------------------------------------------------- MCP wiring
 foreach ($profile in $advertised) {
     $spec = $config.profiles.$profile
+    $label = Get-ProfileLabel $profile
     $mcpPath = Join-Path (Get-ProfileRoot $profile) ".mcp.json"
     $expected = $spec -and $spec.mcp
     if ($expected -and -not (Test-Path -LiteralPath $mcpPath)) {
@@ -202,6 +204,7 @@ foreach ($profile in $advertised) {
 # --------------------------------------------------------------- opt-in hooks
 foreach ($profile in $advertised) {
     $spec = $config.profiles.$profile
+    $label = Get-ProfileLabel $profile
     $hosts = @()
     if ($spec -and $spec.hookHosts) { $hosts = @($spec.hookHosts) }
     $optInDir = Join-Path (Get-ProfileRoot $profile) "hooks/opt-in"
