@@ -35,3 +35,12 @@ A hook definition is not enforcement merely because it exists. It becomes a hard
 The adapters are mutable Python files. Trusting a command definition does not automatically protect the script it launches. Treat this package as advisory/defense in depth unless the host also hash-pins or access-controls the adapter and a mismatch probe proves the risky call is denied.
 
 The lifecycle shape is based on the current Grok Hands pack but the policy implementation is shared here so Codex, Claude, and Grok adapters do not drift into competing rule owners. `SessionStart` and `UserPromptSubmit` are advisory. `PreToolUse` is the only blocking stage, and only on a host that proves the exact definition can deny.
+
+## Windows PowerShell adapter (`adapters/windows-powershell/`)
+
+A third adapter variant: the native PowerShell hook run in production on Windows for
+Claude Code and Grok CLI. Differences from the Python adapters, stated plainly: it has no
+Python dependency, it fails OPEN on script error (only an explicit deny blocks), and it
+accepts risky-action consent as an in-input marker (`allow_destructive: true`) rather than
+an HMAC token — treat it as advisory/defense in depth under the same one-policy-owner
+rule. See its README for registration fragments and the exact gate list.

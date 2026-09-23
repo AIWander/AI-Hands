@@ -1,6 +1,6 @@
 # AI-Hands hook-capable plugin
 
-This is the AI-Hands profile for hosts that can run reviewed lifecycle hooks. It includes the `hands` MCP registration, four narrowly triggered skills, and inert hook templates modeled on the Grok Hands lifecycle: session start, prompt submit, pre-tool safety, post-tool audit, and post-tool failure.
+This is the AI-Hands profile for hosts that can run reviewed lifecycle hooks. It includes the `hands` MCP registration, five narrowly triggered skills, and inert hook templates modeled on the Grok Hands lifecycle: session start, prompt submit, pre-tool safety, post-tool audit, and post-tool failure.
 
 The installer never edits or trusts a host hook file. Review, render, install, trust, and probe the exact hook definition through the host's supported controls. A definition on disk is not enforcement; the Rust monitor fence remains the hard display boundary.
 
@@ -14,5 +14,6 @@ Install only one Hands profile in a host. Use `ai-hands-skills` when the host ca
 - `ai-hands`: dense ability-first tool routing
 - `ai-hands-safety`: action-boundary consent, origin, and secret checks
 - `ai-hands-workflows`: short recipes, verification loops, and failure recovery
+- `ai-hands-gaming`: game-genre choice, input paths, and the play loop for sanctioned game sessions
 
 The split is by trigger, not by duplicate tool ownership. `ai-hands` owns selection; the other skills add setup, risk, or multi-step procedure only when that boundary is active.
