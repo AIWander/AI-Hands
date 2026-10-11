@@ -8,6 +8,7 @@ Packaging artifacts and post-install helpers for AI-Hands.
 |------|---------|
 | `winget/manifests/a/AIWander/AI-Hands/<version>/` | Per-version winget v1.6 manifests pending submission to `microsoft/winget-pkgs`. Source of truth until merged. |
 | `scoop/ai-hands.json` | Scoop manifest for users on the Scoop ecosystem. Can be installed directly from the URL or via a bucket. |
+| `HandsSetup.iss`, `build-hands-setup.ps1`, `scripts/Register-HandsClients.ps1` | One installer with a client picker (Claude desktop, Codex CLI, Grok CLI) and a backup-first config writer. See `README-picker.md`; tests in `tests/`. |
 | `scripts/register-hands.ps1` | Post-install helper: wires `hands` into Claude Desktop's `claude_desktop_config.json` (ARCHIVE-FIRST backup, idempotent, supports `-Force` and `-DryRun`). |
 | `scripts/generate-winget-manifests.ps1` | Version-bump helper: pulls release-asset metadata via `gh release view` and renders the three winget YAMLs for a new version. |
 

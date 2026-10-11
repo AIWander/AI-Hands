@@ -32,3 +32,6 @@ src.pre_phaseD_*/
 # Rendered hook JSON carries machine-local absolute paths; render locally with
 # plugins/<profile>/scripts/render-hooks.ps1
 plugins/ai-hands/rendered-hooks/
+
+# MCPB payload binary staged by installers/build-hands-setup.ps1
+/mcpb/server/
