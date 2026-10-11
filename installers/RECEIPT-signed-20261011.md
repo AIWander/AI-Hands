@@ -27,14 +27,12 @@ Scope: sign and refresh the DRAFT pre-release only. Not published, not merged, n
 | mcpb: server/hands.exe | Valid | 22:41:30 | 88d7a4d9...41fabe (= arm64 payload) |
 | unins000.exe (from a test install) | Valid | TSA countersigned | 4effb83f...2f9f51 |
 
-The uninstaller only exists after an install, so it was taken from a silent install to C:\temp\hands-sign-check
-followed by a silent uninstall. Install exit 0, writer exit 2 (all three clients `skipped existing`), uninstall
+The uninstaller only exists after an install: silent install to C:\temp\hands-sign-check, then silent uninstall. Install exit 0, writer exit 2 (all three clients `skipped existing`), uninstall
 exit 0, ARP key gone, folder gone. The three client configs were archived first to
 `C:\CPC\backups\<file>.<Client>.pre_hands_sign_20261011_190059`. Their hash, mtime and backup count matched before
 install, after install and after uninstall (ClaudeDesktop CAB13A25..., Codex 52C03A18..., GrokCli AB32845F...).
 The live C:\CPC\servers\hands.exe (PID 23028) kept running throughout.
-Smoke test of the signed arm64 and x64 binaries: MCP initialize returns serverInfo hands 1.1.0-unified.2, and
-tools/list returns 105.
+Smoke test, signed arm64 and x64: serverInfo hands 1.1.0-unified.2, tools/list 105.
 
 ## Hashes before and after signing
 
@@ -48,7 +46,6 @@ tools/list returns 105.
 | payload/Register-HandsClients.ps1 | fe45f85a...8eae | aad47e82ae23d20a0f43ee1aff71f517b300e468682a1ff74f203762d7924e29 |
 
 `sha256sum -c dist/SHA256SUMS.txt`: all 7 OK. Build log: dist/build-sign.log (not committed; dist is untracked).
-
 ## Manifests (PROVEN)
 
 `update-manifests.ps1` rewrote the winget installer.yaml (InstallerSha256 181DEC79... for x64 and arm64) and
@@ -69,7 +66,6 @@ succeeded." The Scoop JSON parses.
   code-signing certificate (Azure Trusted Signing); SHA256SUMS.txt lists the signed artifacts." The draft URL
   slug changed on edit (now untagged-de60b83ce63ebf173f03). The release TITLE still reads
   "AI-Hands 1.1.0-unified.2 (unsigned draft)". I left it unchanged because the packet allowed only the notes line.
-
 ## Still Joseph's decisions
 
 1. Publish the draft. Publishing creates tag v1.1.0-unified.2, and that starts .github/workflows/release.yml.
@@ -80,7 +76,6 @@ succeeded." The Scoop JSON parses.
 5. Silent-install default: a silent or winget install ticks every detected client.
 6. x64 .mcpb: only arm64 is packed today.
 7. Optional cleanup: C:\CPC\backups\*.pre_hands_sign_20261011_190059 (3 files) and *.pre_hands_e2e_20261011_*.
-
 ## Proven / inferred / untested
 
 - PROVEN: auth preflight; all signatures above (Valid, timestamped); uninstaller signed; configs byte-identical;
