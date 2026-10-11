@@ -89,6 +89,8 @@ The entries below are pre-rename `AIWander/hands` lineage notes kept for context
 
 ## Install
 
+**Windows installer with a client picker (v1.1.0-unified.2 preview).** `HandsSetup-1.1.0-unified.2-win.exe` installs `hands.exe` per user (arm64 or x64) and adds it to the AI clients you tick (Claude desktop app, Codex CLI, Grok CLI), backing up each config first. Guide: [`installers/README-picker.md`](installers/README-picker.md). What it reads, writes and sends: [`PRIVACY.md`](PRIVACY.md). Changes per version: [`CHANGELOG.md`](CHANGELOG.md).
+
 > **winget submission pending.** The `microsoft/winget-pkgs` PR is in flight — once it merges, `winget install AIWander.AI-Hands` works against the published index. Until then, [`installers/winget/manifests/`](installers/winget/manifests/) in this repo is the source of truth (use the `--manifest` form below). The manual download path is unaffected.
 
 ### Option A — optional plugin installers (v1.1 preview)

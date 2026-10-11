@@ -61,6 +61,10 @@ libloading = "0.8"
 [dev-dependencies]
 tempfile = "3"
 
+# VERSIONINFO + icon for hands.exe (build.rs)
+[build-dependencies]
+winresource = "0.1"
+
 # Windows API for combo tools (drag, etc.)
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

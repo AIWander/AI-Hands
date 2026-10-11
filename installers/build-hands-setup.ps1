@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Builds the one-installer AI-Hands package: hands.exe (arm64, x64 when the cross-build works),
-    HandsSetup-<version>.exe (Inno Setup, client picker), the desktop-only .mcpb, and SHA256SUMS.txt.
+    HandsSetup-<version>-win.exe (Inno Setup, client picker), the desktop-only .mcpb, and SHA256SUMS.txt.
 
 .DESCRIPTION
     1. cargo build --release                                   -> target\release\hands.exe (host arch)
@@ -10,13 +10,16 @@
                                                                   to dist\x64-build-failure.txt and the
                                                                   installer is built arm64-only
     3. stage dist\payload (hands-arm64.exe, hands-x64.exe, Register-HandsClients.ps1, README.md)
-    4. ISCC installers\HandsSetup.iss                          -> dist\HandsSetup-<version>.exe
+    4. ISCC installers\HandsSetup.iss                          -> dist\HandsSetup-<version>-win.exe
        (no ISCC: dist\HandsSetup-portable.zip instead; -Portable builds the zip as well)
     5. mcpb pack mcpb dist\hands-<version>-win-arm64.mcpb      (arm64 hands.exe copied to mcpb\server\)
     6. dist\SHA256SUMS.txt
 
-    Signing is opt-in (-Sign): it calls C:\CPC\scripts\sign-cpc.ps1 (Azure Trusted Signing) on the
-    payload binaries and the setup exe. Unsigned builds trigger SmartScreen on other machines.
+    Signing is opt-in (-Sign): C:\CPC\scripts\sign-cpc.ps1 (Azure Trusted Signing, the same script and
+    profile as C:\CPC\installers\shared\build-cpc-installer.ps1) signs the payload binaries and the ps1
+    before they are packed, then Inno's SignTool directive calls it for the embedded uninstaller and the
+    setup exe. Run installers\update-manifests.ps1 afterwards: signing changes every hash.
+    Unsigned builds trigger SmartScreen on other machines. See installers\SIGNING.md.
 
 .PARAMETER SkipBuild
     Reuse existing target\ outputs instead of running cargo.
@@ -46,7 +49,12 @@ $SignScript = 'C:\CPC\scripts\sign-cpc.ps1'
 $X64Target = 'x86_64-pc-windows-msvc'
 
 $Version = (Select-String -Path (Join-Path $Repo 'Cargo.toml') -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
-Write-Host "AI-Hands $Version  repo $Repo"
+# Windows version resources need four numbers: 1.1.0-unified.2 -> 1.1.0.2 (build.rs uses the same rule).
+$core, $pre = $Version -split '-', 2
+$nums = @(@($core.Split('.') | ForEach-Object { [int]$_ }) + @(0, 0, 0) | Select-Object -First 3)
+$last = if ($pre -and ($pre.Split('.')[-1] -match '^\d+$')) { [int]$pre.Split('.')[-1] } else { 0 }
+$NumericVersion = '{0}.{1}.{2}.{3}' -f $nums[0], $nums[1], $nums[2], $last
+Write-Host "AI-Hands $Version ($NumericVersion)  repo $Repo"
 
 function Get-PeMachine([string]$Path) {
     $b = [System.IO.File]::ReadAllBytes($Path)
@@ -140,14 +148,20 @@ if (-not $iscc) {
     if ($cmd) { $iscc = $cmd.Source }
 }
 
-$setupExe = Join-Path $Dist "HandsSetup-$Version.exe"
-if (Test-Path $setupExe) { Remove-Item $setupExe }
+$setupExe = Join-Path $Dist "HandsSetup-$Version-win.exe"
+# drop setup exes from earlier builds, including the older HandsSetup-<version>.exe name
+Get-ChildItem $Dist -Filter 'HandsSetup-*.exe' -File -ErrorAction SilentlyContinue | Remove-Item
 if ($iscc) {
     Write-Host "ISCC: $iscc"
     $issLog = Join-Path $Dist 'iscc.log'
-    $code = Invoke-Native $iscc @("/DMyAppVersion=$Version", "/DPayloadDir=$Payload", "/DOutputDir=$Dist", (Join-Path $PSScriptRoot 'HandsSetup.iss')) $issLog
+    $isccArgs = @("/DMyAppVersion=$Version", "/DNumericVersion=$NumericVersion", "/DPayloadDir=$Payload", "/DOutputDir=$Dist")
+    if ($Sign) {
+        # Inno replaces $f with the quoted path of each file it signs: the embedded uninstaller, then the setup exe.
+        $isccArgs += @('/DUseSignTool=1', "/Scpcsign=pwsh -NoProfile -File $SignScript -Path `$f")
+    }
+    $isccArgs += (Join-Path $PSScriptRoot 'HandsSetup.iss')
+    $code = Invoke-Native $iscc $isccArgs $issLog
     if ($code -ne 0 -or -not (Test-Path $setupExe)) { throw "ISCC failed (exit $code); see dist\iscc.log" }
-    if ($Sign) { pwsh -NoProfile -File $SignScript -Path $setupExe }
     $Notes.Add("installer: $(Split-Path -Leaf $setupExe)$(if (-not $x64Ok) { ' (arm64-only)' })")
 } else {
     $Notes.Add('installer: ISCC not found (looked in Program Files (x86)\Inno Setup 6, Program Files\Inno Setup 6, PATH); portable zip built instead')

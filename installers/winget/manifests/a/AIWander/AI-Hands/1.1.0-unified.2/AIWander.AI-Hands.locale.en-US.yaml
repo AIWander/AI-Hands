@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: AIWander.AI-Hands
+PackageVersion: 1.1.0-unified.2
+PackageLocale: en-US
+Publisher: AIWander
+PublisherUrl: https://github.com/AIWander
+PublisherSupportUrl: https://github.com/AIWander/AI-Hands/issues
+PrivacyUrl: https://github.com/AIWander/AI-Hands/blob/main/PRIVACY.md
+Author: Joseph Wander
+PackageName: AI-Hands
+PackageUrl: https://github.com/AIWander/AI-Hands
+License: Apache-2.0
+LicenseUrl: https://github.com/AIWander/AI-Hands/blob/main/LICENSE
+Copyright: Copyright 2026 Joseph Wander / AIWander
+ShortDescription: Local MCP server that lets AI assistants automate the browser, Windows apps and the screen
+Description: |
+  AI-Hands is a single Rust binary MCP (Model Context Protocol) server for browser automation
+  (Chrome over CDP), Windows UI Automation, and screenshots with OCR. It runs locally, has no
+  telemetry, and works with any MCP client.
+
+  The installer is per-user and offers a client picker (Claude desktop app, Codex CLI, Grok CLI).
+  In a silent install (winget's default) it registers hands with the clients it detects. Each
+  config is backed up first, and an existing hands entry is never changed.
+Moniker: ai-hands
+Tags:
+  - mcp
+  - automation
+  - browser-automation
+  - claude
+  - codex
+  - ocr
+  - accessibility
+  - uia
+ReleaseNotesUrl: https://github.com/AIWander/AI-Hands/releases/tag/v1.1.0-unified.2
+Documentations:
+  - DocumentLabel: Install guide
+    DocumentUrl: https://github.com/AIWander/AI-Hands/blob/main/installers/README-picker.md
+  - DocumentLabel: CHANGELOG
+    DocumentUrl: https://github.com/AIWander/AI-Hands/blob/main/CHANGELOG.md
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
