@@ -10,16 +10,30 @@ fn main() {
     let (core, pre) = ver.split_once('-').unwrap_or((ver, ""));
     let mut n: Vec<u64> = core.split('.').map(|p| p.parse().unwrap_or(0)).collect();
     n.resize(3, 0);
-    n.push(pre.rsplit('.').next().and_then(|p| p.parse().ok()).unwrap_or(0));
+    n.push(
+        pre.rsplit('.')
+            .next()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(0),
+    );
     let packed = (n[0] << 48) | (n[1] << 32) | (n[2] << 16) | n[3];
     let mut res = winresource::WindowsResource::new();
     res.set_icon("installers/assets/hands-icon.ico")
         .set("CompanyName", "AIWander")
         .set("ProductName", "AI-Hands")
-        .set("FileDescription", "AI-Hands MCP server: browser, Windows UI Automation and screen/OCR tools")
-        .set("LegalCopyright", "Copyright 2026 Joseph Wander / AIWander. Apache-2.0.")
+        .set(
+            "FileDescription",
+            "AI-Hands MCP server: browser, Windows UI Automation and screen/OCR tools",
+        )
+        .set(
+            "LegalCopyright",
+            "Copyright 2026 Joseph Wander / AIWander. Apache-2.0.",
+        )
         .set("OriginalFilename", "hands.exe")
-        .set("FileVersion", &format!("{}.{}.{}.{}", n[0], n[1], n[2], n[3]))
+        .set(
+            "FileVersion",
+            &format!("{}.{}.{}.{}", n[0], n[1], n[2], n[3]),
+        )
         .set("ProductVersion", ver)
         .set_version_info(winresource::VersionInfo::FILEVERSION, packed)
         .set_version_info(winresource::VersionInfo::PRODUCTVERSION, packed);
