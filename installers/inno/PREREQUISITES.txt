@@ -7,7 +7,9 @@ Required:
 - An MCP-compatible AI host for tool discovery and calls
 
 Browser layer:
-- Google Chrome or Chromium must be installed separately for browser/CDP automation.
+- A Chromium browser must be installed separately for browser/CDP automation: Google Chrome or Microsoft Edge.
+- Chrome can be started by AI-Hands itself (browser_launch) or attached to. Edge is supported via browser_attach only:
+  start Edge with --remote-debugging-port and its own --user-data-dir, then attach. See the Browser support section of README.md.
 - The installer does not download, manage, or silently install a browser.
 - If no supported browser is detected, setup reports that limitation. Windows UIA and vision abilities may still be usable.
 - The optional browser_js_extract parser requires Node.js plus linkedom or jsdom. AI-Hands searches for node.exe on PATH and the bundled helper next to hands.exe. AIHANDS_NODE_EXE, AIHANDS_JS_EXTRACT_SCRIPT, and AIHANDS_NODE_PATH can override those locations. Normal CDP browser tools do not require Node.js.

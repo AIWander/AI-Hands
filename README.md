@@ -204,7 +204,7 @@ scoop install https://raw.githubusercontent.com/AIWander/AI-Hands/main/installer
 ### Prerequisites
 
 - Windows 10/11 (x64 or ARM64)
-- Chrome installed normally (any recent version). AI-Hands does not download or manage browser binaries — it talks to your existing Chrome over CDP.
+- A Chromium browser installed normally — **Google Chrome or Microsoft Edge** (any recent version). AI-Hands does not download or manage browser binaries; it talks to a browser you already have over CDP. Chrome and Edge are supported by different paths — see [Browser support](#browser-support).
 - Claude Desktop or any MCP-compatible client
 - Optional compatibility/debug-only `browser_js_extract` parser: Node.js plus `linkedom` or `jsdom`; safe-profile CDP browser tools do not require Node.js.
 
@@ -405,11 +405,11 @@ hands.exe (MCP server, stdin/stdout JSON-RPC)
 └── tools.rs      — Tool definitions + dispatch
 ```
 
-Single binary, no runtime dependencies beyond Chrome.
+Single binary, no runtime dependencies beyond a Chromium browser (Chrome or Edge).
 
 ### Dependencies
 
-- Browser automation powered by [chromiumoxide](https://github.com/mattsse/chromiumoxide) (Apache-2.0/MIT) — a pure-Rust Chrome DevTools Protocol client. Hands attaches to a Chrome instance you've already installed; use `browser_debug_launch` to start Chrome with the debug port, or `browser_attach` to connect to an already-running `chrome.exe --remote-debugging-port=9222`. No browser binaries are downloaded or managed by Hands.
+- Browser automation powered by [chromiumoxide](https://github.com/mattsse/chromiumoxide) (Apache-2.0/MIT) — a pure-Rust Chrome DevTools Protocol client. Hands drives a Chromium browser you already have installed; use `browser_debug_launch` to start one with the debug port, or `browser_attach` to connect to an already-running browser started with `--remote-debugging-port=9222`. Works with Chrome or Edge — see [Browser support](#browser-support). No browser binaries are downloaded or managed by Hands.
 - Windows automation layer uses native UIA COM interfaces — no third-party dependency.
 - OCR is done via an embedded Rust OCR crate (not Tesseract binaries) — no external install needed.
 - Shared libraries: [browser-mcp](https://github.com/AIWander/browser-mcp), [uia-mcp](https://github.com/AIWander/uia-mcp), [vision-core](https://github.com/AIWander/vision-core), [cpc-paths](https://github.com/AIWander/cpc-paths).
@@ -438,9 +438,35 @@ Binary appears at `target/release/hands.exe`. Requires Rust stable toolchain —
 
 - **Windows 10/11** (x64 or ARM64) — required for UIA (Windows UI Automation) and CDP browser automation
 - Rust stable toolchain (build from source only)
-- Chrome installed normally (any recent version). AI-Hands does not download or manage browser binaries — it talks to your existing Chrome over CDP.
+- A Chromium browser installed normally — **Google Chrome or Microsoft Edge** (any recent version). AI-Hands does not download or manage browser binaries; it talks to a browser you already have over CDP. Chrome and Edge are supported by different paths — see [Browser support](#browser-support).
 
 AI-Hands is Windows-only. The UIA automation layer depends on Windows COM interfaces, and the vision layer uses Windows-specific screen capture APIs.
+
+## Browser support
+
+AI-Hands speaks the Chrome DevTools Protocol, so it is not tied to one Chromium build. **Chrome and Microsoft Edge both work**, but they are reached by different paths — and the difference is not cosmetic, so it is documented rather than glossed.
+
+| | `browser_launch` (Hands starts the browser) | `browser_attach` (you start it, Hands connects) |
+|---|---|---|
+| **Google Chrome** | Supported — auto-detected | Supported |
+| **Microsoft Edge** | **Not supported** | **Supported** |
+
+### Using Edge
+
+Start Edge yourself with a debug port and a dedicated profile directory, then attach:
+
+```powershell
+& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
+    --remote-debugging-port=9222 --user-data-dir="$env:TEMP\edge-cdp" about:blank
+```
+
+Then call `browser_attach` with `port: 9222`. The full browser tool surface behaves identically to Chrome from that point on — navigation, accessibility-ref targeting, text extraction, screenshots, metrics and verification were all confirmed against Edge 152 (CDP protocol 1.3, the same version Chrome reports).
+
+### Why `browser_launch` cannot start Edge
+
+When Edge is already running, a second `msedge.exe` started with a different `--user-data-dir` hands off to the existing instance and exits immediately. It never prints the DevTools websocket URL that CDP clients need, so the launch fails with a profile-lock or `unexpected end of stream` error and no usable session. Chrome does not behave this way. Attaching sidesteps the problem entirely because the debug port is opened by the browser you started.
+
+Setting a `CHROME` environment variable to `msedge.exe` does **not** work around this — it breaks `browser_launch` (and `hands_navigate`, which auto-launches) while gaining nothing, since `browser_attach` already reaches Edge regardless of that variable. Leave `CHROME` unset unless you are pointing it at a non-default *Chrome* install.
 
 ## Failure modes
 
@@ -449,7 +475,8 @@ Automation across three different layers (browser, UIA, vision) means each layer
 - **Browser profile locked** — a previous Chromium process still holds the profile. `browser_launch` returns `profile_locked`; close the stuck Chrome or use a fresh context via `browser_context_create`.
 - **UIA element not found** — selector name drift after an app update. Call `uia_find` with a broader query, inspect bounded structural state with `uia_get_state`, or use `hands_find` after focusing the intended window.
 - **OCR misreads on tiny or low-contrast text** — vision layer returns its best guess. Use `vision_zoom` before `vision_ocr`, or fall back to `browser_extract_content` if the target is a web page with real text.
-- **Chrome not found or debug port not open** — Hands connects to Chrome over CDP. Use `browser_debug_launch` to start Chrome with `--remote-debugging-port=9222`, or ensure Chrome is running with that flag before calling `browser_attach`.
+- **Browser not found or debug port not open** — Hands connects over CDP. Use `browser_debug_launch` to start the browser with `--remote-debugging-port=9222`, or ensure it is already running with that flag before calling `browser_attach`.
+- **`browser_launch` fails against Edge** — expected. Point `browser_launch` at Chrome and reach Edge with `browser_attach` instead; see [Browser support](#browser-support) for why.
 - **Popup or OS dialog steals focus mid-sequence** — UIA actions target the wrong window. Use `uia_focus_window` before sensitive sequences, or batch via `uia_batch` which rechecks focus between steps.
 
 ## Contributing
