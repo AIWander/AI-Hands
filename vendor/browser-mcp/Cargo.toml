@@ -10,10 +10,10 @@ repository = "https://github.com/AIWander/browser-mcp"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-chromiumoxide = { version = "0.5", features = ["tokio-runtime"], default-features = false }
+chromiumoxide = { version = "0.6", features = ["tokio-runtime"], default-features = false }
 futures = "0.3"
 base64 = "0.21"
-reqwest = { version = "0.11", features = ["native-tls", "json"], default-features = false }
+reqwest = { version = "0.12", features = ["native-tls", "json"], default-features = false }
 scraper = "0.18"
 image = { version = "0.24", default-features = false, features = ["jpeg"] }
 
