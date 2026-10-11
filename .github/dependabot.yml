@@ -10,6 +10,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "github-actions"
+    # No custom labels: Dependabot applies its defaults (dependencies,
+    # github_actions) and creates them if missing. A custom label must
+    # already exist in the repo, and "github-actions" never did.
