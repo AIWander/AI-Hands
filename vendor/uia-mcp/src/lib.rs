@@ -196,51 +196,162 @@ fn collect_elements(
     elements
 }
 
+/// Result of a timeout-safe top-level window enumeration.
+#[cfg(windows)]
+struct WindowListResult {
+    windows: Vec<WindowInfo>,
+    skipped_hung: u32,
+    skipped_timeout: u32,
+    truncated: bool,
+    elapsed_ms: u64,
+}
+
+/// Per-window title fetch timeout (ms). Abort if the target thread is hung.
+#[cfg(windows)]
+const DEFAULT_TITLE_TIMEOUT_MS: u32 = 80;
+
+/// Overall budget for a full desktop list (ms). Partial results returned if exceeded.
+#[cfg(windows)]
+const DEFAULT_LIST_BUDGET_MS: u64 = 2000;
+
+#[cfg(windows)]
+struct EnumWindowsCtx {
+    windows: Vec<WindowInfo>,
+    skipped_hung: u32,
+    skipped_timeout: u32,
+    deadline: std::time::Instant,
+    title_timeout_ms: u32,
+    max_windows: usize,
+    truncated: bool,
+}
+
+#[cfg(windows)]
+enum TitleFetch {
+    Ok(String),
+    Empty,
+    TimeoutOrFail,
+}
+
+/// Fetch window title with SendMessageTimeout so hung apps cannot block forever.
+#[cfg(windows)]
+unsafe fn get_window_title_timeout(hwnd: HWND, timeout_ms: u32) -> TitleFetch {
+    let mut title = [0u16; 256];
+    let mut result: usize = 0;
+    // WM_GETTEXT: wParam = buffer chars, lParam = buffer ptr; result = chars copied
+    let sent = SendMessageTimeoutW(
+        hwnd,
+        WM_GETTEXT,
+        WPARAM(title.len()),
+        LPARAM(title.as_mut_ptr() as isize),
+        SMTO_ABORTIFHUNG | SMTO_BLOCK,
+        timeout_ms,
+        Some(&mut result),
+    );
+    if sent.0 == 0 {
+        return TitleFetch::TimeoutOrFail;
+    }
+    if result == 0 {
+        return TitleFetch::Empty;
+    }
+    let len = result.min(title.len().saturating_sub(1));
+    let s = String::from_utf16_lossy(&title[..len]);
+    if s.is_empty() {
+        TitleFetch::Empty
+    } else {
+        TitleFetch::Ok(s)
+    }
+}
+
 #[cfg(windows)]
 fn get_visible_windows() -> Vec<WindowInfo> {
-    let mut windows = Vec::new();
+    get_visible_windows_budgeted(DEFAULT_LIST_BUDGET_MS, DEFAULT_TITLE_TIMEOUT_MS, 500).windows
+}
+
+#[cfg(windows)]
+fn get_visible_windows_budgeted(
+    budget_ms: u64,
+    title_timeout_ms: u32,
+    max_windows: usize,
+) -> WindowListResult {
+    let start = std::time::Instant::now();
+    let mut ctx = EnumWindowsCtx {
+        windows: Vec::new(),
+        skipped_hung: 0,
+        skipped_timeout: 0,
+        deadline: start + std::time::Duration::from_millis(budget_ms.max(50)),
+        title_timeout_ms: title_timeout_ms.max(10),
+        max_windows: max_windows.max(1),
+        truncated: false,
+    };
 
     unsafe {
         let _ = EnumWindows(
             Some(enum_windows_callback),
-            LPARAM(&mut windows as *mut _ as isize),
+            LPARAM(&mut ctx as *mut _ as isize),
         );
     }
 
-    windows
+    WindowListResult {
+        windows: ctx.windows,
+        skipped_hung: ctx.skipped_hung,
+        skipped_timeout: ctx.skipped_timeout,
+        truncated: ctx.truncated,
+        elapsed_ms: start.elapsed().as_millis() as u64,
+    }
 }
 
 #[cfg(windows)]
 unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    let windows = &mut *(lparam.0 as *mut Vec<WindowInfo>);
+    let ctx = &mut *(lparam.0 as *mut EnumWindowsCtx);
 
-    if IsWindowVisible(hwnd).as_bool() {
-        let mut title = [0u16; 256];
-        let len = GetWindowTextW(hwnd, &mut title);
-        let title = String::from_utf16_lossy(&title[..len as usize]);
-
-        if !title.is_empty() {
-            let mut class_name = [0u16; 256];
-            let class_len = GetClassNameW(hwnd, &mut class_name);
-            let class_name = String::from_utf16_lossy(&class_name[..class_len as usize]);
-
-            let mut rect = RECT::default();
-            let _ = GetWindowRect(hwnd, &mut rect);
-
-            windows.push(WindowInfo {
-                hwnd: format!("{:?}", hwnd),
-                title,
-                class_name,
-                rect: Rect {
-                    x: rect.left,
-                    y: rect.top,
-                    width: rect.right - rect.left,
-                    height: rect.bottom - rect.top,
-                },
-                is_visible: true,
-            });
-        }
+    // Overall budget — stop enum, keep partial list
+    if std::time::Instant::now() >= ctx.deadline {
+        ctx.truncated = true;
+        return FALSE;
     }
+    if ctx.windows.len() >= ctx.max_windows {
+        ctx.truncated = true;
+        return FALSE;
+    }
+
+    if !IsWindowVisible(hwnd).as_bool() {
+        return TRUE;
+    }
+
+    // Skip known-hung apps (cheap check before any message send)
+    if IsHungAppWindow(hwnd).as_bool() {
+        ctx.skipped_hung += 1;
+        return TRUE;
+    }
+
+    let title = match get_window_title_timeout(hwnd, ctx.title_timeout_ms) {
+        TitleFetch::Ok(t) => t,
+        TitleFetch::Empty => return TRUE, // untitled chrome/helper windows — normal
+        TitleFetch::TimeoutOrFail => {
+            ctx.skipped_timeout += 1;
+            return TRUE;
+        }
+    };
+
+    let mut class_name = [0u16; 256];
+    let class_len = GetClassNameW(hwnd, &mut class_name);
+    let class_name = String::from_utf16_lossy(&class_name[..class_len as usize]);
+
+    let mut rect = RECT::default();
+    let _ = GetWindowRect(hwnd, &mut rect);
+
+    ctx.windows.push(WindowInfo {
+        hwnd: format!("{:?}", hwnd),
+        title,
+        class_name,
+        rect: Rect {
+            x: rect.left,
+            y: rect.top,
+            width: rect.right - rect.left,
+            height: rect.bottom - rect.top,
+        },
+        is_visible: true,
+    });
 
     TRUE
 }
@@ -1234,9 +1345,10 @@ fn start_watcher_thread() {
 fn check_focus_watch(watch: &Watch) {
     unsafe {
         let hwnd = GetForegroundWindow();
-        let mut title = [0u16; 256];
-        let len = GetWindowTextW(hwnd, &mut title);
-        let current_title = String::from_utf16_lossy(&title[..len as usize]);
+        let current_title = match get_window_title_timeout(hwnd, DEFAULT_TITLE_TIMEOUT_MS) {
+            TitleFetch::Ok(t) => t,
+            TitleFetch::Empty | TitleFetch::TimeoutOrFail => String::new(),
+        };
 
         if current_title != watch.last_state {
             // Focus changed
@@ -1382,9 +1494,10 @@ fn uia_watch(args: &Value) -> Value {
             let initial_state = match watch_type {
                 "focus" => unsafe {
                     let hwnd = GetForegroundWindow();
-                    let mut title = [0u16; 256];
-                    let len = GetWindowTextW(hwnd, &mut title);
-                    String::from_utf16_lossy(&title[..len as usize])
+                    match get_window_title_timeout(hwnd, DEFAULT_TITLE_TIMEOUT_MS) {
+                        TitleFetch::Ok(t) => t,
+                        TitleFetch::Empty | TitleFetch::TimeoutOrFail => String::new(),
+                    }
                 },
                 "window_list" => {
                     let windows = get_visible_windows();
@@ -1565,12 +1678,37 @@ fn uia_get_state(args: &Value) -> Value {
 }
 
 #[cfg(windows)]
-fn uia_list_windows(_args: &Value) -> Value {
-    let windows = get_visible_windows();
+fn uia_list_windows(args: &Value) -> Value {
+    // Optional: timeout_ms (overall budget), title_timeout_ms (per HWND), max_windows
+    let budget_ms = args
+        .get("timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_LIST_BUDGET_MS);
+    let title_timeout_ms = args
+        .get("title_timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_TITLE_TIMEOUT_MS as u64) as u32;
+    let max_windows = args
+        .get("max_windows")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(500) as usize;
+
+    let result = get_visible_windows_budgeted(budget_ms, title_timeout_ms, max_windows);
     json!({
         "success": true,
-        "count": windows.len(),
-        "windows": windows
+        "count": result.windows.len(),
+        "windows": result.windows,
+        "skipped_hung": result.skipped_hung,
+        "skipped_timeout": result.skipped_timeout,
+        "truncated": result.truncated,
+        "elapsed_ms": result.elapsed_ms,
+        "timeout_ms": budget_ms,
+        "title_timeout_ms": title_timeout_ms,
+        "note": if result.truncated || result.skipped_hung > 0 || result.skipped_timeout > 0 {
+            "Partial list: hung/timeout windows skipped; re-call with higher timeout_ms if needed."
+        } else {
+            "Complete visible-window list (empty titles omitted)."
+        }
     })
 }
 
@@ -1651,10 +1789,26 @@ pub fn get_tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "uia_list_window",
-            "description": "List all visible windows with their positions and handles.",
+            "description": "List visible top-level windows (title, class, rect, hwnd). Timeout-safe: hung/slow windows are skipped; returns partial list under budget. Prefer uia_focus_window(title) when you already know the target. Useful once when discovering what's open or picking among multi-instance apps.",
             "inputSchema": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                    "timeout_ms": {
+                        "type": "integer",
+                        "description": "Overall enumeration budget in ms (default 2000). Partial list if exceeded.",
+                        "default": 2000
+                    },
+                    "title_timeout_ms": {
+                        "type": "integer",
+                        "description": "Per-window title fetch timeout in ms (default 80). Hung apps skip.",
+                        "default": 80
+                    },
+                    "max_windows": {
+                        "type": "integer",
+                        "description": "Stop after this many titled windows (default 500).",
+                        "default": 500
+                    }
+                }
             }
         }),
         json!({
