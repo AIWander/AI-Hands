@@ -11,12 +11,12 @@
     "architecture": {
         "64bit": {
             "url": "https://github.com/AIWander/AI-Hands/releases/download/v1.1.0-unified.2/HandsSetup-portable.zip",
-            "hash": "48cec90b65a815e5950c774dabfcdfc946035f828cae58e236310b4dc21c5ffa",
+            "hash": "8afe7ffbb1e5015dc87b6027532258b2d26dbb6b5ebda5af2b9f223996043833",
             "bin": [["x64\\hands.exe", "hands"]]
         },
         "arm64": {
             "url": "https://github.com/AIWander/AI-Hands/releases/download/v1.1.0-unified.2/HandsSetup-portable.zip",
-            "hash": "48cec90b65a815e5950c774dabfcdfc946035f828cae58e236310b4dc21c5ffa",
+            "hash": "8afe7ffbb1e5015dc87b6027532258b2d26dbb6b5ebda5af2b9f223996043833",
             "bin": [["arm64\\hands.exe", "hands"]]
         }
     },

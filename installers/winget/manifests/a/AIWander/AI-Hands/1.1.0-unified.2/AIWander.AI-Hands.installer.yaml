@@ -14,9 +14,9 @@ ReleaseDate: 2026-10-11
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/AIWander/AI-Hands/releases/download/v1.1.0-unified.2/HandsSetup-1.1.0-unified.2-win.exe
-    InstallerSha256: F148949624C2690F9C6FADDEC61979A0C2D67D58D33429D21AA0F406E33A5D42
+    InstallerSha256: 181DEC79063CD111C3A7F20C9ED457AF9064D8F2CFF633650FE7D071C712CDD9
   - Architecture: arm64
     InstallerUrl: https://github.com/AIWander/AI-Hands/releases/download/v1.1.0-unified.2/HandsSetup-1.1.0-unified.2-win.exe
-    InstallerSha256: F148949624C2690F9C6FADDEC61979A0C2D67D58D33429D21AA0F406E33A5D42
+    InstallerSha256: 181DEC79063CD111C3A7F20C9ED457AF9064D8F2CFF633650FE7D071C712CDD9
 ManifestType: installer
 ManifestVersion: 1.6.0
