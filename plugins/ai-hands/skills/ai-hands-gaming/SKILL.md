@@ -24,17 +24,26 @@ with large, high-contrast UI.
 ## Input paths — decide before the first click
 
 1. **DOM browser games** (buttons/divs move the game): normal `browser_click` /
-   `browser_type` by selector. Check with `browser_get_clickables` — if the board
-   elements appear, stay in the DOM path.
-2. **Canvas browser games** (one `<canvas>`, no per-cell DOM): vision path inside
-   the browser window — `hands_capture` (window) or `browser_screenshot`, find the
-   target with `vision_find_template` / `vision_ocr`, then click coordinates with
-   `uia_click(x, y)` on the browser window. `browser_evaluate` can read JS game
-   state when exposed (window.game, localStorage) — cheaper than pixels.
+   `browser_type` by selector. Check with `hands_find` or `browser_get_text` — if
+   the board elements appear, stay in the DOM path.
+2. **Canvas browser games** (one `<canvas>`, no per-cell DOM): `browser_click(x, y)`
+   does not reach the game, because it calls `click()` on `elementFromPoint(x, y)`,
+   a synthetic event with no pointer position. Use the desktop vision path on the
+   browser window instead (item 3). Never pass `browser_screenshot` coordinates to
+   `uia_click`: they are relative to the page viewport, not the screen. Reading JS
+   game state (window.game, localStorage) needs `browser_eval`, which only the
+   compatibility profile exposes (`HANDS_TOOL_PROFILE=compatibility` plus the raw
+   and direct-fetch gates); on the default profile, read the board from pixels or
+   `browser_get_text`.
 3. **Windows desktop games**: try `uia_find` once; most DirectX/fullscreen games
-   are invisible to UIA. Then use the vision path: `hands_capture` with OCR,
-   template match, `uia_click(x, y)`, `uia_key_press` / `uia_hold_key` for
-   movement keys, `drag` for camera or piece movement.
+   are invisible to UIA. Then use the vision path: read the board with
+   `hands_capture` and OCR, click visible text with `hands_click(target=...)`, and
+   click shapes with `vision_find_template` plus `uia_click(x, y)` at the match
+   center. Template matches and captures report pixels on the captured monitor,
+   while `uia_click` takes screen coordinates; the two agree only on the primary
+   display at 100% scaling, so keep the game there (`hands_find` and
+   `hands_click` convert for you). Use `uia_key_press` / `uia_hold_key` for
+   movement keys and `drag` for camera or piece movement.
 4. **Run the game in windowed or borderless-windowed mode**, never exclusive
    fullscreen: screenshots stay reliable, coordinates stay stable, and the game
    keeps rendering when focus flickers.
@@ -44,7 +53,7 @@ with large, high-contrast UI.
 Repeat: capture (`hands_capture` / `browser_screenshot`) -> read state (OCR /
 template / DOM / JS) -> decide one move -> act (single click or key) -> verify the
 board changed (`vision_diff`, `wait_for_visual`, or a re-read). Never fire blind
-action bursts; batch only verified-stable sequences with `hands_script` /
+action bursts; batch only verified-stable sequences with `browser_batch` /
 `uia_batch`.
 
 ## Enforcement-hook interplay (sanctioned game sessions)
@@ -70,7 +79,8 @@ The enforcement hook is active during games; three gates matter:
 1. Confirm the hands server is connected (Grok CLI: `/mcps`, retry with `r` if
    hands is missing — server startup is nondeterministic).
 2. Focus or launch the game (`uia_app_launch` / `browser_navigate`), switch it to
-   windowed/borderless.
+   windowed/borderless, and keep its window on the primary display at 100% scaling
+   when clicks go through `uia_click(x, y)`.
 3. Take one capture and prove you can read the board state; say what you see
    before acting.
 4. State the input path chosen (DOM / canvas-vision / desktop-vision) so failures
