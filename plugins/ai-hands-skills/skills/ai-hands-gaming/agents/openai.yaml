@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI-Hands Gaming"
+  short_description: "Play desktop and browser games with hands"
+  default_prompt: "Use $ai-hands-gaming to pick an input path and run a verified play loop."
+
+policy:
+  allow_implicit_invocation: true

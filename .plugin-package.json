@@ -10,7 +10,7 @@
   ],
   "profiles": {
     "ai-hands": {
-      "skills": 4,
+      "skills": 5,
       "mcp": true,
       "hookHosts": [
         "claude",
@@ -19,7 +19,7 @@
       ]
     },
     "ai-hands-skills": {
-      "skills": 4,
+      "skills": 5,
       "mcp": true,
       "hookHosts": []
     }
