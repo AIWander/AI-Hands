@@ -513,7 +513,7 @@ function Is-PaymentEntry([string]$toolName, [string]$text) {
 
 # Durable sinks that captured network traffic must never be written into. Empty by default
 # and operator-supplied, as in the shared policy: list your own directory names in
-# AI_HANDS_PROTECTED_SINKS separated by ';' (for example: Volumes;Archive). A name matches
+# AI_HANDS_PROTECTED_SINKS separated by ';' (for example: Archive;secrets). A name matches
 # only as a whole path segment.
 function Get-ProtectedSinks {
   $names = @()

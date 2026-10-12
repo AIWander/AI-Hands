@@ -29,7 +29,7 @@ permission flow is preserved):
 - **Network-capture persistence gate** — network, trace, route, `learn_api`, and
   performance-log calls may not write into a protected location you name. Set
   `AI_HANDS_PROTECTED_SINKS` to your own directory names separated by `;` (for example
-  `Volumes;Archive`); each name matches only as a whole path segment. It is empty by
+  `Archive;secrets`); each name matches only as a whole path segment. It is empty by
   default, as in the shared policy, so nothing is blocked until you name a sink.
 - **`uia_list_window` rate limit** — full desktop window enumeration is cooldown-limited
   (default 45 s, `HANDS_LIST_COOLDOWN_S`; bypass with `HANDS_ALLOW_UIA_LIST=1`).
