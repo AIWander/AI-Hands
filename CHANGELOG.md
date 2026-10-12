@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v1.1.0-unified.2 - 2026-07-16 - Security and monitor-scope release candidate
 
+### Added (Windows installer, 2026-10-11)
+
+- `HandsSetup-1.1.0-unified.2-win.exe`: one per-user installer for arm64 and x64 that installs `hands.exe` to `%LOCALAPPDATA%\AIWander\Hands` and offers a client picker (Claude desktop app, Codex CLI, Grok CLI). Detected clients are pre-ticked; undetected ones stay selectable.
+- `Register-HandsClients.ps1`: backup-first config writer. It saves `<config dir>\backups\<file>.pre_hands_<stamp>` before any change, never adds a second `hands` entry (reports `skipped existing`), verifies each write by parsing it back, and on uninstall removes only entries that point at the installed `hands.exe`.
+- Upgrades replace the binary, close a running `hands.exe` first, and re-run the writer with the previous client choice. Uninstall removes the program folder and keeps the config backups.
+- Release metadata: stable AppId, version resources (1.1.0.2) and an original icon on both the setup exe and `hands.exe`, license and privacy pages in the wizard, `PRIVACY.md`, and an end-user guide (`installers/README-picker.md`).
+- Distribution: `HandsSetup-portable.zip` (both binaries plus the writer), `hands-1.1.0-unified.2-win-arm64.mcpb` for Claude desktop, `SHA256SUMS.txt`, winget and Scoop manifests, and `installers/update-manifests.ps1` to refresh manifest hashes after signing.
+
 ### Security
 
 - Treats page-owned network, performance, and trace buffers as untrusted input and projects them through closed Rust schemas before filtering, returning, or writing.

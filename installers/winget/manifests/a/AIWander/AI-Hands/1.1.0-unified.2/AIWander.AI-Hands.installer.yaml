@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: AIWander.AI-Hands
+PackageVersion: 1.1.0-unified.2
+InstallerType: inno
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+MinimumOSVersion: 10.0.17763.0
+ProductCode: '{6E0B2C47-3F1D-4C55-9B8E-A1D4F0C2B7E3}_is1'
+ReleaseDate: 2026-10-11
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/AIWander/AI-Hands/releases/download/v1.1.0-unified.2/HandsSetup-1.1.0-unified.2-win.exe
+    InstallerSha256: 181DEC79063CD111C3A7F20C9ED457AF9064D8F2CFF633650FE7D071C712CDD9
+  - Architecture: arm64
+    InstallerUrl: https://github.com/AIWander/AI-Hands/releases/download/v1.1.0-unified.2/HandsSetup-1.1.0-unified.2-win.exe
+    InstallerSha256: 181DEC79063CD111C3A7F20C9ED457AF9064D8F2CFF633650FE7D071C712CDD9
+ManifestType: installer
+ManifestVersion: 1.6.0
