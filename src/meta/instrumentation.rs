@@ -1,8 +1,7 @@
 #![allow(dead_code)] // scaffolded module, awaiting integration
 //! Instrumentation logger — writes rung attempts to hands_meta.jsonl.
-//! Log directory resolved via legacy-fallback:
-//!   1. Legacy C:\CPC\logs — if it exists with hands_meta data
-//!   2. cpc_paths::data_path("hands") — fresh installs
+//! Log directory is `{Hands home}/logs`, resolved at runtime
+//! (`HANDS_HOME`, then `CPC_ROOT`, then the per-user default).
 //! One line per rung attempt, one aggregate line per call.
 //! Rotate daily at midnight, keep 7 days.
 //! Persistence is an allowlisted telemetry projection. Raw arguments, URLs,
@@ -14,7 +13,6 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-const LEGACY_LOG_DIR: &str = r"C:\CPC\logs";
 const LOG_FILE: &str = "hands_meta.jsonl";
 const RETENTION_DAYS: u64 = 7;
 
@@ -23,25 +21,26 @@ static LOG_DIR_RESOLVED: OnceLock<PathBuf> = OnceLock::new();
 /// Get the resolved log directory (resolved once at first call).
 fn log_dir() -> &'static PathBuf {
     LOG_DIR_RESOLVED.get_or_init(|| {
-        _resolve_hands_log_dir(Path::new(LEGACY_LOG_DIR))
-            .unwrap_or_else(|_| PathBuf::from(LEGACY_LOG_DIR))
+        let home_logs = crate::paths::hands_logs_dir();
+        _resolve_hands_log_dir(&home_logs).unwrap_or(home_logs)
     })
 }
 
 /// Resolve the hands log directory.
-/// 1. Legacy `C:\CPC\logs` — if it exists AND contains hands_meta data.
-/// 2. `cpc_paths::data_path("hands")` — fresh installs.
+/// An injected directory that already contains hands_meta data wins so tests
+/// and an explicit Hands home keep their existing logs. Otherwise logs go to
+/// `{Hands home}/logs`.
 ///
 /// Testable inner function — takes `legacy` as a parameter so tests can inject tempdirs.
 pub(crate) fn _resolve_hands_log_dir(legacy: &Path) -> anyhow::Result<PathBuf> {
     if legacy.exists() && has_hands_log_data(legacy) {
         return Ok(legacy.to_path_buf());
     }
-    cpc_paths::data_path("hands")
+    Ok(crate::paths::hands_logs_dir())
 }
 
 /// Returns true if `dir` contains at least one hands_meta log file.
-/// An empty-but-existing legacy dir falls through to cpc-paths.
+/// An empty-but-existing directory falls through to the Hands home logs directory.
 pub(crate) fn has_hands_log_data(dir: &Path) -> bool {
     if dir.join(LOG_FILE).exists() {
         return true;
@@ -533,7 +532,7 @@ mod tests {
             "typed_text": "PASSWORD_SENTINEL",
             "headers": {"Authorization": "Bearer BEARER_SENTINEL"},
             "cookie": "session=COOKIE_SENTINEL",
-            "path": "C:\\Users\\josep\\Private\\secret.txt",
+            "path": "C:\\Users\\ExampleUser\\Private\\secret.txt",
             "otp": "654321",
             "monitor": 2,
             "text_len": 17,
@@ -598,7 +597,7 @@ mod tests {
             "confidence": null,
             "error": {
                 "category": "network",
-                "detail": "Bearer BEARER_SENTINEL at https://example.test/?token=QUERY_SENTINEL from C:\\Users\\josep\\Private"
+                "detail": "Bearer BEARER_SENTINEL at https://example.test/?token=QUERY_SENTINEL from C:\\Users\\ExampleUser\\Private"
             },
             "context": {
                 "url": "https://alice:password@example.test/reset?token=QUERY_SENTINEL",
@@ -611,7 +610,7 @@ mod tests {
                     "Cookie": "session=COOKIE_SENTINEL"
                 },
                 "cookie": "session=COOKIE_SENTINEL",
-                "path": "C:\\Users\\josep\\Private\\secret.txt",
+                "path": "C:\\Users\\ExampleUser\\Private\\secret.txt",
                 "monitor": 2,
                 "text_len": 17,
                 "visible": true
@@ -629,7 +628,7 @@ mod tests {
             "FUTURE_FIELD_SENTINEL",
             "654321",
             "hunter2",
-            "C:\\\\Users\\\\josep",
+            "C:\\\\Users\\\\ExampleUser",
             "example.test",
             "#password",
             "alice",

@@ -22,10 +22,10 @@ Do not recreate Workflow recording or replay through ad-hoc Hands scripts. Valid
 
 | Profile | Operational tools | Catalog | Advertised entries | Safety |
 |---|---:|---:|---:|---|
-| `default` | 104 | 1 | 105 | Safe-advertised; recommended |
-| `full` | 106 | 1 | 107 | Safe-advertised |
-| `strict` | 108 | 1 | 109 | Safe-advertised |
-| `compatibility` | 143 | 1 | 144 | Unsafe debug escape hatch |
+| `default` | 105 | 1 | 106 | Safe-advertised; recommended |
+| `full` | 107 | 1 | 108 | Safe-advertised |
+| `strict` | 109 | 1 | 110 | Safe-advertised |
+| `compatibility` | 144 | 1 | 145 | Unsafe debug escape hatch |
 
 Compatibility is not a speed path. A compatibility-only raw, built-in direct-fetch, or native-plugin call requires `HANDS_TOOL_PROFILE=compatibility`, the matching process gate (`HANDS_ALLOW_UNSAFE_RAW_TOOLS=1`, `HANDS_ALLOW_UNSAFE_DIRECT_FETCH=1`, or `HANDS_ALLOW_UNSAFE_PLUGINS=1`), and the matching per-call acknowledgement (`allow_unsafe_raw=true`, `allow_unsafe_fetch=true`, or `allow_unsafe_plugin=true`). The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call.
 

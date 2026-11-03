@@ -964,10 +964,10 @@ mod tests {
     fn redacts_assignments_otp_jwt_and_private_paths_in_free_text() {
         let jwt = "eyJabcdefghijk.abcdefghijklmnop.abcdefghijklmnop";
         let raw = Value::String(format!(
-            "password=hunter2 otp: 123456 jwt {jwt} at C:\\Users\\josep\\secret\\token.txt and \\\\server\\private\\token.txt"
+            "password=hunter2 otp: 123456 jwt {jwt} at C:\\Users\\ExampleUser\\secret\\token.txt and \\\\fileshare\\private\\token.txt"
         ));
         let safe = redact_network_value(&raw).as_str().unwrap().to_string();
-        for sentinel in ["hunter2", "123456", jwt, "josep", "server"] {
+        for sentinel in ["hunter2", "123456", jwt, "ExampleUser", "fileshare"] {
             assert!(!safe.contains(sentinel), "leaked sentinel: {sentinel}");
         }
         assert!(safe.contains("password=[REDACTED]"));

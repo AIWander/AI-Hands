@@ -1,13 +1,12 @@
 {
   "mcpServers": {
     "hands": {
-      "_comment_arch": "Choose the command path for your platform. x64 is the default.",
-      "_comment_x64": "x64 Windows (Intel/AMD):",
-      "command": "C:\\CPC\\servers\\hands.exe",
-      "_comment_arm64": "ARM64 Windows (Snapdragon/Qualcomm) — replace command above with:",
-      "_command_arm64": "C:\\CPC\\servers\\hands-arm64.exe",
+      "_comment": "Do not commit a real machine path. Register-HandsClients.ps1 writes the absolute path of the installed hands.exe. The command below is a shape for the default Hands home.",
+      "command": "C:\\Users\\<you>\\AppData\\Local\\AIWander\\Hands\\bin\\hands.exe",
       "args": [],
-      "env": {}
+      "env": {
+        "HANDS_TOOL_PROFILE": "default"
+      }
     }
   }
 }

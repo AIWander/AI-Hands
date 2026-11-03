@@ -238,19 +238,15 @@ impl BrowserManager {
 
         let target_url = url.unwrap_or("about:blank");
 
-        // Use a dedicated user-data-dir so debug Chrome forks a NEW process
-        // even when the user's default Chrome is already running.
-        let debug_profile = format!(
-            "{}\\CPC\\chrome-debug-profile",
-            std::env::var("LOCALAPPDATA")
-                .unwrap_or_else(|_| r"C:\Users\Default\AppData\Local".into())
-        );
+        // Dedicated profile so debug Chrome forks a new process even when the
+        // user's default Chrome is already running. Resolved at runtime.
+        let debug_profile = crate::home::chrome_debug_profile();
         let _ = std::fs::create_dir_all(&debug_profile);
 
         // Launch Chrome with debug port + isolated profile
         let mut cmd = Command::new(chrome_path);
         cmd.arg(format!("--remote-debugging-port={}", port))
-            .arg(format!("--user-data-dir={}", debug_profile))
+            .arg(format!("--user-data-dir={}", debug_profile.display()))
             .arg("--no-first-run")
             .arg("--no-default-browser-check")
             .arg(target_url);

@@ -39,8 +39,8 @@ store, credential, and run any durable direct API method. Verify reused results 
 current visible state when accuracy matters.
 
 ### Profiles and Unsafe Compatibility
-`default`, `full`, and `strict` are safe-advertised and expose 105, 107, and 109
-entries including `hands_capability_catalog`. `compatibility` exposes 144 entries and
+`default`, `full`, and `strict` are safe-advertised and expose 106, 108, and 110
+entries including `hands_capability_catalog`. `compatibility` exposes 145 entries and
 is an unsafe debug escape hatch, not a speed path. A compatibility-only raw,
 built-in direct-fetch, or native-plugin call requires all three:
 `HANDS_TOOL_PROFILE=compatibility`, the matching process gate

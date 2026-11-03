@@ -6,16 +6,16 @@ This guide covers everything you need to do on each machine where you want to ru
 
 | Item | Per-machine? | How to set up |
 |---|---|---|
-| MCP binary | Yes | Download from GitHub release → `%LOCALAPPDATA%\CPC\servers\hands.exe`. Pick right arch (`_arm64.exe` or `_x64.exe`). |
-| Claude Desktop config | Yes | Edit `%APPDATA%\Claude\claude_desktop_config.json` — copy entry from `claude_desktop_config.example.json` in this repo into your `mcpServers` object. |
-| Per-machine paths | Yes | Will be auto-detected by `cpc-paths` (forthcoming). For now, set env vars or hardcode in your config. See "Path Configuration" below. |
+| MCP binary | Yes | Download from GitHub release → `%LOCALAPPDATA%\AIWander\Hands\bin\hands.exe`, or set `HANDS_HOME`. Pick the right arch (`_arm64.exe` or `_x64.exe`). |
+| Host config | Yes | Run `installers/scripts/Register-HandsClients.ps1`. It writes the absolute path into each installed stdio host and skips a host that already has a hands entry. |
+| Per-machine paths | Yes | Resolved at runtime. `HANDS_HOME` overrides. `CPC_ROOT` is only a back-compat alias for that same directory. |
 | User preferences | Yes | Open Claude Desktop → Settings → Profile → paste your preferences. (UI-only, can't script.) |
 | Skills (optional) | Yes | If using CPC skills system, mirror from your Drive's `Volumes/skills/{skill}/` to `%LOCALAPPDATA%\claude-skills\{skill}\`. |
 | Volumes / knowledge base | No (Drive-synced) | If Volumes is on Google Drive, just verify Drive is syncing on each machine. No copy needed. |
 
 ## Hands-Specific Notes
 
-- **Chrome profile path:** `%LOCALAPPDATA%\CPC\chrome-debug-profile` — created on first `browser_debug_launch` call, persists logins across sessions. This path is per-machine; each machine builds its own profile independently.
+- **Chrome profile path:** `%LOCALAPPDATA%\AIWander\Hands\chrome-debug-profile` (or `<HANDS_HOME>\chrome-debug-profile`) — created on first `browser_debug_launch` call, persists logins across sessions. This path is per-machine; each machine builds its own profile independently.
 - **Vision OCR:** Uses Windows OCR APIs built into Windows 10/11. Works out of the box — no additional install required.
 - **UIA tools:** Windows UI Automation requires accessibility permissions to be enabled if you're accessing processes running at elevated privilege. If `uia_find` fails on a system dialog or elevated-privilege window, check that your Claude Desktop process has the right permissions or run as administrator for testing.
 - **Chrome (browser tier):** Hands connects to Chrome over CDP (Chrome DevTools Protocol) via chromiumoxide. Chrome must be installed normally on each machine. Use `browser_debug_launch` to start Chrome with the debug port, or `browser_attach` to connect to an already-running instance with `--remote-debugging-port=9222`. No browser binaries are downloaded or managed by Hands.
@@ -24,15 +24,17 @@ This guide covers everything you need to do on each machine where you want to ru
 
 ## Path Configuration
 
-**Coming in `cpc-paths` (next release):** automatic detection of Volumes path, install path, backups path. Auto-writes `.cpc-config.toml` on first run. Until then, paths are detected via env vars with fallbacks:
+Hands resolves its own folder when the process starts. Nothing in the binary is a particular machine's path.
 
-| Path | Env var | Default fallback |
+| Path | Env var | Default |
 |---|---|---|
-| Volumes (knowledge base) | `CPC_VOLUMES_PATH` | Auto-detected by `cpc-paths`; set explicitly if your Drive root is custom |
-| Install (server binaries) | `CPC_INSTALL_PATH` | `%LOCALAPPDATA%\CPC\servers` (Windows) |
-| Backups | `CPC_BACKUPS_PATH` | `%LOCALAPPDATA%\CPC\backups` (Windows) |
+| Hands home | `HANDS_HOME` | `%LOCALAPPDATA%\AIWander\Hands` |
+| Same folder, older name | `CPC_ROOT` | Used only when `HANDS_HOME` is unset |
+| Breadcrumb archive root | `CPC_VOLUMES_PATH` | `{Hands home}\data\breadcrumbs` when unset |
+| Logs | (under the home) | `{Hands home}\logs` |
+| Local data | (under the home) | `{Hands home}\data` |
 
-If you're on a different platform or your Drive is mounted elsewhere, set the env vars in your shell profile or system environment before launching Claude Desktop.
+`CPC_ROOT` is an alias for the Hands home, not a separate tree. A new install does not read a hard-coded `C:\CPC` path unless you set that variable.
 
 ## Two-Tier Storage
 
@@ -50,9 +52,9 @@ What lives here: knowledge base (Operating files, CATALOG.md, skills/), complete
 
 ### Tier 2 — Local data (per-machine, never sync)
 
-- **Resolver:** `cpc_paths::data_path("hands")`
-- **Default:** `%LOCALAPPDATA%\CPC\data\hands-data\` (Windows)
-- **Override:** `CPC_HANDS_DATA_DIR` env var or `.cpc-config.toml`
+- **Resolver:** the Hands home above
+- **Default:** `%LOCALAPPDATA%\AIWander\Hands\data\`
+- **Override:** `HANDS_HOME` (or `CPC_ROOT` when `HANDS_HOME` is unset)
 
 What lives here: active breadcrumb state, Chrome debug profile, logs, per-machine config, cache/index files.
 
@@ -69,15 +71,15 @@ What lives here: active breadcrumb state, Chrome debug profile, logs, per-machin
 
 Breadcrumb *archives* (completed breadcrumbs) DO live in Volumes — they're write-once and safe to sync.
 
-### Legacy paths (existing installs)
+### Older installs
 
-If you have `C:\CPC\logs\`, `C:\CPC\state\`, etc. from a legacy install, they continue to work. The server detects the legacy location at startup and uses it automatically. No migration required — new installs use the `%LOCALAPPDATA%\CPC\data\` default; existing installs stay put.
+Point `CPC_ROOT` at the directory you already use. Logs are `{CPC_ROOT}\logs` and data is `{CPC_ROOT}\data`. A new machine that does not set `HANDS_HOME` or `CPC_ROOT` uses `%LOCALAPPDATA%\AIWander\Hands` and does not read another user's folders.
 
 ### Setting up a second machine
 
 1. Verify Google Drive is syncing on the new machine — Volumes is already there.
-2. Download and install the MCP binaries (right arch) to `%LOCALAPPDATA%\CPC\servers\` or wherever you configure `CPC_INSTALL_PATH`.
-3. Copy the `mcpServers` entry from `claude_desktop_config.example.json` into your Claude Desktop config on the new machine.
+2. Download and install the MCP binary (right arch) to `%LOCALAPPDATA%\AIWander\Hands\bin\` or the `HANDS_HOME` you choose.
+3. Run `Register-HandsClients.ps1` on the new machine so each host gets that machine's absolute path.
 4. Re-enter credentials per machine via `workflow:credential_store` — secrets do NOT sync.
 5. Active session state starts fresh on each machine. That's intentional.
 

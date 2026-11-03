@@ -33,8 +33,10 @@ mod dashboard_endpoint;
 mod meta;
 mod monitor_scope;
 mod network_redaction;
+mod paths;
 mod plugin;
 mod security;
+mod setup_status;
 mod stealth;
 mod uia;
 mod uia_lib;
@@ -430,12 +432,14 @@ fn get_all_tool_definitions_raw() -> Vec<Value> {
 
     tools.push(json!({
         "name": "hands_health",
-        "description": "Diagnostic health check for the hands server. Returns cpc-paths path resolution status (Volumes, install, backups) plus browser, vision, and UIA subsystem probe results.",
+        "description": "Diagnostic health check for the hands server. Returns path resolution plus browser, vision, and UIA subsystem probe results.",
         "inputSchema": {
             "type": "object",
             "properties": {}
         }
     }));
+
+    tools.push(setup_status::tool_definition());
 
     tools.push(json!({
         "name": "hands_summarize_run",
@@ -4255,6 +4259,7 @@ async fn handle_tool_call_inner(
         "retry_click" => return handle_retry_click(args, browser).await,
         "file_upload" => return handle_file_upload(args, browser).await,
         "status" | "hands_status" | "hands_health" => return handle_unified_health(),
+        "hands_setup_status" => return setup_status::handle(),
         "hands_summarize_run" => return meta::summarize_run::handle(args),
         "vision_cache_stats" => return meta::vision_cache::handle_stats(args),
         "vision_ocr_capabilities" => return meta::ocr_fast::handle_capabilities(args),
@@ -4565,7 +4570,8 @@ fn handle_request(
                     "name": "hands",
                     "version": env!("CARGO_PKG_VERSION"),
                     "description": "Unified canonical interaction template: browser + UIA + vision"
-                }
+                },
+                "instructions": setup_status::SERVER_INSTRUCTIONS
             })),
             error: None,
         },
@@ -4692,7 +4698,7 @@ mod unified_template_tests {
             .filter_map(|definition| definition.get("name").and_then(Value::as_str))
             .collect();
         let unique: HashSet<&str> = names.iter().copied().collect();
-        assert_eq!(names.len(), 143);
+        assert_eq!(names.len(), 144);
         assert_eq!(unique.len(), names.len());
     }
 

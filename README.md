@@ -16,7 +16,7 @@ AIWander tools are local, user-authorized MCP capability surfaces. They do not g
 
 ## What's New in v1.1.0-unified.2 (preview)
 
-- **Ability-first union:** the public and locally proven Hands surfaces are merged by capability, not by keeping every historical name. The safe `default` profile exposes 104 operational tools plus `hands_capability_catalog`; safe `full` and `strict` profiles and an explicitly unsafe compatibility/debug profile are selected through `HANDS_TOOL_PROFILE`.
+- **Ability-first union:** the public and locally proven Hands surfaces are merged by capability, not by keeping every historical name. The safe `default` profile exposes 105 operational tools plus `hands_capability_catalog`; safe `full` and `strict` profiles and an explicitly unsafe compatibility/debug profile are selected through `HANDS_TOOL_PROFILE`.
 - **Central monitor boundary:** `hands_monitor_scope` lists displays and applies one fail-closed scope across coordinate, UIA, browser-binding, screenshot, OCR, QR, and plugin paths. A locked opaque `physical:v1:<sha256>` stable ID returned by `action=list` is the recommended unattended setting; raw Windows device paths are never exposed.
 - **Collision-resistant screenshots:** automatic filenames include sub-second time, process ID, and a per-process sequence so same-second and concurrent captures do not overwrite one another.
 - **Two lean plugin profiles:** [`ai-hands`](plugins/ai-hands/) is hook-capable; [`ai-hands-skills`](plugins/ai-hands-skills/) contains no hook code and supplies a behavioral dispatch block for skills-only hosts. Both use the same four non-overlapping setup, routing, safety, and workflow skills.
@@ -163,11 +163,11 @@ winget install AIWander.AI-Hands
 # Until the upstream PR lands, install from this repo's manifest directly:
 # winget install --manifest https://raw.githubusercontent.com/AIWander/AI-Hands/main/installers/winget/manifests/a/AIWander/AI-Hands/1.0.1/AIWander.AI-Hands.installer.yaml
 
-# Then wire it into Claude Desktop (writes a timestamped .bak first):
-.\installers\scripts\register-hands.ps1
+# Then wire stdio into installed AI hosts (backup first; skips existing hands entries):
+.\installers\scripts\Register-HandsClients.ps1
 ```
 
-Open a new shell after the install so winget's portable-shim directory (`%LOCALAPPDATA%\Microsoft\WinGet\Links`) is on PATH, then run the registration script. See [`installers/README.md`](installers/README.md) for `-Force` / `-DryRun` flags and rollback.
+Open a new shell after the install so winget's portable-shim directory (`%LOCALAPPDATA%\Microsoft\WinGet\Links`) is on PATH, then run the registration script. See [`installers/README.md`](installers/README.md) for `-Force` / `-DryRun` flags and rollback. The Hands home defaults to `%LOCALAPPDATA%\AIWander\Hands` (`HANDS_HOME` overrides it; `CPC_ROOT` is only a back-compat alias).
 
 ### Option C — Scoop
 
@@ -175,8 +175,8 @@ Open a new shell after the install so winget's portable-shim directory (`%LOCALA
 # Direct URL (no bucket required):
 scoop install https://raw.githubusercontent.com/AIWander/AI-Hands/main/installers/scoop/ai-hands.json
 
-# Then register with Claude Desktop:
-.\installers\scripts\register-hands.ps1
+# Then register stdio hosts:
+.\installers\scripts\Register-HandsClients.ps1
 ```
 
 ### Option D — Manual download (always works)
@@ -184,18 +184,12 @@ scoop install https://raw.githubusercontent.com/AIWander/AI-Hands/main/installer
 1. Download from the [latest release](https://github.com/AIWander/AI-Hands/releases/latest):
    - **Windows x64** → `hands-vX.Y.Z[-prerelease]-x64.exe`
    - **Windows ARM64** (Snapdragon X / X Elite / X Plus) → `hands-vX.Y.Z[-prerelease]-aarch64.exe`
-2. Rename to `hands.exe` and place in `%LOCALAPPDATA%\CPC\servers\`.
-3. Add to `claude_desktop_config.json`:
-   ```json
-   {
-     "mcpServers": {
-       "hands": {
-         "command": "%LOCALAPPDATA%\\CPC\\servers\\hands.exe"
-       }
-     }
-   }
+2. Rename to `hands.exe` and place it in `%LOCALAPPDATA%\AIWander\Hands\bin\`. Override that folder with `HANDS_HOME` if you want it somewhere else. `CPC_ROOT` is accepted only as an alias for the same folder.
+3. Register every installed stdio host. The script writes the absolute path and skips a host that already has a hands entry:
+   ```powershell
+   .\installers\scripts\Register-HandsClients.ps1 -HandsExe "$env:LOCALAPPDATA\AIWander\Hands\bin\hands.exe"
    ```
-4. Restart Claude Desktop.
+4. Restart each host you registered. First-run guidance is copied into the Hands home (`README.md`, `AGENTS.md`, `skills\hands-getting-started\SKILL.md`). The server tells the model to call `hands_setup_status` before guessing a path.
 
 **ARM64 note:** the binary uses native ARM64 UIA bindings — no x64 emulation. If you previously ran the x64 build under emulation, swap to aarch64 for ~3-4x faster screenshot/OCR throughput.
 
@@ -276,7 +270,7 @@ These bundle a specific AI model with their own UI surface. AI-Hands does neithe
 
 ## Ability profiles and collections
 
-The safe-advertised profiles are `default` with 104 operational tools plus `hands_capability_catalog` (105 `tools/list` entries), `full` with 106 plus the catalog (107 entries), and `strict` with 108 plus the catalog (109 entries). `compatibility` exposes all 143 canonical union tools plus the catalog (144 entries), including unsafe raw/debug and native-plugin capabilities. Exact duplicate registrations and three Workflow-owned recording front doors are not retained.
+The safe-advertised profiles are `default` with 105 operational tools plus `hands_capability_catalog` (106 `tools/list` entries), `full` with 107 plus the catalog (108 entries), and `strict` with 109 plus the catalog (110 entries). `compatibility` exposes all 144 canonical union tools plus the catalog (145 entries), including unsafe raw/debug and native-plugin capabilities. Exact duplicate registrations and three Workflow-owned recording front doors are not retained.
 
 The plugin skill pack stays lean despite that dense surface: one skill chooses tools by ability, one handles setup, one activates at consequential action boundaries, and one handles multi-step recipes and failure recovery. They do not register alternate tools or competing ability owners.
 
@@ -393,7 +387,7 @@ Host clients: Claude Desktop, Claude Code, OpenAI Codex CLI, Gemini CLI, or any 
 
 ### First-run tip for Claude clients
 
-The default profile exposes 105 entries spanning browser, UIA, vision, monitor scope, extensions, and the capability catalog. Enable **tools always loaded** in your Claude client's tool settings before the first call — a lazy-loaded client can miss layers on initial discovery and produce "tool not found" errors mid-session.
+The default profile exposes 106 entries spanning browser, UIA, vision, monitor scope, extensions, and the capability catalog. Enable **tools always loaded** in your Claude client's tool settings before the first call — a lazy-loaded client can miss layers on initial discovery and produce "tool not found" errors mid-session.
 
 ## Architecture
 

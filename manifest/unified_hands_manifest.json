@@ -18,7 +18,7 @@
     }
   },
   "counts": {
-    "raw_union_unique": 143,
+    "raw_union_unique": 144,
     "local_registrations": 128,
     "local_unique": 126,
     "local_exact_duplicate_registrations": 2,
@@ -27,18 +27,18 @@
     "github_only": 19,
     "local_only": 7,
     "removed_workflow_front_doors": 3,
-    "template_only": 1,
-    "strict_unique": 108,
-    "full_unique": 106,
-    "default_unique": 104,
+    "template_only": 2,
+    "strict_unique": 109,
+    "full_unique": 107,
+    "default_unique": 105,
     "template_catalog_tool": 1,
-    "compatibility_tools_list": 144,
-    "strict_tools_list": 109,
-    "full_tools_list": 107,
-    "default_tools_list": 105
+    "compatibility_tools_list": 145,
+    "strict_tools_list": 110,
+    "full_tools_list": 108,
+    "default_tools_list": 106
   },
   "profiles": {
-    "compatibility": "UNSAFE DEBUG PROFILE. All 143 canonical union tools are advertised, including raw content, trace, direct-fetch, native-plugin execution, QR, form-value, and UIA value/event surfaces. Use only for deliberate compatibility/debug work; exact duplicate registrations and three Workflow-owned self-record front doors remain removed.",
+    "compatibility": "UNSAFE DEBUG PROFILE. All 144 canonical union tools are advertised, including raw content, trace, direct-fetch, native-plugin execution, QR, form-value, and UIA value/event surfaces. Use only for deliberate compatibility/debug work; exact duplicate registrations and three Workflow-owned self-record front doors remain removed.",
     "strict": "Safe advertised surface with raw content, trace, direct-fetch, native-plugin execution, QR, form-value, and UIA value/event front doors hidden; retains the strict-only OCR alias and health alias.",
     "full": "Safe canonical surface with raw content, trace, direct-fetch, native-plugin execution, QR, form-value, UIA value/event, redundant compatibility, and absorbed front doors hidden.",
     "default": "Safe full surface minus manual attach-lock acquire/release; adds one catalog tool."
@@ -298,17 +298,18 @@
     },
     {
       "id": "extensions-runtime-health",
-      "raw": 6,
-      "strict": 3,
-      "full": 2,
-      "default": 2,
+      "raw": 7,
+      "strict": 4,
+      "full": 3,
+      "default": 3,
       "tools": [
         "status",
         "hands_health",
         "hands_plugin_call",
         "hands_plugin_list",
         "hands_plugin_load",
-        "hands_plugin_unload"
+        "hands_plugin_unload",
+        "hands_setup_status"
       ]
     }
   ],
@@ -2226,10 +2227,23 @@
       "exposed_strict": true,
       "exposed_full": true,
       "exposed_default": true
+    },
+    {
+      "name": "hands_setup_status",
+      "collection": "extensions-runtime-health",
+      "local": false,
+      "github_main": false,
+      "source_status": "Unified template only",
+      "ability": "Report the runtime Hands home, which host configs already contain a hands stdio entry, and live Tailscale state without storing hostnames or addresses.",
+      "disposition": "canonical",
+      "replacement": null,
+      "exposed_strict": true,
+      "exposed_full": true,
+      "exposed_default": true
     }
   ],
   "checks": {
-    "expected_union_unique": 143,
+    "expected_union_unique": 144,
     "raw_union_matches_expected": true,
     "assigned_unique_matches_expected": true,
     "source_duplicate_names": [],
@@ -2238,9 +2252,9 @@
     "removed_workflow_front_doors_absent": true,
     "monitor_scope_present": true,
     "exact_cover": true,
-    "group_raw_sum": 143.0,
-    "group_strict_sum": 136.0,
-    "group_full_sum": 134.0,
-    "group_default_sum": 132.0
+    "group_raw_sum": 144.0,
+    "group_strict_sum": 109.0,
+    "group_full_sum": 107.0,
+    "group_default_sum": 105.0
   }
 }

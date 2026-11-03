@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Runtime Hands home: `HANDS_HOME`, then `CPC_ROOT` as a back-compat alias, then `%LOCALAPPDATA%\AIWander\Hands`. No developer machine path, hostname, or address is compiled in.
+- `hands_setup_status` and MCP `instructions` that tell a host to call it first.
+- `Register-HandsClients.ps1` for stdio registration across Claude Desktop (including MSIX), Claude Code, Codex, Gemini CLI, Grok CLI, and Cursor. Existing hands entries are skipped unless `-Force`.
+- `Initialize-HandsOnboarding.ps1` for an optional Tailscale install and user sign-in, with an authenticated Cloudflare Tunnel or ngrok fallback and no public default.
+
+### Changed
+
+- Attach-lock records no longer store the machine hostname.
+- Chrome's debug profile lives under the Hands home.
+
 ## v1.1.0-unified.2 - 2026-07-16 - Security and monitor-scope release candidate
 
 ### Security

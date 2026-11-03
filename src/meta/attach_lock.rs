@@ -10,7 +10,7 @@
 //!   2. `browser_attach(port)`            → actual CDP attach
 //!   3. `hands_attach_lock_release(lock_id)` → after detaching
 //!
-//! Lock files live in `cpc_paths::data_path("hands")/attach_locks/chrome_attach_<port>.lock`.
+//! Lock files live in `{Hands home}/data/attach_locks/chrome_attach_<port>.lock`.
 //! Each holds a single-line JSON record (`LockRecord`). Stale-check is
 //! purely timestamp-based — no PID liveness probing — with a default TTL of 30
 //! minutes (overridable via `stale_after_ms`). The PID is recorded for
@@ -93,12 +93,9 @@ fn held_lock_id_for_port(port: u16) -> Option<String> {
 // Path helpers
 // ──────────────────────────────────────────────────────────────────────
 
-/// Default lock directory under `cpc_paths::data_path("hands")`. Returns an
-/// error string on resolution failure so the caller can surface it.
+/// Default lock directory under the runtime Hands data directory.
 fn default_lock_dir() -> Result<PathBuf, String> {
-    let base = cpc_paths::data_path("hands")
-        .map_err(|e| format!("cpc_paths::data_path(hands) failed: {}", e))?;
-    Ok(base.join("attach_locks"))
+    Ok(crate::paths::hands_data_dir().join("attach_locks"))
 }
 
 fn lock_filename(port: u16) -> String {
@@ -242,9 +239,8 @@ fn new_lock_id() -> String {
 }
 
 fn host_name() -> String {
-    std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "unknown-host".to_string())
+    // Lock files stay on this machine. Do not persist a hostname or address.
+    "local".to_string()
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -412,7 +408,6 @@ fn acquire_inner(dir: &Path, port: u16, timeout_ms: u64, stale_after_ms: u64) ->
                                     "pid": existing.pid,
                                     "acquired_at": existing.acquired_at,
                                     "age_ms": age_ms,
-                                    "host": existing.host,
                                 },
                                 "waited_ms": start.elapsed().as_millis() as u64,
                             });
@@ -578,7 +573,6 @@ fn status_inner(dir: &Path, port_filter: Option<u16>) -> Value {
             "pid": rec.pid,
             "acquired_at": rec.acquired_at,
             "age_ms": age_ms,
-            "host": rec.host,
             "owned_by_this_process": owned_by_this_process,
             "path": path.display().to_string(),
         }));
@@ -719,7 +713,8 @@ mod tests {
         assert_eq!(out["error"], json!("timeout waiting for lock"));
         let holder = &out["current_holder"];
         assert_eq!(holder["pid"], json!(999_999_999));
-        assert_eq!(holder["host"], json!("other-host"));
+        assert!(holder.get("host").is_none());
+        assert!(!out.to_string().contains("other-host"));
         assert!(out["waited_ms"].as_u64().unwrap() >= 250);
     }
 
@@ -853,7 +848,7 @@ mod tests {
             pid: 12345,
             port: 9222,
             acquired_at: "2026-05-31T11:53:21.123Z".to_string(),
-            host: "josep-pc".to_string(),
+            host: "local".to_string(),
         };
         let s = serde_json::to_string(&rec).unwrap();
         let parsed: LockRecord = serde_json::from_str(&s).unwrap();

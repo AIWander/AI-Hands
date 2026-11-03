@@ -2,7 +2,7 @@
 //!
 //! GET /api/status → JSON: browser state, recent actions, UIA state, vision state
 //!
-//! Port: CPC_DASHBOARD_PORT_HANDS env var, default 9102.
+//! Port: HANDS_DASHBOARD_PORT, then CPC_DASHBOARD_PORT_HANDS, default 9102.
 //! Binds 127.0.0.1 only. Falls back through +5 ports if primary is taken.
 //! Graceful: if all ports fail, logs a warning — MCP continues normally.
 //!
@@ -24,7 +24,8 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 
 const DEFAULT_PORT: u16 = 9102;
-const ENV_PORT: &str = "CPC_DASHBOARD_PORT_HANDS";
+const ENV_PORT: &str = "HANDS_DASHBOARD_PORT";
+const ENV_PORT_COMPAT: &str = "CPC_DASHBOARD_PORT_HANDS";
 const RING_CAPACITY: usize = 10;
 
 // ── Shared state (written by MCP thread, read by HTTP thread) ─────────────────
@@ -206,6 +207,11 @@ pub fn spawn() {
             let base_port: u16 = std::env::var(ENV_PORT)
                 .ok()
                 .and_then(|s| s.parse().ok())
+                .or_else(|| {
+                    std::env::var(ENV_PORT_COMPAT)
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                })
                 .unwrap_or(DEFAULT_PORT);
 
             let server = match try_bind(base_port) {
