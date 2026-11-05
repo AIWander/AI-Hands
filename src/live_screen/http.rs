@@ -138,7 +138,6 @@ impl Drop for SocketGuard {
         let mut kept = Vec::with_capacity(clients.len());
         for (addr, stream) in clients.drain(..) {
             if addr == Some(peer) {
-                let _ = stream.shutdown(Shutdown::Both);
                 drop(stream);
             } else {
                 kept.push((addr, stream));
@@ -210,10 +209,14 @@ fn handle_connection(live: Arc<Live>, mut stream: TcpStream) {
     if reply.count_viewer {
         live.note_viewer();
     }
+    enable_linger(&stream);
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
     let _ = write_reply(&mut stream, &reply);
-    let _ = stream.shutdown(Shutdown::Both);
+    // Half-close, then drop unread bytes. A full shutdown while the client is
+    // still sending makes Windows abort the connection and discard this reply.
+    let _ = stream.shutdown(Shutdown::Write);
+    discard_unread(&mut stream);
     if let Some((method, path)) = logged {
         eprintln!(
             "[hands/live-screen] {}",
@@ -298,6 +301,56 @@ fn read_body(
         already.extend_from_slice(&tmp[..count]);
     }
     Ok(already)
+}
+
+#[cfg(windows)]
+fn enable_linger(stream: &TcpStream) {
+    use std::os::windows::io::AsRawSocket;
+    use windows::Win32::Networking::WinSock::{setsockopt, LINGER, SOCKET, SOL_SOCKET, SO_LINGER};
+    let linger = LINGER {
+        l_onoff: 1,
+        l_linger: 2,
+    };
+    let bytes = unsafe {
+        std::slice::from_raw_parts(
+            std::ptr::from_ref(&linger).cast::<u8>(),
+            std::mem::size_of::<LINGER>(),
+        )
+    };
+    let socket = SOCKET(stream.as_raw_socket() as usize);
+    unsafe {
+        let _ = setsockopt(socket, SOL_SOCKET, SO_LINGER, Some(bytes));
+    }
+}
+
+#[cfg(not(windows))]
+fn enable_linger(_stream: &TcpStream) {}
+
+fn discard_unread(stream: &mut TcpStream) {
+    let _ = stream.set_nonblocking(true);
+    let end = Instant::now() + Duration::from_millis(500);
+    let mut quiet = Instant::now();
+    let mut buf = [0u8; 8192];
+    let mut total = 0usize;
+    while Instant::now() < end && total < 256 * 1024 {
+        match stream.read(&mut buf) {
+            Ok(0) => break,
+            Ok(count) => {
+                total += count;
+                quiet = Instant::now();
+            }
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error)
+                if error.kind() == ErrorKind::WouldBlock || error.kind() == ErrorKind::TimedOut =>
+            {
+                if quiet.elapsed() >= Duration::from_millis(40) {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(_) => break,
+        }
+    }
 }
 
 fn read_some(
@@ -539,6 +592,16 @@ mod tests {
         format!("127.0.0.1:{}", addr.port())
     }
 
+    #[cfg(windows)]
+    fn process_handle_count() -> u32 {
+        use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+        let mut count = 0u32;
+        unsafe {
+            GetProcessHandleCount(GetCurrentProcess(), &mut count).expect("GetProcessHandleCount");
+        }
+        count
+    }
+
     #[test]
     fn stalled_body_times_out_without_blocking_other_viewers_and_stop_interrupts() {
         let running = Running::open(None, None);
@@ -635,65 +698,76 @@ mod tests {
 
     #[test]
     fn slow_headers_do_not_fill_viewer_slots() {
-        let running = Running::start(None, None, Duration::from_millis(500));
+        let deadline = Duration::from_millis(600);
+        let running = Running::start(None, None, deadline);
         let host = host_line(running.addr);
-        let mut drips = Vec::new();
-        for _ in 0..4 {
-            let mut stream = TcpStream::connect(running.addr).unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            stream.write_all(b"G").unwrap();
-            drips.push(stream);
-        }
         let page = format!("GET /{TOKEN}/ HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-        let (status, _, _) = exchange(running.addr, &page);
-        assert_eq!(status, 200);
-        std::thread::sleep(Duration::from_millis(100));
-        for stream in &mut drips {
-            let _ = stream.write_all(b"E");
+        let mut readers = Vec::new();
+        for _ in 0..4 {
+            let reader = TcpStream::connect(running.addr).unwrap();
+            reader
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut writer = reader.try_clone().unwrap();
+            let started = Instant::now();
+            std::thread::spawn(move || {
+                while started.elapsed() < deadline + Duration::from_millis(1500) {
+                    if writer.write_all(b"X").is_err() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            });
+            readers.push((reader, started));
         }
+        std::thread::sleep(Duration::from_millis(80));
         let (status, _, _) = exchange(running.addr, &page);
         assert_eq!(
             status, 200,
             "a drip of header bytes must not crowd out a viewer"
         );
-        std::thread::sleep(Duration::from_millis(700));
-        for stream in &mut drips {
+        for (mut reader, started) in readers {
             let mut buf = Vec::new();
-            let _ = stream.read_to_end(&mut buf);
+            let _ = reader.read_to_end(&mut buf);
+            let elapsed = started.elapsed();
             let text = String::from_utf8_lossy(&buf);
             assert!(
                 text.contains("408"),
-                "slow header should hit the request deadline: {text}"
+                "slow header should be rejected at the deadline: {text} after {elapsed:?}"
+            );
+            assert!(
+                elapsed + Duration::from_millis(100) >= deadline,
+                "408 arrived too early ({elapsed:?}, deadline {deadline:?})"
+            );
+            assert!(
+                elapsed <= deadline + Duration::from_millis(500),
+                "408 arrived late ({elapsed:?}, deadline {deadline:?}); dripping did not hit an overall deadline"
             );
         }
         running.stop();
     }
 
+    #[cfg(windows)]
     #[test]
     fn finished_connections_drop_their_socket_handles() {
         let running = Running::open(None, None);
         let host = host_line(running.addr);
         let page = format!("GET /{TOKEN}/ HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-        for _ in 0..20 {
+        for _ in 0..10 {
             let (status, _, _) = exchange(running.addr, &page);
             assert_eq!(status, 200);
         }
-        let mut left = usize::MAX;
-        for _ in 0..20 {
-            left = running
-                .live
-                .clients
-                .lock()
-                .map(|guard| guard.len())
-                .unwrap_or(0);
-            if left == 0 {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(25));
+        let before = process_handle_count();
+        for _ in 0..120 {
+            let (status, _, _) = exchange(running.addr, &page);
+            assert_eq!(status, 200);
         }
-        assert_eq!(left, 0, "finished requests kept socket handles");
+        let after = process_handle_count();
+        let growth = after.saturating_sub(before);
+        assert!(
+            growth < 40,
+            "process handles grew by {growth} across 120 requests ({before} -> {after})"
+        );
         running.stop();
     }
 

@@ -402,6 +402,7 @@ struct SendScript {
 
 static SEND_SCRIPT: Mutex<Option<SendScript>> = Mutex::new(None);
 
+#[cfg(test)]
 pub fn arm_send_script(downs_before_failure: usize) {
     if let Ok(mut guard) = SEND_SCRIPT.lock() {
         *guard = Some(SendScript {
@@ -411,6 +412,7 @@ pub fn arm_send_script(downs_before_failure: usize) {
     }
 }
 
+#[cfg(test)]
 pub fn take_send_log() -> Vec<(u16, bool)> {
     SEND_SCRIPT
         .lock()
