@@ -5,25 +5,26 @@
 //! keeps serving its normal tools while that page is open. The listener binds
 //! the machine's Tailscale IPv4 only.
 
+mod http;
 mod policy;
 
 #[cfg(windows)]
 mod platform;
 
 use policy::{
-    access_log_line, authorize, banner_text, combo_is_blocked, parse_action,
-    parse_tailscale_endpoint, parse_viewport_width, sanitize_ai_name, sanitize_help_reason,
-    DesktopMap, Gate, GateRequest, GateSession, OwnerAction, Route, DEFAULT_PORT, MAX_BODY_BYTES,
-    VIEWER_WINDOW_SECS,
+    authorize, banner_text, combo_is_blocked, parse_action, parse_tailscale_endpoint,
+    parse_viewport_width, sanitize_ai_name, sanitize_help_reason, DesktopMap, Gate, GateRequest,
+    GateSession, OwnerAction, Route, DEFAULT_PORT, VIEWER_WINDOW_SECS,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::io::Read;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, TryLockError};
+use std::sync::{Arc, Condvar, Mutex, TryLockError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 const PRESERVED_FIELDS: &[&str] = &["/url", "/fallback_url", "/message"];
 
@@ -91,7 +92,6 @@ pub fn handle_tool(name: &str, args: &Value) -> Option<Value> {
 }
 
 struct FrameState {
-    etag: String,
     width: u32,
     height: u32,
     map: DesktopMap,
@@ -105,16 +105,21 @@ struct Live {
     started: Instant,
     ttl: Option<Duration>,
     stop: AtomicBool,
-    server: Arc<tiny_http::Server>,
+    allow_loopback: bool,
+    clients: Mutex<Vec<(Option<SocketAddr>, std::net::TcpStream)>>,
+    inflight: Mutex<usize>,
+    inflight_cv: Condvar,
     last_viewer: Mutex<Option<Instant>>,
     last_action: Mutex<Option<Instant>>,
     action_lock: Mutex<()>,
     frame: Mutex<Option<FrameState>>,
+    canned_jpeg: Mutex<Option<Vec<u8>>>,
 }
 
 struct Runtime {
     live: Arc<Live>,
     http: JoinHandle<()>,
+    timer: Option<JoinHandle<()>>,
     banner: Option<JoinHandle<()>>,
 }
 
@@ -166,38 +171,34 @@ fn start_on_windows(args: &Value) -> Value {
         Err(()) => return failure("Live screen could not generate a session token."),
     };
     let addr = SocketAddr::from((endpoint.ipv4, port));
-    let server = match tiny_http::Server::http(addr) {
-        Ok(server) => Arc::new(server),
+    let listener = match TcpListener::bind(addr) {
+        Ok(listener) => listener,
         Err(_) => {
             return failure(
                 "Live screen could not bind that TCP port on the Tailscale address. Pick another port or stop whatever is already using it. It will not fall back to a public address.",
             );
         }
     };
-    let live = Arc::new(Live {
+    let live = new_live(
         token,
         port,
-        bind_ip: endpoint.ipv4,
-        magic_dns: endpoint.magic_dns,
-        started: Instant::now(),
+        endpoint.ipv4,
+        endpoint.magic_dns,
         ttl,
-        stop: AtomicBool::new(false),
-        server: Arc::clone(&server),
-        last_viewer: Mutex::new(None),
-        last_action: Mutex::new(None),
-        action_lock: Mutex::new(()),
-        frame: Mutex::new(None),
-    });
+        false,
+        None,
+    );
     let serve = Arc::clone(&live);
     let http = match thread::Builder::new()
         .name("hands-live-screen".to_string())
-        .spawn(move || serve_loop(serve, server))
+        .spawn(move || http::serve(serve, listener))
     {
         Ok(handle) => handle,
         Err(_) => {
             return failure("Live screen could not start its listener thread.");
         }
     };
+    let timer = spawn_ttl(Arc::clone(&live));
     let banner_live = Arc::clone(&live);
     let banner = thread::Builder::new()
         .name("hands-live-banner".to_string())
@@ -211,10 +212,13 @@ fn start_on_windows(args: &Value) -> Value {
     let payload = session_payload(&live, false);
     let mut slot = lock_runtime();
     if slot.is_some() {
-        live.stop.store(true, Ordering::SeqCst);
-        live.server.unblock();
+        http::signal_stop(&live);
         drop(slot);
         let _ = http.join();
+        if let Some(timer) = timer {
+            let _ = timer.join();
+        }
+        http::wait_idle(&live);
         if let Some(banner) = banner {
             let _ = banner.join();
         }
@@ -222,8 +226,67 @@ fn start_on_windows(args: &Value) -> Value {
             "A live screen started while this one was opening. Use live_screen_status.",
         );
     }
-    *slot = Some(Runtime { live, http, banner });
+    *slot = Some(Runtime {
+        live,
+        http,
+        timer,
+        banner,
+    });
     payload
+}
+
+fn new_live(
+    token: String,
+    port: u16,
+    bind_ip: IpAddr,
+    magic_dns: Option<String>,
+    ttl: Option<Duration>,
+    allow_loopback: bool,
+    canned_jpeg: Option<Vec<u8>>,
+) -> Arc<Live> {
+    Arc::new(Live {
+        token,
+        port,
+        bind_ip,
+        magic_dns,
+        started: Instant::now(),
+        ttl,
+        stop: AtomicBool::new(false),
+        allow_loopback,
+        clients: Mutex::new(Vec::new()),
+        inflight: Mutex::new(0),
+        inflight_cv: Condvar::new(),
+        last_viewer: Mutex::new(None),
+        last_action: Mutex::new(None),
+        action_lock: Mutex::new(()),
+        frame: Mutex::new(None),
+        canned_jpeg: Mutex::new(canned_jpeg),
+    })
+}
+
+fn spawn_ttl(live: Arc<Live>) -> Option<JoinHandle<()>> {
+    let ttl = live.ttl?;
+    let started = live.started;
+    thread::Builder::new()
+        .name("hands-live-ttl".to_string())
+        .spawn(move || {
+            let deadline = started + ttl;
+            while Instant::now() < deadline {
+                if live.stop.load(Ordering::SeqCst) {
+                    return;
+                }
+                let slice = Duration::from_millis(50)
+                    .min(deadline.saturating_duration_since(Instant::now()));
+                if slice.is_zero() {
+                    break;
+                }
+                thread::sleep(slice);
+            }
+            if !live.stop.load(Ordering::SeqCst) {
+                http::signal_stop(&live);
+            }
+        })
+        .ok()
 }
 
 fn request_help(args: &Value) -> Value {
@@ -289,9 +352,12 @@ fn stop() -> Value {
         let Some(runtime) = runtime else {
             return json!({ "success": true, "running": false });
         };
-        runtime.live.stop.store(true, Ordering::SeqCst);
-        runtime.live.server.unblock();
+        http::signal_stop(&runtime.live);
         let _ = runtime.http.join();
+        if let Some(timer) = runtime.timer {
+            let _ = timer.join();
+        }
+        http::wait_idle(&runtime.live);
         if let Some(banner) = runtime.banner {
             let _ = banner.join();
         }
@@ -531,254 +597,212 @@ fn current_banner_text() -> String {
     banner_text(&name, override_text.as_deref())
 }
 
-fn serve_loop(live: Arc<Live>, server: Arc<tiny_http::Server>) {
-    for request in server.incoming_requests() {
-        if live.stop.load(Ordering::SeqCst) || live.expired() {
-            live.stop.store(true, Ordering::SeqCst);
-            let _ = send_json(request, 403, &json!({"error":"rejected"}));
-            break;
-        }
-        dispatch_request(request, &live);
-    }
-    release_if_current(&live);
+struct Incoming<'a> {
+    pub method: &'a str,
+    pub path: &'a str,
+    pub query: &'a str,
+    pub host: Option<&'a str>,
+    pub origin: Option<&'a str>,
+    pub content_type: Option<&'a str>,
+    pub action_header: Option<&'a str>,
+    pub if_none_match: Option<&'a str>,
+    pub content_length: Option<usize>,
+    pub chunked: bool,
 }
 
-fn release_if_current(live: &Arc<Live>) {
-    let runtime = {
-        let mut guard = lock_runtime();
-        let current = guard
-            .as_ref()
-            .is_some_and(|runtime| Arc::ptr_eq(&runtime.live, live));
-        if current {
-            guard.take()
-        } else {
-            None
-        }
-    };
-    let Some(runtime) = runtime else {
-        return;
-    };
-    runtime.live.stop.store(true, Ordering::SeqCst);
-    let Runtime { live, http, banner } = runtime;
-    drop(http);
-    if let Some(banner) = banner {
-        let _ = banner.join();
-    }
-    drop(live);
+struct Reply {
+    pub status: u16,
+    pub content_type: &'static str,
+    pub body: Vec<u8>,
+    pub extra: Vec<(&'static str, String)>,
+    pub count_viewer: bool,
 }
 
-fn dispatch_request(mut request: tiny_http::Request, live: &Live) {
-    let method = request.method().as_str().to_string();
-    let url = request.url().to_string();
-    let (path, query) = match url.split_once('?') {
-        Some((path, query)) => (path.to_string(), query.to_string()),
-        None => (url.clone(), String::new()),
-    };
-    let client_ip = request.remote_addr().map(|addr| addr.ip());
-    let host = header(&request, "Host");
-    let origin = header(&request, "Origin");
-    let content_type = header(&request, "Content-Type");
-    let action_header = header(&request, policy::ACTION_HEADER);
-    let if_none_match = header(&request, "If-None-Match");
-    let content_length = request.body_length();
-    let body = if method.eq_ignore_ascii_case("POST") {
-        match read_body(&mut request) {
-            Ok(body) => body,
-            Err(status) => {
-                log_access(&method, &path, status, client_ip);
-                let error = if status == 413 {
-                    "too_large"
-                } else {
-                    "unexpected"
-                };
-                let _ = send_json(request, status, &json!({"error": error}));
-                return;
-            }
-        }
-    } else {
-        Vec::new()
-    };
-    let gate = authorize(
+enum Plan {
+    Reply(Reply),
+    ReadBody { length: usize },
+}
+
+fn plan(live: &Live, incoming: &Incoming<'_>, client_ip: Option<IpAddr>) -> Plan {
+    if incoming.chunked {
+        return Plan::Reply(json_reply(400, "bad_input", false));
+    }
+    match authorize(
         &GateRequest {
-            method: &method,
-            path: &path,
+            method: incoming.method,
+            path: incoming.path,
             client_ip,
-            host: host.as_deref(),
-            origin: origin.as_deref(),
-            content_type: content_type.as_deref(),
-            action_header: action_header.as_deref(),
-            body_len: body.len(),
-            content_length,
+            host: incoming.host,
+            origin: incoming.origin,
+            content_type: incoming.content_type,
+            action_header: incoming.action_header,
+            body_len: incoming.content_length.unwrap_or(0),
+            content_length: incoming.content_length,
         },
         GateSession {
             token: &live.token,
             bind_ip: live.bind_ip,
             magic_dns: live.magic_dns.as_deref(),
             port: live.port,
+            allow_loopback: live.allow_loopback,
         },
-    );
-    let status = match gate {
-        Gate::Reject(status) => {
-            log_access(&method, &path, status, client_ip);
-            let error = match status {
-                413 => "too_large",
-                400 => "bad_input",
-                _ => "rejected",
-            };
-            let _ = send_json(request, status, &json!({"error": error}));
-            return;
-        }
-        Gate::Allow(route) => match route {
-            Route::Page => send_page(request),
-            Route::Frame => send_frame(request, live, &query, if_none_match.as_deref()),
-            Route::Action => send_action(request, live, &body),
+    ) {
+        Gate::Reject(status) => Plan::Reply(json_reply(status, status_error(status), false)),
+        Gate::Allow(Route::Action) => match incoming.content_length {
+            Some(length) => Plan::ReadBody { length },
+            None => Plan::Reply(json_reply(400, "bad_input", false)),
         },
-    };
-    if matches!(status, 200 | 304) && path_ends_with_page_or_frame(&path) {
-        live.note_viewer();
+        Gate::Allow(route) => Plan::Reply(reply_route(live, route, incoming)),
     }
-    log_access(&method, &path, status, client_ip);
 }
 
-fn path_ends_with_page_or_frame(path: &str) -> bool {
-    let trimmed = path.trim_end_matches('/');
-    !trimmed.ends_with("/action")
-}
-
-fn send_page(request: tiny_http::Request) -> u16 {
-    let _ = send_bytes(
-        request,
-        200,
-        "text/html; charset=utf-8",
-        PAGE.as_bytes(),
-        &[],
-    );
-    200
-}
-
-fn send_frame(
-    request: tiny_http::Request,
+fn reply_with_body(
     live: &Live,
-    query: &str,
-    if_none_match: Option<&str>,
-) -> u16 {
+    incoming: &Incoming<'_>,
+    client_ip: Option<IpAddr>,
+    body: &[u8],
+) -> Reply {
+    if !matches!(plan(live, incoming, client_ip), Plan::ReadBody { .. }) {
+        return json_reply(400, "bad_input", false);
+    }
+    action_reply(live, body)
+}
+
+fn reply_route(live: &Live, route: Route, incoming: &Incoming<'_>) -> Reply {
+    match route {
+        Route::Page => Reply {
+            status: 200,
+            content_type: "text/html; charset=utf-8",
+            body: PAGE.as_bytes().to_vec(),
+            extra: Vec::new(),
+            count_viewer: true,
+        },
+        Route::Frame => frame_reply(live, incoming.query, incoming.if_none_match),
+        Route::Action => json_reply(400, "bad_input", false),
+    }
+}
+
+fn frame_reply(live: &Live, query: &str, if_none_match: Option<&str>) -> Reply {
     let viewport = match parse_viewport_width(query) {
         Ok(width) => width,
-        Err(()) => {
-            let _ = send_json(request, 400, &json!({"error":"bad_input"}));
-            return 400;
-        }
+        Err(()) => return json_reply(400, "bad_input", false),
     };
-    #[cfg(not(windows))]
-    {
-        let _ = (live, viewport, if_none_match);
-        let _ = send_json(request, 500, &json!({"error":"unexpected"}));
-        return 500;
+    let (jpeg, width, height, map) = match load_frame(live, viewport) {
+        Ok(frame) => frame,
+        Err(()) => return json_reply(500, "unexpected", false),
+    };
+    let etag = frame_etag(&jpeg);
+    if let Ok(mut guard) = live.frame.lock() {
+        *guard = Some(FrameState { width, height, map });
     }
-    #[cfg(windows)]
-    {
-        let captured = match platform::capture_jpeg(viewport) {
-            Ok(captured) => captured,
-            Err(()) => {
-                let _ = send_json(request, 500, &json!({"error":"unexpected"}));
-                return 500;
-            }
-        };
-        let etag = frame_etag(&captured.jpeg);
-        let unchanged = live
-            .frame
-            .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|frame| frame.etag == etag))
-            .unwrap_or(false);
-        if let Ok(mut guard) = live.frame.lock() {
-            *guard = Some(FrameState {
-                etag: etag.clone(),
-                width: captured.width,
-                height: captured.height,
-                map: captured.map,
-            });
+    if policy::if_none_match_hits(if_none_match, &etag) {
+        Reply {
+            status: 304,
+            content_type: "text/plain; charset=utf-8",
+            body: Vec::new(),
+            extra: vec![("ETag", etag)],
+            count_viewer: true,
         }
-        if if_none_match.is_some_and(|value| value.split(',').any(|part| part.trim() == etag)) {
-            let _ = send_empty(request, 304, &[("ETag", etag)]);
-            304
-        } else if unchanged {
-            let _ = send_bytes(
-                request,
-                200,
-                "text/plain; charset=utf-8",
-                b"unchanged",
-                &[("ETag", etag)],
-            );
-            200
-        } else {
-            let _ = send_bytes(
-                request,
-                200,
-                "image/jpeg",
-                &captured.jpeg,
-                &[("ETag", etag)],
-            );
-            200
+    } else {
+        Reply {
+            status: 200,
+            content_type: "image/jpeg",
+            body: jpeg,
+            extra: vec![("ETag", etag)],
+            count_viewer: true,
         }
     }
 }
 
-fn send_action(request: tiny_http::Request, live: &Live, body: &[u8]) -> u16 {
+fn action_reply(live: &Live, body: &[u8]) -> Reply {
     let value = match serde_json::from_slice::<Value>(body) {
         Ok(value) => value,
-        Err(_) => {
-            let _ = send_json(request, 400, &json!({"error":"bad_input"}));
-            return 400;
-        }
+        Err(_) => return json_reply(400, "bad_input", false),
     };
     let action = match parse_action(&value) {
         Ok(action) => action,
         Err(fault) => {
-            let status = fault.status();
-            let error = if status == 409 {
-                "blocked"
-            } else {
-                "bad_input"
-            };
-            let _ = send_json(request, status, &json!({"error": error}));
-            return status;
+            return json_reply(fault.status(), status_error(fault.status()), false);
         }
     };
     let _guard = match live.action_lock.try_lock() {
         Ok(guard) => guard,
-        Err(TryLockError::WouldBlock) => {
-            let _ = send_json(request, 409, &json!({"error":"busy"}));
-            return 409;
-        }
+        Err(TryLockError::WouldBlock) => return json_reply(409, "busy", false),
         Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
     };
     live.note_action();
     match perform(live, action) {
-        Ok(()) => {
-            let _ = send_json(request, 200, &json!({"ok":true}));
-            200
-        }
-        Err(ActionResult::BadInput) => {
-            let _ = send_json(request, 400, &json!({"error":"bad_input"}));
-            400
-        }
-        Err(ActionResult::Blocked) => {
-            let _ = send_json(request, 409, &json!({"error":"blocked"}));
-            409
-        }
-        Err(ActionResult::FocusChanged(typed)) => {
-            let _ = send_json(
-                request,
-                409,
-                &json!({"error":"focus_changed","typed": typed}),
-            );
-            409
-        }
-        Err(ActionResult::Unexpected) => {
-            let _ = send_json(request, 500, &json!({"error":"unexpected"}));
-            500
-        }
+        Ok(()) => json_body(200, br#"{"ok":true}"#.to_vec(), false),
+        Err(ActionResult::BadInput) => json_reply(400, "bad_input", false),
+        Err(ActionResult::Blocked) => json_reply(409, "blocked", false),
+        Err(ActionResult::FocusChanged(typed)) => json_body(
+            409,
+            serde_json::to_vec(&json!({"error":"focus_changed","typed": typed}))
+                .unwrap_or_default(),
+            false,
+        ),
+        Err(ActionResult::Rejected { typed }) => json_body(
+            409,
+            serde_json::to_vec(
+                &json!({"error":"input_rejected","reason":"elevated_window","typed": typed}),
+            )
+            .unwrap_or_default(),
+            false,
+        ),
+        Err(ActionResult::Unexpected) => json_reply(500, "unexpected", false),
+    }
+}
+
+fn json_reply(status: u16, error: &str, count_viewer: bool) -> Reply {
+    let body = if error == "ok_true" {
+        br#"{"ok":true}"#.to_vec()
+    } else {
+        format!(r#"{{"error":"{error}"}}"#).into_bytes()
+    };
+    json_body(status, body, count_viewer)
+}
+
+fn json_body(status: u16, body: Vec<u8>, count_viewer: bool) -> Reply {
+    Reply {
+        status,
+        content_type: "application/json; charset=utf-8",
+        body,
+        extra: Vec::new(),
+        count_viewer,
+    }
+}
+
+fn status_error(status: u16) -> &'static str {
+    match status {
+        413 => "too_large",
+        400 => "bad_input",
+        409 => "blocked",
+        _ => "rejected",
+    }
+}
+
+fn load_frame(live: &Live, viewport: u32) -> Result<(Vec<u8>, u32, u32, DesktopMap), ()> {
+    if let Some(bytes) = live.canned_jpeg.lock().ok().and_then(|guard| guard.clone()) {
+        let map = policy::place_monitors(&[policy::MonitorGeometry {
+            logical_x: 0,
+            logical_y: 0,
+            logical_w: 1,
+            logical_h: 1,
+            capture_w: 1,
+            capture_h: 1,
+            scale: 1.0,
+        }]);
+        return Ok((bytes, 1, 1, map));
+    }
+    #[cfg(windows)]
+    {
+        platform::capture_jpeg(viewport)
+            .map(|frame| (frame.jpeg, frame.width, frame.height, frame.map))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = viewport;
+        Err(())
     }
 }
 
@@ -786,7 +810,15 @@ enum ActionResult {
     BadInput,
     Blocked,
     FocusChanged(usize),
+    Rejected { typed: usize },
     Unexpected,
+}
+
+fn input_fault(fault: platform::InputFault) -> ActionResult {
+    match fault {
+        platform::InputFault::Rejected => ActionResult::Rejected { typed: 0 },
+        platform::InputFault::Unexpected => ActionResult::Unexpected,
+    }
 }
 
 fn perform(live: &Live, action: OwnerAction) -> Result<(), ActionResult> {
@@ -802,8 +834,7 @@ fn perform(live: &Live, action: OwnerAction) -> Result<(), ActionResult> {
             let (screen_x, screen_y) = screen_point(live, x, y, image_width, image_height)?;
             #[cfg(windows)]
             {
-                platform::click_at(screen_x, screen_y, button, double)
-                    .map_err(|_| ActionResult::Unexpected)
+                platform::click_at(screen_x, screen_y, button, double).map_err(input_fault)
             }
             #[cfg(not(windows))]
             {
@@ -822,8 +853,7 @@ fn perform(live: &Live, action: OwnerAction) -> Result<(), ActionResult> {
             let (screen_x, screen_y) = screen_point(live, x, y, image_width, image_height)?;
             #[cfg(windows)]
             {
-                platform::scroll_at(screen_x, screen_y, dx, dy)
-                    .map_err(|_| ActionResult::Unexpected)
+                platform::scroll_at(screen_x, screen_y, dx, dy).map_err(input_fault)
             }
             #[cfg(not(windows))]
             {
@@ -839,6 +869,9 @@ fn perform(live: &Live, action: OwnerAction) -> Result<(), ActionResult> {
                     Err(platform::TypeStop::FocusChanged(typed)) => {
                         Err(ActionResult::FocusChanged(typed))
                     }
+                    Err(platform::TypeStop::Rejected(typed)) => {
+                        Err(ActionResult::Rejected { typed })
+                    }
                 }
             }
             #[cfg(not(windows))]
@@ -850,7 +883,7 @@ fn perform(live: &Live, action: OwnerAction) -> Result<(), ActionResult> {
         OwnerAction::Key { name } => {
             #[cfg(windows)]
             {
-                platform::tap_key(name).map_err(|_| ActionResult::Unexpected)
+                platform::tap_key(name).map_err(input_fault)
             }
             #[cfg(not(windows))]
             {
@@ -864,7 +897,7 @@ fn perform(live: &Live, action: OwnerAction) -> Result<(), ActionResult> {
             }
             #[cfg(windows)]
             {
-                platform::tap_combo(&combo).map_err(|_| ActionResult::Unexpected)
+                platform::tap_combo(&combo).map_err(input_fault)
             }
             #[cfg(not(windows))]
             {
@@ -892,31 +925,6 @@ fn screen_point(
     policy::map_click(x, y, image_width, image_height, &frame.map).ok_or(ActionResult::BadInput)
 }
 
-fn read_body(request: &mut tiny_http::Request) -> Result<Vec<u8>, u16> {
-    if request
-        .body_length()
-        .is_some_and(|length| length > MAX_BODY_BYTES)
-    {
-        return Err(413);
-    }
-    let mut body = Vec::new();
-    let mut limited = request.as_reader().take(MAX_BODY_BYTES as u64 + 1);
-    limited.read_to_end(&mut body).map_err(|_| 500u16)?;
-    if body.len() > MAX_BODY_BYTES {
-        Err(413)
-    } else {
-        Ok(body)
-    }
-}
-
-fn header(request: &tiny_http::Request, name: &'static str) -> Option<String> {
-    request
-        .headers()
-        .iter()
-        .find(|header| header.field.equiv(name))
-        .map(|header| header.value.as_str().to_string())
-}
-
 fn frame_etag(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     let mut hex = String::with_capacity(16);
@@ -924,74 +932,6 @@ fn frame_etag(bytes: &[u8]) -> String {
         hex.push_str(&format!("{byte:02x}"));
     }
     format!("\"{hex}\"")
-}
-
-fn log_access(method: &str, path: &str, status: u16, client_ip: Option<IpAddr>) {
-    let client = client_ip
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-    eprintln!(
-        "[hands/live-screen] {}",
-        access_log_line(method, path, status, &client)
-    );
-}
-
-fn send_json(request: tiny_http::Request, status: u16, body: &Value) -> Result<(), ()> {
-    let bytes = serde_json::to_vec(body).map_err(|_| ())?;
-    send_bytes(
-        request,
-        status,
-        "application/json; charset=utf-8",
-        &bytes,
-        &[],
-    )
-}
-
-fn send_empty(
-    request: tiny_http::Request,
-    status: u16,
-    extra: &[(&str, String)],
-) -> Result<(), ()> {
-    let mut response = tiny_http::Response::empty(status);
-    add_security_headers(&mut response, "text/plain");
-    for (name, value) in extra {
-        if let Ok(header) = format!("{name}: {value}").parse::<tiny_http::Header>() {
-            response.add_header(header);
-        }
-    }
-    request.respond(response).map_err(|_| ())
-}
-
-fn send_bytes(
-    request: tiny_http::Request,
-    status: u16,
-    content_type: &str,
-    body: &[u8],
-    extra: &[(&str, String)],
-) -> Result<(), ()> {
-    let mut response = tiny_http::Response::from_data(body.to_vec()).with_status_code(status);
-    add_security_headers(&mut response, content_type);
-    for (name, value) in extra {
-        if let Ok(header) = format!("{name}: {value}").parse::<tiny_http::Header>() {
-            response.add_header(header);
-        }
-    }
-    request.respond(response).map_err(|_| ())
-}
-
-fn add_security_headers<R: Read>(response: &mut tiny_http::Response<R>, content_type: &str) {
-    for line in [
-        format!("Content-Type: {content_type}"),
-        "X-Frame-Options: DENY".to_string(),
-        "Content-Security-Policy: default-src 'none'; img-src 'self' blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'".to_string(),
-        "X-Content-Type-Options: nosniff".to_string(),
-        "Referrer-Policy: no-referrer".to_string(),
-        "Cache-Control: no-store".to_string(),
-    ] {
-        if let Ok(header) = line.parse::<tiny_http::Header>() {
-            response.add_header(header);
-        }
-    }
 }
 
 const PAGE: &str = r#"<!DOCTYPE html>
@@ -1063,6 +1003,7 @@ async function post(body) {
   if (res.status === 409) {
     const payload = await res.json().catch(function () { return {}; });
     if (payload.error === 'focus_changed') setStatus('Typing stopped because the focused window changed.');
+    else if (payload.error === 'input_rejected') setStatus('That window blocked the input. Hands cannot drive an elevated or UAC prompt unless it is running elevated.');
     else if (payload.error === 'busy') setStatus('Another action is still running.');
     else setStatus('That action is blocked.');
     return;
@@ -1143,7 +1084,7 @@ async function poll() {
     const headers = {};
     if (etag) headers['If-None-Match'] = etag;
     const res = await fetch(root + 'frame?w=' + width, { headers: headers, cache: 'no-store' });
-    if (res.status === 304) return;
+    if (res.status === 304) return; // keep the image already shown
     const next = res.headers.get('ETag');
     if (next) etag = next;
     if (res.status !== 200) return;

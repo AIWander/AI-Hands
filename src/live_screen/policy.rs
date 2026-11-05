@@ -48,6 +48,8 @@ pub struct GateSession<'a> {
     pub bind_ip: IpAddr,
     pub magic_dns: Option<&'a str>,
     pub port: u16,
+    /// Test listeners accept 127.0.0.1. Production sessions leave this false.
+    pub allow_loopback: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -248,7 +250,10 @@ pub fn authorize(request: &GateRequest<'_>, session: GateSession<'_>) -> Gate {
     if advertised > MAX_BODY_BYTES || request.body_len > MAX_BODY_BYTES {
         return Gate::Reject(413);
     }
-    if !request.client_ip.is_some_and(is_tailnet_ipv4) {
+    let client_ok = request
+        .client_ip
+        .is_some_and(|ip| is_tailnet_ipv4(ip) || (session.allow_loopback && ip.is_loopback()));
+    if !client_ok {
         return Gate::Reject(403);
     }
     let host = match request.host.map(str::trim).filter(|host| !host.is_empty()) {
@@ -330,6 +335,18 @@ fn route_from_path(path: &str) -> Option<(&str, Option<Route>)> {
         Some(_) => None,
     };
     Some((token, route))
+}
+
+/// True only when this request's `If-None-Match` names the current frame.
+/// A viewer with no header, or a different tag, still receives the JPEG.
+pub fn if_none_match_hits(header: Option<&str>, etag: &str) -> bool {
+    let Some(header) = header.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    if etag.is_empty() {
+        return false;
+    }
+    header.split(',').any(|part| part.trim() == etag)
 }
 
 pub fn tokens_equal(left: &str, right: &str) -> bool {
@@ -837,6 +854,29 @@ pub fn combo_is_blocked(combo: &Combo) -> bool {
     false
 }
 
+/// Play key strokes. `down == true` holds the key. If `send` fails, every key
+/// still held is released and the error is returned.
+pub fn play_keys<T: Copy + PartialEq>(
+    strokes: &[(T, bool)],
+    mut send: impl FnMut(T, bool) -> bool,
+) -> Result<(), ()> {
+    let mut held = Vec::new();
+    for &(key, down) in strokes {
+        if !send(key, down) {
+            for held_key in held.iter().rev() {
+                let _ = send(*held_key, false);
+            }
+            return Err(());
+        }
+        if down {
+            held.push(key);
+        } else {
+            held.retain(|held_key| *held_key != key);
+        }
+    }
+    Ok(())
+}
+
 pub fn sanitize_ai_name(raw: &str) -> String {
     let cleaned = raw
         .chars()
@@ -953,6 +993,7 @@ mod tests {
             bind_ip: ip("100.100.1.2"),
             magic_dns: Some("hands-host.example.ts.net"),
             port: DEFAULT_PORT,
+            allow_loopback: false,
         }
     }
 
@@ -1292,6 +1333,38 @@ mod tests {
         assert_eq!(banner_text("  ", Some("One\\nTwo")), "One\nTwo");
         assert_eq!(sanitize_ai_name("\n\t"), "Assistant");
         assert_eq!(sanitize_ai_name("  Desk "), "Desk");
+    }
+
+    #[test]
+    fn each_viewer_needs_its_own_etag_before_a_304() {
+        let etag = "\"abc123\"";
+        assert!(!if_none_match_hits(None, etag));
+        assert!(!if_none_match_hits(Some(""), etag));
+        assert!(!if_none_match_hits(Some("\"other\""), etag));
+        assert!(if_none_match_hits(Some("\"abc123\""), etag));
+        assert!(if_none_match_hits(Some("\"other\", \"abc123\""), etag));
+        assert!(!if_none_match_hits(None, etag));
+    }
+
+    #[test]
+    fn failed_key_releases_modifiers_already_held() {
+        let strokes = [("ctrl", true), ("alt", true), ("del", true)];
+        let mut sent = Vec::new();
+        let result = play_keys(&strokes, |key, down| {
+            sent.push((key, down));
+            key != "del"
+        });
+        assert!(result.is_err());
+        assert_eq!(
+            sent,
+            vec![
+                ("ctrl", true),
+                ("alt", true),
+                ("del", true),
+                ("alt", false),
+                ("ctrl", false),
+            ]
+        );
     }
 
     #[test]

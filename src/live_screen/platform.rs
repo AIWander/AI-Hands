@@ -4,8 +4,8 @@
 //! in the JPEG the phone is watching.
 
 use super::policy::{
-    absolute_mouse_axis, place_monitors, served_size, Button, Combo, DesktopMap, MonitorGeometry,
-    JPEG_QUALITY,
+    absolute_mouse_axis, place_monitors, play_keys, served_size, Button, Combo, DesktopMap,
+    MonitorGeometry, JPEG_QUALITY,
 };
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, Rgba, RgbaImage};
@@ -64,6 +64,12 @@ pub struct CapturedFrame {
 
 pub enum TypeStop {
     FocusChanged(usize),
+    Rejected(usize),
+}
+
+pub enum InputFault {
+    Rejected,
+    Unexpected,
 }
 
 pub fn banner_failed() -> bool {
@@ -146,13 +152,19 @@ fn encode_jpeg(image: &RgbaImage) -> Result<Vec<u8>, ()> {
     Ok(bytes)
 }
 
-pub fn click_at(x: i32, y: i32, button: Button, double: bool) -> Result<(), ()> {
-    let (nx, ny) = normalized(x, y)?;
-    move_mouse(nx, ny);
+pub fn click_at(x: i32, y: i32, button: Button, double: bool) -> Result<(), InputFault> {
+    let (nx, ny) = normalized(x, y).map_err(|_| InputFault::Unexpected)?;
+    move_mouse(nx, ny).map_err(|_| InputFault::Rejected)?;
     let clicks = if double { 2 } else { 1 };
     for index in 0..clicks {
-        button_event(nx, ny, button, true);
-        button_event(nx, ny, button, false);
+        if button_event(nx, ny, button, true).is_err() {
+            let _ = button_event(nx, ny, button, false);
+            return Err(InputFault::Rejected);
+        }
+        if button_event(nx, ny, button, false).is_err() {
+            let _ = button_event(nx, ny, button, false);
+            return Err(InputFault::Rejected);
+        }
         if double && index == 0 {
             thread::sleep(Duration::from_millis(50));
         }
@@ -160,14 +172,14 @@ pub fn click_at(x: i32, y: i32, button: Button, double: bool) -> Result<(), ()> 
     Ok(())
 }
 
-pub fn scroll_at(x: i32, y: i32, dx: i32, dy: i32) -> Result<(), ()> {
-    let (nx, ny) = normalized(x, y)?;
-    move_mouse(nx, ny);
-    if dy != 0 {
-        wheel(nx, ny, MOUSEEVENTF_WHEEL, dy);
+pub fn scroll_at(x: i32, y: i32, dx: i32, dy: i32) -> Result<(), InputFault> {
+    let (nx, ny) = normalized(x, y).map_err(|_| InputFault::Unexpected)?;
+    move_mouse(nx, ny).map_err(|_| InputFault::Rejected)?;
+    if dy != 0 && wheel(nx, ny, MOUSEEVENTF_WHEEL, dy).is_err() {
+        return Err(InputFault::Rejected);
     }
-    if dx != 0 {
-        wheel(nx, ny, MOUSEEVENTF_HWHEEL, dx);
+    if dx != 0 && wheel(nx, ny, MOUSEEVENTF_HWHEEL, dx).is_err() {
+        return Err(InputFault::Rejected);
     }
     Ok(())
 }
@@ -183,32 +195,36 @@ pub fn type_text(text: &str) -> Result<usize, TypeStop> {
         if now != start {
             return Err(TypeStop::FocusChanged(typed));
         }
-        match ch {
+        let sent = match ch {
             '\n' => tap_vk(VK_RETURN),
             '\t' => tap_vk(VK_TAB),
             _ => send_unicode(ch),
+        };
+        if sent.is_err() {
+            return Err(TypeStop::Rejected(typed));
         }
         typed += 1;
     }
     Ok(typed)
 }
 
-pub fn tap_key(name: &str) -> Result<(), ()> {
-    match name {
+pub fn tap_key(name: &str) -> Result<(), InputFault> {
+    let sent = match name {
         "enter" => tap_vk(VK_RETURN),
         "tab" => tap_vk(VK_TAB),
         "esc" => tap_vk(VK_ESCAPE),
         "backspace" => tap_vk(VK_BACK),
         "ctrl+l" => {
-            modifier_tap(&[VK_CONTROL], virtual_key("l").ok_or(())?);
+            let key = virtual_key("l").ok_or(InputFault::Unexpected)?;
+            modifier_tap(&[VK_CONTROL], key)
         }
-        _ => return Err(()),
-    }
-    Ok(())
+        _ => return Err(InputFault::Unexpected),
+    };
+    sent.map_err(|_| InputFault::Rejected)
 }
 
-pub fn tap_combo(combo: &Combo) -> Result<(), ()> {
-    let key = virtual_key(&combo.key).ok_or(())?;
+pub fn tap_combo(combo: &Combo) -> Result<(), InputFault> {
+    let key = virtual_key(&combo.key).ok_or(InputFault::Unexpected)?;
     let mut modifiers = Vec::new();
     if combo.ctrl {
         modifiers.push(VK_CONTROL);
@@ -222,8 +238,7 @@ pub fn tap_combo(combo: &Combo) -> Result<(), ()> {
     if combo.win {
         modifiers.push(VK_LWIN);
     }
-    modifier_tap(&modifiers, key);
-    Ok(())
+    modifier_tap(&modifiers, key).map_err(|_| InputFault::Rejected)
 }
 
 pub fn run_banner(alive: impl Fn() -> bool, text: impl Fn() -> Option<String>) {
@@ -283,16 +298,16 @@ fn normalized(x: i32, y: i32) -> Result<(i32, i32), ()> {
     Ok((nx, ny))
 }
 
-fn move_mouse(x: i32, y: i32) {
+fn move_mouse(x: i32, y: i32) -> Result<(), ()> {
     send_mouse(
         x,
         y,
         MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
         0,
-    );
+    )
 }
 
-fn button_event(x: i32, y: i32, button: Button, down: bool) {
+fn button_event(x: i32, y: i32, button: Button, down: bool) -> Result<(), ()> {
     let flag = match (button, down) {
         (Button::Left, true) => MOUSEEVENTF_LEFTDOWN,
         (Button::Left, false) => MOUSEEVENTF_LEFTUP,
@@ -304,19 +319,19 @@ fn button_event(x: i32, y: i32, button: Button, down: bool) {
         y,
         flag | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
         0,
-    );
+    )
 }
 
-fn wheel(x: i32, y: i32, flag: MOUSE_EVENT_FLAGS, notches: i32) {
+fn wheel(x: i32, y: i32, flag: MOUSE_EVENT_FLAGS, notches: i32) -> Result<(), ()> {
     send_mouse(
         x,
         y,
         flag | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
         (notches.saturating_mul(120)) as u32,
-    );
+    )
 }
 
-fn send_mouse(x: i32, y: i32, flags: MOUSE_EVENT_FLAGS, data: u32) {
+fn send_mouse(x: i32, y: i32, flags: MOUSE_EVENT_FLAGS, data: u32) -> Result<(), ()> {
     let input = INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
@@ -330,27 +345,40 @@ fn send_mouse(x: i32, y: i32, flags: MOUSE_EVENT_FLAGS, data: u32) {
             },
         },
     };
-    unsafe {
-        let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+    let sent = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
+    if sent == 1 {
+        Ok(())
+    } else {
+        Err(())
     }
 }
 
-fn tap_vk(key: VIRTUAL_KEY) {
-    send_key(key, KEYBD_EVENT_FLAGS(0));
-    send_key(key, KEYEVENTF_KEYUP);
+fn tap_vk(key: VIRTUAL_KEY) -> Result<(), ()> {
+    send_key(key, KEYBD_EVENT_FLAGS(0))?;
+    send_key(key, KEYEVENTF_KEYUP)
 }
 
-fn modifier_tap(modifiers: &[VIRTUAL_KEY], key: VIRTUAL_KEY) {
+fn modifier_tap(modifiers: &[VIRTUAL_KEY], key: VIRTUAL_KEY) -> Result<(), ()> {
+    let mut strokes = Vec::with_capacity(modifiers.len() * 2 + 2);
     for modifier in modifiers {
-        send_key(*modifier, KEYBD_EVENT_FLAGS(0));
+        strokes.push((*modifier, true));
     }
-    tap_vk(key);
+    strokes.push((key, true));
+    strokes.push((key, false));
     for modifier in modifiers.iter().rev() {
-        send_key(*modifier, KEYEVENTF_KEYUP);
+        strokes.push((*modifier, false));
     }
+    play_keys(&strokes, |virtual_key, down| {
+        let flags = if down {
+            KEYBD_EVENT_FLAGS(0)
+        } else {
+            KEYEVENTF_KEYUP
+        };
+        send_key(virtual_key, flags).is_ok()
+    })
 }
 
-fn send_key(key: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) {
+fn send_key(key: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> Result<(), ()> {
     let input = INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
@@ -363,32 +391,43 @@ fn send_key(key: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) {
             },
         },
     };
-    unsafe {
-        let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+    let sent = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
+    if sent == 1 {
+        Ok(())
+    } else {
+        Err(())
     }
 }
 
-fn send_unicode(ch: char) {
+fn send_unicode(ch: char) -> Result<(), ()> {
     let mut encoded = [0u16; 2];
-    for unit in ch.encode_utf16(&mut encoded) {
-        let down = INPUT {
+    let units = ch.encode_utf16(&mut encoded);
+    let strokes = units
+        .iter()
+        .copied()
+        .flat_map(|unit| [(unit, true), (unit, false)])
+        .collect::<Vec<_>>();
+    play_keys(&strokes, |unit, down| {
+        let flags = if down {
+            KEYEVENTF_UNICODE
+        } else {
+            KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+        };
+        let input = INPUT {
             r#type: INPUT_KEYBOARD,
             Anonymous: INPUT_0 {
                 ki: KEYBDINPUT {
                     wVk: VIRTUAL_KEY(0),
-                    wScan: *unit,
-                    dwFlags: KEYEVENTF_UNICODE,
+                    wScan: unit,
+                    dwFlags: flags,
                     time: 0,
                     dwExtraInfo: 0,
                 },
             },
         };
-        let mut up = down;
-        up.Anonymous.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-        unsafe {
-            let _ = SendInput(&[down, up], std::mem::size_of::<INPUT>() as i32);
-        }
-    }
+        let sent = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
+        sent == 1
+    })
 }
 
 fn virtual_key(name: &str) -> Option<VIRTUAL_KEY> {

@@ -2,7 +2,7 @@
 
 Live screen is a tailnet-only page the owner opens on a phone when an agent is stuck. The agent keeps using normal Hands tools. The owner watches a live JPEG of the machine and can tap, scroll, or type.
 
-Use it for a sign-in, captcha, UAC prompt, or any dialog the agent should not guess through. The agent must not type passwords, one-time codes, or other secrets. `live_screen_request_help` starts the page if it is not already running and returns a short message the agent can relay.
+Use it for a sign-in, captcha, UAC prompt, or any dialog the agent should not guess through. Live screen cannot drive an elevated or UAC prompt unless Hands itself is running elevated. The agent must not type passwords, one-time codes, or other secrets. `live_screen_request_help` starts the page if it is not already running and returns a short message the agent can relay.
 
 ## Tools
 
@@ -18,7 +18,7 @@ The URL uses the MagicDNS name read from `tailscale status --json` on that call.
 ## What the phone page does
 
 - Refreshes a JPEG about every 1.5 seconds. Quality is about 65. The phone sends its viewport width and the server downscales, capped at 1280 pixels wide.
-- Unchanged frames come back as a tiny `unchanged` body or HTTP 304, using an ETag.
+- Each viewer sends the ETag from its own previous response. A matching `If-None-Match` is HTTP 304 and the page keeps the image it already has. The first load, and any other viewer, always receives a full JPEG.
 - Tap is a left click. The page also has right-click and double-click modes, a batched scroll, and a password-style box for typed text. Typed text is not written to the log.
 - Buttons send Enter, Tab, Esc, Backspace, and Ctrl+L. A combo box sends other shortcuts. Win+L and similar lock, run, close, and secure-attention combinations are rejected.
 - Clicks are mapped from the JPEG back onto the real desktop, including more than one monitor and per-monitor DPI, and land on pixel centres.
