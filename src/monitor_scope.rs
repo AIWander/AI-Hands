@@ -1030,7 +1030,7 @@ fn risk_reducing_browser_cleanup(name: &str) -> bool {
 }
 
 pub fn prepare_call(name: &str, args: &Value) -> Result<Value, Value> {
-    if name == TOOL_NAME {
+    if name == TOOL_NAME || name.starts_with("live_screen_") {
         return Ok(args.clone());
     }
     let Some(monitor) = active_monitor()? else {

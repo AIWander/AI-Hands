@@ -16,7 +16,7 @@ AIWander tools are local, user-authorized MCP capability surfaces. They do not g
 
 ## What's New in v1.1.0-unified.2 (preview)
 
-- **Ability-first union:** the public and locally proven Hands surfaces are merged by capability, not by keeping every historical name. The safe `default` profile exposes 105 operational tools plus `hands_capability_catalog`; safe `full` and `strict` profiles and an explicitly unsafe compatibility/debug profile are selected through `HANDS_TOOL_PROFILE`.
+- **Ability-first union:** the public and locally proven Hands surfaces are merged by capability, not by keeping every historical name. The safe `default` profile exposes 109 operational tools plus `hands_capability_catalog`; safe `full` and `strict` profiles and an explicitly unsafe compatibility/debug profile are selected through `HANDS_TOOL_PROFILE`.
 - **Central monitor boundary:** `hands_monitor_scope` lists displays and applies one fail-closed scope across coordinate, UIA, browser-binding, screenshot, OCR, QR, and plugin paths. A locked opaque `physical:v1:<sha256>` stable ID returned by `action=list` is the recommended unattended setting; raw Windows device paths are never exposed.
 - **Collision-resistant screenshots:** automatic filenames include sub-second time, process ID, and a per-process sequence so same-second and concurrent captures do not overwrite one another.
 - **Two lean plugin profiles:** [`ai-hands`](plugins/ai-hands/) is hook-capable; [`ai-hands-skills`](plugins/ai-hands-skills/) contains no hook code and supplies a behavioral dispatch block for skills-only hosts. Both use the same four non-overlapping setup, routing, safety, and workflow skills.
@@ -270,7 +270,7 @@ These bundle a specific AI model with their own UI surface. AI-Hands does neithe
 
 ## Ability profiles and collections
 
-The safe-advertised profiles are `default` with 105 operational tools plus `hands_capability_catalog` (106 `tools/list` entries), `full` with 107 plus the catalog (108 entries), and `strict` with 109 plus the catalog (110 entries). `compatibility` exposes all 144 canonical union tools plus the catalog (145 entries), including unsafe raw/debug and native-plugin capabilities. Exact duplicate registrations and three Workflow-owned recording front doors are not retained.
+The safe-advertised profiles are `default` with 109 operational tools plus `hands_capability_catalog` (110 `tools/list` entries), `full` with 111 plus the catalog (112 entries), and `strict` with 113 plus the catalog (114 entries). `compatibility` exposes all 148 canonical union tools plus the catalog (149 entries), including unsafe raw/debug and native-plugin capabilities. Exact duplicate registrations and three Workflow-owned recording front doors are not retained.
 
 The plugin skill pack stays lean despite that dense surface: one skill chooses tools by ability, one handles setup, one activates at consequential action boundaries, and one handles multi-step recipes and failure recovery. They do not register alternate tools or competing ability owners.
 
@@ -288,8 +288,9 @@ The plugin skill pack stays lean despite that dense surface: one skill chooses t
 | Unified cross-surface actions and verification | 8 |
 | Run telemetry | 1 |
 | Monitor scope and topology | 1 |
-| Extensions, runtime, and health | 2 |
-| **Operational total** | **104** |
+| Extensions, runtime, and health | 3 |
+| Live screen | 4 |
+| **Operational total** | **109** |
 
 Keep `HANDS_TOOL_PROFILE=default` unless a specific safe capability requires `full` or `strict`. All three are safe-advertised. The `compatibility` profile is an unsafe debug escape hatch, not a faster operating mode. Its raw/direct-fetch/value/trace/QR/event/native-plugin tools require three explicit gates: `HANDS_TOOL_PROFILE=compatibility`, the matching process gate (`HANDS_ALLOW_UNSAFE_RAW_TOOLS=1`, `HANDS_ALLOW_UNSAFE_DIRECT_FETCH=1`, or `HANDS_ALLOW_UNSAFE_PLUGINS=1`), and the matching per-call acknowledgement (`allow_unsafe_raw=true`, `allow_unsafe_fetch=true`, or `allow_unsafe_plugin=true`). The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call. Use `hands_capability_catalog` to inspect safety classification, replacements, and profile membership.
 
@@ -300,6 +301,8 @@ For normal web reading, use a visible browser and current-state tools such as `h
 This is attack-surface reduction, not a secrecy or OS-sandbox guarantee. Hands remains a desktop-action runtime: UIA application launch and external applications can perform work outside the built-in dispatcher. Use isolated sessions and least privilege for sensitive browsing or desktop automation.
 
 The built-in Hands HTTP dashboard is off by default. Set `HANDS_ENABLE_DASHBOARD=1` only when a local operator deliberately needs it and has reviewed the listening boundary.
+
+Live screen is a tailnet-only page the owner opens on a phone when an agent is stuck. See [`docs/live-screen.md`](docs/live-screen.md).
 
 ## Capabilities Beyond the Basics
 
@@ -387,7 +390,7 @@ Host clients: Claude Desktop, Claude Code, OpenAI Codex CLI, Gemini CLI, or any 
 
 ### First-run tip for Claude clients
 
-The default profile exposes 106 entries spanning browser, UIA, vision, monitor scope, extensions, and the capability catalog. Enable **tools always loaded** in your Claude client's tool settings before the first call — a lazy-loaded client can miss layers on initial discovery and produce "tool not found" errors mid-session.
+The default profile exposes 110 entries spanning browser, UIA, vision, monitor scope, extensions, and the capability catalog. Enable **tools always loaded** in your Claude client's tool settings before the first call — a lazy-loaded client can miss layers on initial discovery and produce "tool not found" errors mid-session.
 
 ## Architecture
 

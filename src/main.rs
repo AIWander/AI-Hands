@@ -30,6 +30,7 @@ mod a11y_cache;
 mod atomic;
 mod canonical;
 mod dashboard_endpoint;
+mod live_screen;
 mod meta;
 mod monitor_scope;
 mod network_redaction;
@@ -96,6 +97,7 @@ fn get_all_tool_definitions_raw() -> Vec<Value> {
 
     // --- Central multi-monitor scope (one ability front door) ---
     tools.push(monitor_scope::tool_definition());
+    tools.extend(live_screen::tool_definitions());
 
     // --- Browser tools (from browser-mcp lib) ---
     // Tools that support a11y_ref for accessibility-first interaction
@@ -2901,6 +2903,13 @@ fn sanitize_tool_output(name: &str, value: Value) -> Value {
             *slot = Value::String(path);
         }
     }
+    for pointer in live_screen::preserved_output_pointers(name) {
+        if let Some(text) = value.pointer(pointer).and_then(Value::as_str) {
+            if let Some(slot) = safe.pointer_mut(pointer) {
+                *slot = Value::String(text.to_string());
+            }
+        }
+    }
     safe
 }
 
@@ -4270,6 +4279,10 @@ async fn handle_tool_call_inner(
         }
     }
 
+    if let Some(result) = live_screen::handle_tool(name, args) {
+        return result;
+    }
+
     // Combo tools (unique to Hands)
     match name {
         "find_and_click" => return handle_find_and_click(args).await,
@@ -4729,7 +4742,7 @@ mod unified_template_tests {
             .filter_map(|definition| definition.get("name").and_then(Value::as_str))
             .collect();
         let unique: HashSet<&str> = names.iter().copied().collect();
-        assert_eq!(names.len(), 144);
+        assert_eq!(names.len(), 148);
         assert_eq!(unique.len(), names.len());
     }
 
@@ -4856,6 +4869,24 @@ mod unified_template_tests {
             other_tool.pointer("/install/home"),
             raw.pointer("/install/home")
         );
+    }
+
+    #[test]
+    fn live_screen_keeps_the_owner_link_intact() {
+        let token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let url = format!("http://hands-host.example.ts.net:8744/{token}/");
+        let fallback = format!("http://100.64.1.2:8744/{token}/");
+        let message = format!("Open {url} to help. If that name does not open, use {fallback}.");
+        let raw = json!({
+            "success": true,
+            "url": url,
+            "fallback_url": fallback,
+            "message": message,
+        });
+        let safe = sanitize_tool_output("live_screen_request_help", raw.clone());
+        assert_eq!(safe.get("url"), raw.get("url"));
+        assert_eq!(safe.get("fallback_url"), raw.get("fallback_url"));
+        assert_eq!(safe.get("message"), raw.get("message"));
     }
 
     #[test]

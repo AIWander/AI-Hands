@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `live_screen_start`, `live_screen_status`, `live_screen_stop`, and `live_screen_request_help`: a tailnet-only live view the owner can open on a phone, with click and typing takeover, while Hands keeps its normal tools. See `docs/live-screen.md`.
+
+### Fixed
+
+- Live screen checks the host and session before reading a body, applies one deadline to a whole header or body, does not let unfinished handshakes take viewer slots, closes finished sockets, and stops on its TTL even when nobody is connected. A 304 is per viewer. Input Windows rejects is reported as `input_rejected` with the typed count. A UAC prompt on the secure desktop cannot be driven.
 - Runtime Hands home: `HANDS_HOME`, then `CPC_ROOT` as a back-compat alias, then `%LOCALAPPDATA%\AIWander\Hands`. No developer machine path, hostname, or address is compiled in.
 - `hands_setup_status` and MCP `instructions` that tell a host to call it first.
 - `Register-HandsClients.ps1` for stdio registration across Claude Desktop (including MSIX), Claude Code, Codex, Gemini CLI, Grok CLI, and Cursor. Existing hands entries are skipped unless `-Force`.

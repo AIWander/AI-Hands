@@ -23,10 +23,10 @@ Hands can discover evidence for these abilities, but Workflow owns persistence a
 
 ## Profile safety
 
-- `default`: 105 operational tools plus the catalog, 106 entries; safe-advertised and recommended.
-- `full`: 107 plus the catalog, 108 entries; safe-advertised.
-- `strict`: 109 plus the catalog, 110 entries; safe-advertised.
-- `compatibility`: 144 plus the catalog, 145 entries; unsafe debug escape hatch.
+- `default`: 109 operational tools plus the catalog, 110 entries; safe-advertised and recommended.
+- `full`: 111 plus the catalog, 112 entries; safe-advertised.
+- `strict`: 113 plus the catalog, 114 entries; safe-advertised.
+- `compatibility`: 148 plus the catalog, 149 entries; unsafe debug escape hatch.
 
 Compatibility-only raw/direct-fetch/value/trace/QR/event/native-plugin surfaces require three gates: `HANDS_TOOL_PROFILE=compatibility`, the matching process environment gate, and the matching per-call acknowledgement. The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call. Compatibility is not the normal speed path. Prefer visible navigation and structured text, `hands_find`, fixed batches, screenshots plus explicit verification, or bounded `uia_get_state`. Safe profiles reduce built-in first-party surface; they do not make Hands a general OS or secrecy sandbox.
 

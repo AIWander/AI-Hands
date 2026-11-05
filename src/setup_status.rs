@@ -20,7 +20,8 @@ Never guess install paths, host config locations, hostnames, or IP addresses. \
 Never invent, request creation of, or store a Tailscale auth key; the user signs in themselves. \
 If a host has no hands entry, tell the user to run Register-HandsClients.ps1. It writes the installed absolute path and skips hosts that already have a hands entry. \
 If Tailscale is missing or logged out, tell the user to run Initialize-HandsOnboarding.ps1. \
-ChatGPT desktop does not launch local stdio servers. Follow docs/chatgpt-desktop-mcp.md. Do not open a public URL, Tailscale Funnel, or an unauthenticated tunnel.";
+ChatGPT desktop does not launch local stdio servers. Follow docs/chatgpt-desktop-mcp.md. Do not open a public URL, Tailscale Funnel, or an unauthenticated tunnel. \
+When a sign-in, captcha, UAC prompt, or unexpected dialog blocks you and the owner is away from the computer, call live_screen_request_help. Never type passwords or other secrets for the user. Hand the sign-in to the owner through that live screen, and keep using normal Hands tools while it is open.";
 
 const HANDS_KEYS: &[&str] = &["hands", "ai-hands", "ai_hands"];
 
@@ -477,6 +478,10 @@ enum TailscaleError {
     StatusFailed,
 }
 
+pub(crate) fn tailscale_status_text() -> Result<String, ()> {
+    run_tailscale_status().map_err(|_| ())
+}
+
 fn run_tailscale_status() -> Result<String, TailscaleError> {
     let mut candidates = vec![PathBuf::from("tailscale")];
     if let Ok(program_files) = std::env::var("ProgramFiles") {
@@ -828,6 +833,8 @@ command = "npx"
                 || SERVER_INSTRUCTIONS.contains("Never invent")
         );
         assert!(SERVER_INSTRUCTIONS.contains("public URL"));
+        assert!(SERVER_INSTRUCTIONS.contains("live_screen_request_help"));
+        assert!(SERVER_INSTRUCTIONS.contains("Never type passwords"));
     }
 
     #[test]

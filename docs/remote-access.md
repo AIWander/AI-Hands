@@ -22,6 +22,8 @@ The MagicDNS name is read from `tailscale status --json` when a tool or the scri
 
 Tailscale Funnel is not turned on. A tailnet-only machine is the default.
 
+Live screen is a separate tailnet-only page for the owner, not a public MCP endpoint. See [live-screen.md](live-screen.md).
+
 ## If you decline Tailscale
 
 The onboarding script prints one of these authenticated alternatives. It does not run them.

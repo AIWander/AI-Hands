@@ -94,8 +94,8 @@ class PluginProfileTests(unittest.TestCase):
                 "not a general OS sandbox",
             ),
             "ai-hands-getting-started": (
-                "105 operational tools",
-                "`compatibility` exposes 145 entries",
+                "109 operational tools",
+                "`compatibility` exposes 149 entries",
                 "browser_trace_stop",
             ),
             "ai-hands-safety": (
