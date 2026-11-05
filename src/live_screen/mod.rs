@@ -106,9 +106,11 @@ struct Live {
     ttl: Option<Duration>,
     stop: AtomicBool,
     allow_loopback: bool,
+    io_deadline: Duration,
     clients: Mutex<Vec<(Option<SocketAddr>, std::net::TcpStream)>>,
-    inflight: Mutex<usize>,
-    inflight_cv: Condvar,
+    workers: Mutex<usize>,
+    workers_cv: Condvar,
+    viewers: Mutex<usize>,
     last_viewer: Mutex<Option<Instant>>,
     last_action: Mutex<Option<Instant>>,
     action_lock: Mutex<()>,
@@ -187,6 +189,7 @@ fn start_on_windows(args: &Value) -> Value {
         ttl,
         false,
         None,
+        READ_TIMEOUT,
     );
     let serve = Arc::clone(&live);
     let http = match thread::Builder::new()
@@ -218,7 +221,7 @@ fn start_on_windows(args: &Value) -> Value {
         if let Some(timer) = timer {
             let _ = timer.join();
         }
-        http::wait_idle(&live);
+        let _ = http::wait_idle(&live);
         if let Some(banner) = banner {
             let _ = banner.join();
         }
@@ -243,6 +246,7 @@ fn new_live(
     ttl: Option<Duration>,
     allow_loopback: bool,
     canned_jpeg: Option<Vec<u8>>,
+    io_deadline: Duration,
 ) -> Arc<Live> {
     Arc::new(Live {
         token,
@@ -253,9 +257,11 @@ fn new_live(
         ttl,
         stop: AtomicBool::new(false),
         allow_loopback,
+        io_deadline,
         clients: Mutex::new(Vec::new()),
-        inflight: Mutex::new(0),
-        inflight_cv: Condvar::new(),
+        workers: Mutex::new(0),
+        workers_cv: Condvar::new(),
+        viewers: Mutex::new(0),
         last_viewer: Mutex::new(None),
         last_action: Mutex::new(None),
         action_lock: Mutex::new(()),
@@ -357,11 +363,19 @@ fn stop() -> Value {
         if let Some(timer) = runtime.timer {
             let _ = timer.join();
         }
-        http::wait_idle(&runtime.live);
+        let idle = http::wait_idle(&runtime.live);
         if let Some(banner) = runtime.banner {
             let _ = banner.join();
         }
-        json!({ "success": true, "running": false })
+        if idle {
+            json!({ "success": true, "running": false })
+        } else {
+            json!({
+                "success": false,
+                "running": true,
+                "error": "Live screen did not finish stopping because a connection was still open."
+            })
+        }
     }
 }
 
@@ -620,6 +634,7 @@ struct Reply {
 
 enum Plan {
     Reply(Reply),
+    Serve(Route),
     ReadBody { length: usize },
 }
 
@@ -652,7 +667,7 @@ fn plan(live: &Live, incoming: &Incoming<'_>, client_ip: Option<IpAddr>) -> Plan
             Some(length) => Plan::ReadBody { length },
             None => Plan::Reply(json_reply(400, "bad_input", false)),
         },
-        Gate::Allow(route) => Plan::Reply(reply_route(live, route, incoming)),
+        Gate::Allow(route) => Plan::Serve(route),
     }
 }
 
@@ -743,9 +758,11 @@ fn action_reply(live: &Live, body: &[u8]) -> Reply {
         ),
         Err(ActionResult::Rejected { typed }) => json_body(
             409,
-            serde_json::to_vec(
-                &json!({"error":"input_rejected","reason":"elevated_window","typed": typed}),
-            )
+            serde_json::to_vec(&json!({
+                "error": "input_rejected",
+                "typed": typed,
+                "hint": "Windows rejected the input and does not say why. Possible causes include a higher-integrity window. A UAC prompt on the secure desktop cannot be driven at all."
+            }))
             .unwrap_or_default(),
             false,
         ),
@@ -1003,7 +1020,7 @@ async function post(body) {
   if (res.status === 409) {
     const payload = await res.json().catch(function () { return {}; });
     if (payload.error === 'focus_changed') setStatus('Typing stopped because the focused window changed.');
-    else if (payload.error === 'input_rejected') setStatus('That window blocked the input. Hands cannot drive an elevated or UAC prompt unless it is running elevated.');
+    else if (payload.error === 'input_rejected') setStatus('Windows rejected that input and does not say why. A UAC prompt on the secure desktop cannot be driven.');
     else if (payload.error === 'busy') setStatus('Another action is still running.');
     else setStatus('That action is blocked.');
     return;

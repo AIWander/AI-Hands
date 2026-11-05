@@ -1,21 +1,23 @@
 //! Small HTTP listener for the live screen.
 //!
-//! Headers are checked before any body byte is read. Each connection has a
-//! read timeout, only a few run at once, and stop shuts the sockets down so
-//! a stalled body cannot pin the accept loop.
+//! Headers are checked before any body byte is read. Each request has one
+//! deadline for the headers and one for the body, unfinished sockets are
+//! closed when the handler returns, and stop shuts the rest down.
 
 use super::policy::access_log_line;
-use super::{plan, reply_with_body, Incoming, Live, Plan, Reply, READ_TIMEOUT};
+use super::{plan, reply_route, reply_with_body, Incoming, Live, Plan, Reply};
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-pub(super) const MAX_IN_FLIGHT: usize = 4;
+pub(super) const MAX_VIEWERS: usize = 4;
+const MAX_WORKERS: usize = 32;
 const HEADER_LIMIT: usize = 16 * 1024;
 const ACCEPT_POLL: Duration = Duration::from_millis(50);
+const READ_POLL: Duration = Duration::from_millis(25);
 
 pub(super) fn serve(live: Arc<Live>, listener: TcpListener) {
     let _ = listener.set_nonblocking(true);
@@ -41,17 +43,21 @@ pub(super) fn signal_stop(live: &Live) {
     }
 }
 
-pub(super) fn wait_idle(live: &Live) {
-    let Ok(mut count) = live.inflight.lock() else {
-        return;
+/// Returns true only when every connection thread has exited.
+pub(super) fn wait_idle(live: &Live) -> bool {
+    let Ok(mut count) = live.workers.lock() else {
+        return false;
     };
     let deadline = Instant::now() + Duration::from_secs(2);
-    while *count > 0 {
+    loop {
+        if *count == 0 {
+            return true;
+        }
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            break;
+            return false;
         }
-        count = match live.inflight_cv.wait_timeout(count, remaining) {
+        count = match live.workers_cv.wait_timeout(count, remaining) {
             Ok((guard, _)) => guard,
             Err(poisoned) => poisoned.into_inner().0,
         };
@@ -59,7 +65,7 @@ pub(super) fn wait_idle(live: &Live) {
 }
 
 fn accept_one(live: &Arc<Live>, stream: TcpStream) {
-    if !begin_slot(live) {
+    if !begin_count(&live.workers, MAX_WORKERS) {
         refuse_busy(stream);
         return;
     }
@@ -67,37 +73,78 @@ fn accept_one(live: &Arc<Live>, stream: TcpStream) {
     let spawned = thread::Builder::new()
         .name("hands-live-conn".to_string())
         .spawn(move || {
-            let _slot = SlotGuard(Arc::clone(&worker));
+            let _worker = CountGuard(Arc::clone(&worker));
             handle_connection(worker, stream);
         });
     if spawned.is_err() {
-        end_slot(live);
+        end_count(&live.workers, &live.workers_cv);
     }
 }
 
-fn begin_slot(live: &Live) -> bool {
-    let Ok(mut count) = live.inflight.lock() else {
+fn begin_count(count: &Mutex<usize>, limit: usize) -> bool {
+    let Ok(mut count) = count.lock() else {
         return false;
     };
-    if *count >= MAX_IN_FLIGHT {
+    if *count >= limit {
         return false;
     }
     *count += 1;
     true
 }
 
-fn end_slot(live: &Live) {
-    if let Ok(mut count) = live.inflight.lock() {
+fn end_count(count: &Mutex<usize>, wake: &Condvar) {
+    if let Ok(mut count) = count.lock() {
         *count = count.saturating_sub(1);
-        live.inflight_cv.notify_all();
+        wake.notify_all();
     }
 }
 
-struct SlotGuard(Arc<Live>);
+struct CountGuard(Arc<Live>);
 
-impl Drop for SlotGuard {
+impl Drop for CountGuard {
     fn drop(&mut self) {
-        end_slot(&self.0);
+        end_count(&self.0.workers, &self.0.workers_cv);
+    }
+}
+
+struct SocketGuard {
+    live: Arc<Live>,
+    peer: Option<std::net::SocketAddr>,
+}
+
+impl SocketGuard {
+    fn track(live: &Arc<Live>, stream: &TcpStream) -> Self {
+        let peer = stream.peer_addr().ok();
+        if let (Some(peer), Ok(clone)) = (peer, stream.try_clone()) {
+            if let Ok(mut clients) = live.clients.lock() {
+                clients.push((Some(peer), clone));
+            }
+        }
+        Self {
+            live: Arc::clone(live),
+            peer,
+        }
+    }
+}
+
+impl Drop for SocketGuard {
+    fn drop(&mut self) {
+        let Some(peer) = self.peer else {
+            return;
+        };
+        let Ok(mut clients) = self.live.clients.lock() else {
+            return;
+        };
+        let mut kept = Vec::with_capacity(clients.len());
+        for (addr, stream) in clients.drain(..) {
+            if addr == Some(peer) {
+                let _ = stream.shutdown(Shutdown::Both);
+                drop(stream);
+            } else {
+                kept.push((addr, stream));
+            }
+        }
+        *clients = kept;
     }
 }
 
@@ -117,19 +164,13 @@ fn refuse_busy(mut stream: TcpStream) {
 }
 
 fn handle_connection(live: Arc<Live>, mut stream: TcpStream) {
-    let peer = stream.peer_addr().ok();
-    let _ = stream.set_nonblocking(false);
-    let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
-    let _ = stream.set_write_timeout(Some(READ_TIMEOUT));
-    if let Ok(clone) = stream.try_clone() {
-        if let Ok(mut clients) = live.clients.lock() {
-            clients.push((peer, clone));
-        }
-    }
-    let client_ip = peer.map(|addr| addr.ip());
+    let _socket = SocketGuard::track(&live, &stream);
+    let _ = stream.set_nonblocking(true);
+    let client_ip = stream.peer_addr().ok().map(|addr| addr.ip());
     let mut logged = None;
+    let header_deadline = Instant::now() + live.io_deadline;
     let outcome = (|| {
-        let (head, rest) = read_head(&mut stream, &live)?;
+        let (head, rest) = read_head(&mut stream, &live, header_deadline)?;
         let parsed = parse_request(&head)?;
         logged = Some((parsed.method.clone(), parsed.path.clone()));
         let incoming = Incoming {
@@ -146,8 +187,14 @@ fn handle_connection(live: Arc<Live>, mut stream: TcpStream) {
         };
         match plan(&live, &incoming, client_ip) {
             Plan::Reply(reply) => Ok(reply),
+            Plan::Serve(route) => {
+                let _viewer = ViewerGuard::enter(&live)?;
+                Ok(reply_route(&live, route, &incoming))
+            }
             Plan::ReadBody { length } => {
-                let body = read_body(&mut stream, &live, length, rest)?;
+                let _viewer = ViewerGuard::enter(&live)?;
+                let body_deadline = Instant::now() + live.io_deadline;
+                let body = read_body(&mut stream, &live, length, rest, body_deadline)?;
                 Ok(reply_with_body(&live, &incoming, client_ip, &body))
             }
         }
@@ -156,12 +203,15 @@ fn handle_connection(live: Arc<Live>, mut stream: TcpStream) {
         Ok(reply) => reply,
         Err(ReadFail::Timeout) => error_reply(408, "timed_out"),
         Err(ReadFail::TooLarge) => error_reply(413, "too_large"),
+        Err(ReadFail::Busy) => error_reply(503, "busy"),
         Err(ReadFail::Stopped | ReadFail::Closed) => return,
         Err(ReadFail::Bad) => error_reply(400, "bad_input"),
     };
     if reply.count_viewer {
         live.note_viewer();
     }
+    let _ = stream.set_nonblocking(false);
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
     let _ = write_reply(&mut stream, &reply);
     let _ = stream.shutdown(Shutdown::Both);
     if let Some((method, path)) = logged {
@@ -184,15 +234,35 @@ enum ReadFail {
     Stopped,
     Closed,
     Bad,
+    Busy,
 }
 
-fn read_head(stream: &mut TcpStream, live: &Live) -> Result<(Vec<u8>, Vec<u8>), ReadFail> {
+struct ViewerGuard(Arc<Live>);
+
+impl ViewerGuard {
+    fn enter(live: &Arc<Live>) -> Result<Self, ReadFail> {
+        if begin_count(&live.viewers, MAX_VIEWERS) {
+            Ok(Self(Arc::clone(live)))
+        } else {
+            Err(ReadFail::Busy)
+        }
+    }
+}
+
+impl Drop for ViewerGuard {
+    fn drop(&mut self) {
+        end_count(&self.0.viewers, &self.0.workers_cv);
+    }
+}
+
+fn read_head(
+    stream: &mut TcpStream,
+    live: &Live,
+    deadline: Instant,
+) -> Result<(Vec<u8>, Vec<u8>), ReadFail> {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 1024];
     loop {
-        if live.stop.load(Ordering::SeqCst) {
-            return Err(ReadFail::Stopped);
-        }
         if let Some(split) = header_split(&buf) {
             let head = buf[..split].to_vec();
             let rest = buf[split + 4..].to_vec();
@@ -201,17 +271,8 @@ fn read_head(stream: &mut TcpStream, live: &Live) -> Result<(Vec<u8>, Vec<u8>), 
         if buf.len() >= HEADER_LIMIT {
             return Err(ReadFail::TooLarge);
         }
-        match stream.read(&mut tmp) {
-            Ok(0) => return Err(ReadFail::Closed),
-            Ok(count) => buf.extend_from_slice(&tmp[..count]),
-            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
-            Err(error)
-                if error.kind() == ErrorKind::TimedOut || error.kind() == ErrorKind::WouldBlock =>
-            {
-                return Err(ReadFail::Timeout);
-            }
-            Err(_) => return Err(ReadFail::Closed),
-        }
+        let count = read_some(stream, live, deadline, &mut tmp)?;
+        buf.extend_from_slice(&tmp[..count]);
     }
 }
 
@@ -224,6 +285,7 @@ fn read_body(
     live: &Live,
     length: usize,
     mut already: Vec<u8>,
+    deadline: Instant,
 ) -> Result<Vec<u8>, ReadFail> {
     if already.len() > length {
         already.truncate(length);
@@ -231,23 +293,38 @@ fn read_body(
     }
     let mut tmp = [0u8; 4096];
     while already.len() < length {
+        let want = (length - already.len()).min(tmp.len());
+        let count = read_some(stream, live, deadline, &mut tmp[..want])?;
+        already.extend_from_slice(&tmp[..count]);
+    }
+    Ok(already)
+}
+
+fn read_some(
+    stream: &mut TcpStream,
+    live: &Live,
+    deadline: Instant,
+    buf: &mut [u8],
+) -> Result<usize, ReadFail> {
+    loop {
         if live.stop.load(Ordering::SeqCst) {
             return Err(ReadFail::Stopped);
         }
-        let want = (length - already.len()).min(tmp.len());
-        match stream.read(&mut tmp[..want]) {
+        if Instant::now() >= deadline {
+            return Err(ReadFail::Timeout);
+        }
+        match stream.read(buf) {
             Ok(0) => return Err(ReadFail::Closed),
-            Ok(count) => already.extend_from_slice(&tmp[..count]),
+            Ok(count) => return Ok(count),
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
             Err(error)
-                if error.kind() == ErrorKind::TimedOut || error.kind() == ErrorKind::WouldBlock =>
+                if error.kind() == ErrorKind::WouldBlock || error.kind() == ErrorKind::TimedOut =>
             {
-                return Err(ReadFail::Timeout);
+                thread::sleep(READ_POLL);
             }
             Err(_) => return Err(ReadFail::Closed),
         }
     }
-    Ok(already)
 }
 
 struct Parsed {
@@ -391,6 +468,10 @@ mod tests {
 
     impl Running {
         fn open(ttl: Option<Duration>, jpeg: Option<Vec<u8>>) -> Self {
+            Self::start(ttl, jpeg, READ_TIMEOUT)
+        }
+
+        fn start(ttl: Option<Duration>, jpeg: Option<Vec<u8>>, io_deadline: Duration) -> Self {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let addr = listener.local_addr().unwrap();
             let live = new_live(
@@ -401,6 +482,7 @@ mod tests {
                 ttl,
                 true,
                 jpeg,
+                io_deadline,
             );
             let worker = Arc::clone(&live);
             let http = std::thread::spawn(move || serve(worker, listener));
@@ -413,15 +495,15 @@ mod tests {
             }
         }
 
-        fn stop(self) -> Duration {
+        fn stop(self) -> (Duration, bool) {
             let started = Instant::now();
             signal_stop(&self.live);
             let _ = self.http.join();
             if let Some(timer) = self.timer {
                 let _ = timer.join();
             }
-            wait_idle(&self.live);
-            started.elapsed()
+            let idle = wait_idle(&self.live);
+            (started.elapsed(), idle)
         }
     }
 
@@ -498,9 +580,13 @@ mod tests {
         let mut hung = TcpStream::connect(running.addr).unwrap();
         hung.write_all(stall.as_bytes()).unwrap();
         std::thread::sleep(Duration::from_millis(100));
-        let stopped = running.stop();
+        let (stopped, idle) = running.stop();
         assert!(
-            stopped < Duration::from_secs(2),
+            idle,
+            "stop reported success while a worker was still running"
+        );
+        assert!(
+            stopped < Duration::from_millis(1000),
             "stop waited on the body: {stopped:?}"
         );
     }
@@ -544,6 +630,107 @@ mod tests {
         std::thread::sleep(Duration::from_millis(800));
         assert!(running.live.stop.load(Ordering::SeqCst));
         assert!(TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_err());
+        running.stop();
+    }
+
+    #[test]
+    fn slow_headers_do_not_fill_viewer_slots() {
+        let running = Running::start(None, None, Duration::from_millis(500));
+        let host = host_line(running.addr);
+        let mut drips = Vec::new();
+        for _ in 0..4 {
+            let mut stream = TcpStream::connect(running.addr).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            stream.write_all(b"G").unwrap();
+            drips.push(stream);
+        }
+        let page = format!("GET /{TOKEN}/ HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+        let (status, _, _) = exchange(running.addr, &page);
+        assert_eq!(status, 200);
+        std::thread::sleep(Duration::from_millis(100));
+        for stream in &mut drips {
+            let _ = stream.write_all(b"E");
+        }
+        let (status, _, _) = exchange(running.addr, &page);
+        assert_eq!(
+            status, 200,
+            "a drip of header bytes must not crowd out a viewer"
+        );
+        std::thread::sleep(Duration::from_millis(700));
+        for stream in &mut drips {
+            let mut buf = Vec::new();
+            let _ = stream.read_to_end(&mut buf);
+            let text = String::from_utf8_lossy(&buf);
+            assert!(
+                text.contains("408"),
+                "slow header should hit the request deadline: {text}"
+            );
+        }
+        running.stop();
+    }
+
+    #[test]
+    fn finished_connections_drop_their_socket_handles() {
+        let running = Running::open(None, None);
+        let host = host_line(running.addr);
+        let page = format!("GET /{TOKEN}/ HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+        for _ in 0..20 {
+            let (status, _, _) = exchange(running.addr, &page);
+            assert_eq!(status, 200);
+        }
+        let mut left = usize::MAX;
+        for _ in 0..20 {
+            left = running
+                .live
+                .clients
+                .lock()
+                .map(|guard| guard.len())
+                .unwrap_or(0);
+            if left == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        assert_eq!(left, 0, "finished requests kept socket handles");
+        running.stop();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn injected_send_failure_returns_typed_count_and_releases_modifiers() {
+        let running = Running::open(None, None);
+        let host = host_line(running.addr);
+        crate::live_screen::platform::arm_send_script(2);
+        let payload = r#"{"op":"type","text":"abcd"}"#;
+        let typed = format!(
+            "POST /{TOKEN}/action HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nX-Hands-Live-Action: 1\r\nOrigin: http://{host}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+            payload.len()
+        );
+        let (status, _, body) = exchange(running.addr, &typed);
+        assert_eq!(status, 409, "{}", String::from_utf8_lossy(&body));
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["error"], "input_rejected");
+        assert_eq!(value["typed"], 2);
+        let hint = value["hint"].as_str().unwrap();
+        assert!(hint.contains("does not say why"));
+        assert!(hint.contains("secure desktop"));
+        assert!(!hint.contains("elevated_window"));
+
+        crate::live_screen::platform::arm_send_script(1);
+        let combo = r#"{"op":"combo","keys":"ctrl+shift+t"}"#;
+        let request = format!(
+            "POST /{TOKEN}/action HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nX-Hands-Live-Action: 1\r\nOrigin: http://{host}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{combo}",
+            combo.len()
+        );
+        let (status, _, body) = exchange(running.addr, &request);
+        assert_eq!(status, 409, "{}", String::from_utf8_lossy(&body));
+        let log = crate::live_screen::platform::take_send_log();
+        assert!(
+            log.iter().any(|(key, up)| *up && *key == 0x11),
+            "ctrl was not released: {log:?}"
+        );
         running.stop();
     }
 }

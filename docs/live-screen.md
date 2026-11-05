@@ -2,7 +2,7 @@
 
 Live screen is a tailnet-only page the owner opens on a phone when an agent is stuck. The agent keeps using normal Hands tools. The owner watches a live JPEG of the machine and can tap, scroll, or type.
 
-Use it for a sign-in, captcha, UAC prompt, or any dialog the agent should not guess through. Live screen cannot drive an elevated or UAC prompt unless Hands itself is running elevated. The agent must not type passwords, one-time codes, or other secrets. `live_screen_request_help` starts the page if it is not already running and returns a short message the agent can relay.
+Use it for a sign-in, captcha, or any dialog the agent should not guess through. A UAC prompt on the secure desktop cannot be driven at all, even when Hands is running elevated. Other input Windows rejects is reported as `input_rejected`; the system does not say whether the cause was integrity level or something else. The agent must not type passwords, one-time codes, or other secrets. `live_screen_request_help` starts the page if it is not already running and returns a short message the agent can relay.
 
 ## Tools
 

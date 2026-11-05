@@ -185,6 +185,9 @@ pub fn scroll_at(x: i32, y: i32, dx: i32, dy: i32) -> Result<(), InputFault> {
 }
 
 pub fn type_text(text: &str) -> Result<usize, TypeStop> {
+    if send_script_active() {
+        return type_chars(text);
+    }
     let start = unsafe { GetForegroundWindow() };
     if start.0.is_null() {
         return Err(TypeStop::FocusChanged(0));
@@ -195,17 +198,31 @@ pub fn type_text(text: &str) -> Result<usize, TypeStop> {
         if now != start {
             return Err(TypeStop::FocusChanged(typed));
         }
-        let sent = match ch {
-            '\n' => tap_vk(VK_RETURN),
-            '\t' => tap_vk(VK_TAB),
-            _ => send_unicode(ch),
-        };
-        if sent.is_err() {
+        if type_one(ch).is_err() {
             return Err(TypeStop::Rejected(typed));
         }
         typed += 1;
     }
     Ok(typed)
+}
+
+fn type_chars(text: &str) -> Result<usize, TypeStop> {
+    let mut typed = 0usize;
+    for ch in text.chars() {
+        if type_one(ch).is_err() {
+            return Err(TypeStop::Rejected(typed));
+        }
+        typed += 1;
+    }
+    Ok(typed)
+}
+
+fn type_one(ch: char) -> Result<(), ()> {
+    match ch {
+        '\n' => tap_vk(VK_RETURN),
+        '\t' => tap_vk(VK_TAB),
+        _ => send_unicode(ch),
+    }
 }
 
 pub fn tap_key(name: &str) -> Result<(), InputFault> {
@@ -378,7 +395,58 @@ fn modifier_tap(modifiers: &[VIRTUAL_KEY], key: VIRTUAL_KEY) -> Result<(), ()> {
     })
 }
 
+struct SendScript {
+    downs_left: usize,
+    log: Vec<(u16, bool)>,
+}
+
+static SEND_SCRIPT: Mutex<Option<SendScript>> = Mutex::new(None);
+
+pub fn arm_send_script(downs_before_failure: usize) {
+    if let Ok(mut guard) = SEND_SCRIPT.lock() {
+        *guard = Some(SendScript {
+            downs_left: downs_before_failure,
+            log: Vec::new(),
+        });
+    }
+}
+
+pub fn take_send_log() -> Vec<(u16, bool)> {
+    SEND_SCRIPT
+        .lock()
+        .ok()
+        .and_then(|mut guard| guard.take())
+        .map(|script| script.log)
+        .unwrap_or_default()
+}
+
+fn send_script_active() -> bool {
+    SEND_SCRIPT
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|_| ()))
+        .is_some()
+}
+
+/// `up` is true for a key-up. Returns None when no script is installed.
+fn scripted_send(key: u16, up: bool) -> Option<bool> {
+    let mut guard = SEND_SCRIPT.lock().ok()?;
+    let script = guard.as_mut()?;
+    script.log.push((key, up));
+    if !up {
+        if script.downs_left == 0 {
+            return Some(false);
+        }
+        script.downs_left -= 1;
+    }
+    Some(true)
+}
+
 fn send_key(key: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> Result<(), ()> {
+    let up = (flags.0 & KEYEVENTF_KEYUP.0) != 0;
+    if let Some(accepted) = scripted_send(key.0, up) {
+        return if accepted { Ok(()) } else { Err(()) };
+    }
     let input = INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
@@ -408,6 +476,9 @@ fn send_unicode(ch: char) -> Result<(), ()> {
         .flat_map(|unit| [(unit, true), (unit, false)])
         .collect::<Vec<_>>();
     play_keys(&strokes, |unit, down| {
+        if let Some(accepted) = scripted_send(unit, !down) {
+            return accepted;
+        }
         let flags = if down {
             KEYEVENTF_UNICODE
         } else {
