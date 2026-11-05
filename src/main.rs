@@ -4845,11 +4845,17 @@ mod unified_template_tests {
         ] {
             assert_eq!(safe.pointer(pointer), raw.pointer(pointer), "{pointer}");
         }
-        assert_ne!(safe.pointer("/hosts/1/command"), raw.pointer("/hosts/1/command"));
+        assert_ne!(
+            safe.pointer("/hosts/1/command"),
+            raw.pointer("/hosts/1/command")
+        );
         assert_ne!(safe.get("note"), raw.get("note"));
 
         let other_tool = sanitize_tool_output("some_other_tool", raw.clone());
-        assert_ne!(other_tool.pointer("/install/home"), raw.pointer("/install/home"));
+        assert_ne!(
+            other_tool.pointer("/install/home"),
+            raw.pointer("/install/home")
+        );
     }
 
     #[test]
