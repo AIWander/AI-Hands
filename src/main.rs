@@ -33,8 +33,10 @@ mod dashboard_endpoint;
 mod meta;
 mod monitor_scope;
 mod network_redaction;
+mod paths;
 mod plugin;
 mod security;
+mod setup_status;
 mod stealth;
 mod uia;
 mod uia_lib;
@@ -430,12 +432,14 @@ fn get_all_tool_definitions_raw() -> Vec<Value> {
 
     tools.push(json!({
         "name": "hands_health",
-        "description": "Diagnostic health check for the hands server. Returns cpc-paths path resolution status (Volumes, install, backups) plus browser, vision, and UIA subsystem probe results.",
+        "description": "Diagnostic health check for the hands server. Returns path resolution plus browser, vision, and UIA subsystem probe results.",
         "inputSchema": {
             "type": "object",
             "properties": {}
         }
     }));
+
+    tools.push(setup_status::tool_definition());
 
     tools.push(json!({
         "name": "hands_summarize_run",
@@ -2848,6 +2852,36 @@ fn capture_path_pointers(name: &str) -> &'static [&'static str] {
     }
 }
 
+/// Install locations the first-run instructions tell the model to use verbatim.
+/// Only these fields of `hands_setup_status` skip path redaction, and a host
+/// `command` only when it is an executable path rather than a command line.
+fn trusted_setup_paths(name: &str, value: &Value) -> Vec<(String, String)> {
+    if name != "hands_setup_status" {
+        return Vec::new();
+    }
+    let mut pointers = vec![
+        "/install/home".to_string(),
+        "/install/executable".to_string(),
+    ];
+    let host_count = value
+        .get("hosts")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    for index in 0..host_count {
+        pointers.push(format!("/hosts/{index}/config_path"));
+        pointers.push(format!("/hosts/{index}/command"));
+    }
+    pointers
+        .into_iter()
+        .filter_map(|pointer| {
+            let path = value.pointer(&pointer)?.as_str()?.to_string();
+            let is_command_line =
+                pointer.ends_with("/command") && !path.to_ascii_lowercase().ends_with(".exe");
+            (!is_command_line).then_some((pointer, path))
+        })
+        .collect()
+}
+
 fn sanitize_tool_output(name: &str, value: Value) -> Value {
     let owned_capture_paths = capture_path_pointers(name)
         .iter()
@@ -2856,13 +2890,14 @@ fn sanitize_tool_output(name: &str, value: Value) -> Value {
                 .pointer(pointer)
                 .and_then(Value::as_str)
                 .filter(|path| monitor_scope::is_safe_generated_capture_path(path))
-                .map(|path| (*pointer, path.to_string()))
+                .map(|path| ((*pointer).to_string(), path.to_string()))
         })
+        .chain(trusted_setup_paths(name, &value))
         .collect::<Vec<_>>();
 
     let mut safe = network_redaction::redact_network_value(&value);
     for (pointer, path) in owned_capture_paths {
-        if let Some(slot) = safe.pointer_mut(pointer) {
+        if let Some(slot) = safe.pointer_mut(&pointer) {
             *slot = Value::String(path);
         }
     }
@@ -4255,6 +4290,7 @@ async fn handle_tool_call_inner(
         "retry_click" => return handle_retry_click(args, browser).await,
         "file_upload" => return handle_file_upload(args, browser).await,
         "status" | "hands_status" | "hands_health" => return handle_unified_health(),
+        "hands_setup_status" => return setup_status::handle(),
         "hands_summarize_run" => return meta::summarize_run::handle(args),
         "vision_cache_stats" => return meta::vision_cache::handle_stats(args),
         "vision_ocr_capabilities" => return meta::ocr_fast::handle_capabilities(args),
@@ -4565,7 +4601,8 @@ fn handle_request(
                     "name": "hands",
                     "version": env!("CARGO_PKG_VERSION"),
                     "description": "Unified canonical interaction template: browser + UIA + vision"
-                }
+                },
+                "instructions": setup_status::SERVER_INSTRUCTIONS
             })),
             error: None,
         },
@@ -4692,7 +4729,7 @@ mod unified_template_tests {
             .filter_map(|definition| definition.get("name").and_then(Value::as_str))
             .collect();
         let unique: HashSet<&str> = names.iter().copied().collect();
-        assert_eq!(names.len(), 143);
+        assert_eq!(names.len(), 144);
         assert_eq!(unique.len(), names.len());
     }
 
@@ -4779,6 +4816,46 @@ mod unified_template_tests {
         );
 
         std::fs::remove_file(path).expect("remove capture fixture");
+    }
+
+    #[test]
+    fn setup_status_keeps_only_trusted_install_paths() {
+        let exe = r"C:\Users\someone\AppData\Local\AIWander\Hands\bin\hands.exe";
+        let raw = json!({
+            "install": {
+                "home": r"C:\Users\someone\AppData\Local\AIWander\Hands",
+                "executable": exe
+            },
+            "hosts": [
+                {"config_path": r"C:\Users\someone\.codex\config.toml", "command": exe},
+                {
+                    "config_path": r"C:\Users\someone\.grok\config.toml",
+                    "command": r"run C:\Users\someone\private\wrapper.cmd"
+                }
+            ],
+            "note": r"C:\Users\someone\private\notes.txt"
+        });
+        let safe = sanitize_tool_output("hands_setup_status", raw.clone());
+        for pointer in [
+            "/install/home",
+            "/install/executable",
+            "/hosts/0/config_path",
+            "/hosts/0/command",
+            "/hosts/1/config_path",
+        ] {
+            assert_eq!(safe.pointer(pointer), raw.pointer(pointer), "{pointer}");
+        }
+        assert_ne!(
+            safe.pointer("/hosts/1/command"),
+            raw.pointer("/hosts/1/command")
+        );
+        assert_ne!(safe.get("note"), raw.get("note"));
+
+        let other_tool = sanitize_tool_output("some_other_tool", raw.clone());
+        assert_ne!(
+            other_tool.pointer("/install/home"),
+            raw.pointer("/install/home")
+        );
     }
 
     #[test]

@@ -32,7 +32,7 @@ toc_generated_at: 2026-04-14
 
 # Getting Started with Hands
 
-Hands is a Rust MCP server for browser automation, Windows UI Automation (UIA), vision/OCR, monitor-scoped action, and verification. The safe `default`, `full`, and `strict` profiles advertise 105, 107, and 109 entries including the catalog. It connects to Claude Desktop, Claude Code, or any MCP-compatible client over standard JSON-RPC on stdin/stdout.
+Hands is a Rust MCP server for browser automation, Windows UI Automation (UIA), vision/OCR, monitor-scoped action, and verification. The safe `default`, `full`, and `strict` profiles advertise 106, 108, and 110 entries including the catalog. It connects to Claude Desktop, Claude Code, or any MCP-compatible client over standard JSON-RPC on stdin/stdout.
 
 Unlike Claude computer use, which relies on repeated screenshots and pixel-coordinate guessing, Hands gives AI agents direct access to the DOM, the Windows accessibility tree, and dedicated OCR --- each chosen for the task at hand. For a full comparison, see the [README](../README.md).
 
@@ -77,20 +77,9 @@ Add the server to your Claude Desktop config at `%APPDATA%\Claude\claude_desktop
 
 ### Configure for Claude Code
 
-Add it to `~/.claude/mcp.json` (global) or `.mcp.json` (per-project):
+User scope is `%USERPROFILE%\.claude.json` (or `%CLAUDE_CONFIG_DIR%\.claude.json`) under the top-level `mcpServers` key. Project scope is `.mcp.json`, which this installer does not write. Prefer `Register-HandsClients.ps1`, which writes the absolute path of `hands.exe`.
 
-```json
-{
-  "mcpServers": {
-    "hands": {
-      "command": "C:/path/to/hands.exe",
-      "args": []
-    }
-  }
-}
-```
-
-Restart Claude Desktop or Claude Code after editing. The recommended `default` profile will advertise 105 entries including `hands_capability_catalog`.
+Restart Claude Desktop or Claude Code after editing. The recommended `default` profile will advertise 106 entries including `hands_capability_catalog`. Call `hands_setup_status` before guessing a path.
 
 ## Architecture Overview
 
@@ -287,7 +276,7 @@ Key safe-profile meta-tools:
 
 **Browser compatibility mode.** Launch and attach flows can apply compatibility adjustments for authorized automation testing in environments you control or have permission to test. Users are responsible for site terms and permissions.
 
-**Safe profile boundary.** `default`, `full`, and `strict` advertise 105, 107, and 109 entries including the catalog. `compatibility` advertises 144 and is an unsafe debug escape hatch, not a speed path. A compatibility-only raw, built-in direct-fetch, or native-plugin call requires `HANDS_TOOL_PROFILE=compatibility`, the matching process gate (`HANDS_ALLOW_UNSAFE_RAW_TOOLS=1`, `HANDS_ALLOW_UNSAFE_DIRECT_FETCH=1`, or `HANDS_ALLOW_UNSAFE_PLUGINS=1`), and the matching per-call acknowledgement. The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call. Keep durable/direct API methods in Workflow or another dedicated web/network owner. Safe profiles reduce the built-in first-party surface; Hands can still launch and act through external desktop applications and is not a general OS sandbox.
+**Safe profile boundary.** `default`, `full`, and `strict` advertise 106, 108, and 110 entries including the catalog. `compatibility` advertises 145 and is an unsafe debug escape hatch, not a speed path. A compatibility-only raw, built-in direct-fetch, or native-plugin call requires `HANDS_TOOL_PROFILE=compatibility`, the matching process gate (`HANDS_ALLOW_UNSAFE_RAW_TOOLS=1`, `HANDS_ALLOW_UNSAFE_DIRECT_FETCH=1`, or `HANDS_ALLOW_UNSAFE_PLUGINS=1`), and the matching per-call acknowledgement. The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call. Keep durable/direct API methods in Workflow or another dedicated web/network owner. Safe profiles reduce the built-in first-party surface; Hands can still launch and act through external desktop applications and is not a general OS sandbox.
 
 Before enabling a monitor fence, clear browser routes and stop any active trace; fence activation refuses while either persistent state is active. Under an active fence, `browser_route` and `browser_trace_start` fail closed, while `browser_route_remove`, `browser_route_clear`, and `browser_trace_stop` remain available so cleanup cannot be trapped.
 

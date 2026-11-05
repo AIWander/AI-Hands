@@ -17,10 +17,10 @@ or a direct API shortcut replace the current visible state.
 
 | Profile | Operational tools | Catalog | Advertised entries | Safety |
 |---|---:|---:|---:|---|
-| `default` | 104 | 1 | 105 | Safe-advertised; recommended |
-| `full` | 106 | 1 | 107 | Safe-advertised |
-| `strict` | 108 | 1 | 109 | Safe-advertised |
-| `compatibility` | 143 | 1 | 144 | Unsafe debug escape hatch |
+| `default` | 105 | 1 | 106 | Safe-advertised; recommended |
+| `full` | 107 | 1 | 108 | Safe-advertised |
+| `strict` | 109 | 1 | 110 | Safe-advertised |
+| `compatibility` | 144 | 1 | 145 | Unsafe debug escape hatch |
 
 Keep `HANDS_TOOL_PROFILE=default` unless a specific safe capability requires
 `full` or `strict`. Use `hands_capability_catalog` to inspect profile membership,

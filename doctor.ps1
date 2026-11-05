@@ -23,11 +23,15 @@ Write-Host "===================================" -ForegroundColor Cyan
 Write-Host ""
 
 # 1. Binary exists
+$handsHome = if ($env:HANDS_HOME) { $env:HANDS_HOME } elseif ($env:CPC_ROOT) { $env:CPC_ROOT } else { Join-Path $env:LOCALAPPDATA 'AIWander\Hands' }
 $binaryPaths = @(
-    "$env:LOCALAPPDATA\CPC\servers\hands.exe",
-    "C:\MCP\servers\hands.exe",
-    "$env:LOCALAPPDATA\hands\hands.exe"
+    (Join-Path $handsHome 'bin\hands.exe'),
+    (Join-Path $handsHome 'hands.exe')
 )
+$handsCommand = Get-Command hands -ErrorAction SilentlyContinue
+if ($handsCommand -and $handsCommand.Source) {
+    $binaryPaths = @($handsCommand.Source) + $binaryPaths
+}
 $foundBinary = $false
 foreach ($p in $binaryPaths) {
     if (Test-Path $p) {

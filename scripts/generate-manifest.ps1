@@ -73,7 +73,7 @@ $groups = [ordered]@{
     )
     'extensions-runtime-health' = @(
         'hands_health','hands_plugin_call','hands_plugin_list','hands_plugin_load',
-        'hands_plugin_unload','status'
+        'hands_plugin_unload','hands_setup_status','status'
     )
 }
 

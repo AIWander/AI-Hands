@@ -14,7 +14,7 @@
 //!   replay (dry_run), prune, optionally replace
 //!
 //! ## Storage
-//! Records live in `cpc_paths::data_path("hands")/self_records.json`. Writes are
+//! Records live in `{Hands home}/data/self_records.json`. Writes are
 //! atomic (write `.tmp` then rename), matching the workflow MCP pattern documented
 //! in Operating_workflow.md.
 
@@ -164,9 +164,7 @@ fn generate_flow_name(task_description: &str, timestamp_secs: i64) -> String {
 // ──────────────────────────────────────────────────────────────────────
 
 fn records_path() -> Result<PathBuf, String> {
-    let dir = cpc_paths::data_path("hands")
-        .map_err(|e| format!("cpc_paths::data_path(hands) failed: {}", e))?;
-    Ok(dir.join(SELF_RECORDS_FILE))
+    Ok(crate::paths::hands_data_dir().join(SELF_RECORDS_FILE))
 }
 
 fn load_records() -> Result<SelfRecordsFile, String> {

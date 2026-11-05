@@ -8,7 +8,10 @@ Packaging artifacts and post-install helpers for AI-Hands.
 |------|---------|
 | `winget/manifests/a/AIWander/AI-Hands/<version>/` | Per-version winget v1.6 manifests pending submission to `microsoft/winget-pkgs`. Source of truth until merged. |
 | `scoop/ai-hands.json` | Scoop manifest for users on the Scoop ecosystem. Can be installed directly from the URL or via a bucket. |
-| `scripts/register-hands.ps1` | Post-install helper: wires `hands` into Claude Desktop's `claude_desktop_config.json` (ARCHIVE-FIRST backup, idempotent, supports `-Force` and `-DryRun`). |
+| `scripts/Register-HandsClients.ps1` | Post-install helper: writes the absolute `hands.exe` path into Claude Desktop (classic and MSIX), Claude Code, Codex, Gemini CLI, Grok CLI, and Cursor. Backs up first. Skips a host that already has a hands entry unless `-Force`. |
+| `scripts/register-hands.ps1` | Forwards to `Register-HandsClients.ps1`. |
+| `scripts/Initialize-HandsOnboarding.ps1` | Optional Tailscale install and user sign-in. Declining it prints an authenticated Cloudflare Tunnel or ngrok flow. No public URL by default. |
+| `payload/` | `README.md`, `AGENTS.md`, and `skills/hands-getting-started/SKILL.md` copied into the Hands home. |
 | `scripts/generate-winget-manifests.ps1` | Version-bump helper: pulls release-asset metadata via `gh release view` and renders the three winget YAMLs for a new version. |
 
 ## Submitting to winget (`microsoft/winget-pkgs`)
@@ -49,21 +52,23 @@ Scoop manifests can be installed from any URL with `scoop install`. The lowest-f
 
 ## Post-install registration
 
-After winget/Scoop drops `hands.exe` onto PATH, register it with Claude Desktop:
+After winget/Scoop drops `hands.exe` onto PATH, register it with every installed stdio host:
 
 ```powershell
-# Interactive (prompts if already registered)
-.\installers\scripts\register-hands.ps1
+# Skip hosts that already have a hands entry
+.\installers\scripts\Register-HandsClients.ps1
 
-# Replace existing entry without prompting
-.\installers\scripts\register-hands.ps1 -Force
+# Replace existing entries
+.\installers\scripts\Register-HandsClients.ps1 -Force
 
-# Show the diff without writing
-.\installers\scripts\register-hands.ps1 -DryRun
+# Show actions without writing
+.\installers\scripts\Register-HandsClients.ps1 -DryRun
 ```
 
-The script writes a `.bak.<yyyyMMdd-HHmmss>` of `claude_desktop_config.json` before any edit. The backup path is always printed; revert with:
+`register-hands.ps1` forwards to the same script. A `.bak.<yyyyMMdd-HHmmss>` file is written beside each config before that config is changed. ChatGPT desktop is not registered; see [`docs/chatgpt-desktop-mcp.md`](../docs/chatgpt-desktop-mcp.md).
+
+Optional Tailscale setup, with the user signing in themselves:
+
 ```powershell
-Move-Item $env:APPDATA\Claude\claude_desktop_config.json.bak.<timestamp> `
-          $env:APPDATA\Claude\claude_desktop_config.json -Force
+.\installers\scripts\Initialize-HandsOnboarding.ps1
 ```

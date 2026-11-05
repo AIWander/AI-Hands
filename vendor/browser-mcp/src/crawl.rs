@@ -25,7 +25,7 @@ pub fn default_user_agent() -> String {
     std::env::var("CPC_CRAWLER_UA").unwrap_or_else(|_| DEFAULT_UA.to_string())
 }
 
-/// Optional egress proxy from `CPC_CRAWLER_PROXY` (e.g. `http://100.x.x.x:8888`).
+/// Optional egress proxy from `CPC_CRAWLER_PROXY` (for example `http://proxy.example:8888`).
 pub fn proxy_from_env() -> Option<String> {
     std::env::var("CPC_CRAWLER_PROXY")
         .ok()

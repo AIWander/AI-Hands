@@ -7,8 +7,9 @@
 //! no browser, no session, no async.
 //!
 //! Inputs come from two sources:
-//!   1. Breadcrumb JSON at cpc_paths::volumes_path()/breadcrumbs/{active,completed/<date>}/bc_*.json
-//!   2. Instrumentation log at <resolved_log_dir>/hands_meta.jsonl
+//!   1. Breadcrumb JSON under `CPC_VOLUMES_PATH/breadcrumbs` when that variable is set,
+//!      otherwise `{Hands home}/data/breadcrumbs`
+//!   2. Instrumentation log at `{Hands home}/logs/hands_meta.jsonl`
 //!
 //! Acceptance criterion (aspirational, warm cache): <50ms per breadcrumb_id.
 //! Cold-cache timings are reported in the response's `timing` block so callers
@@ -21,7 +22,6 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-const LEGACY_LOG_DIR: &str = r"C:\CPC\logs";
 const LOG_FILE: &str = "hands_meta.jsonl";
 
 /// Maximum failure_steps entries returned (cap to avoid explosion on long runs).
@@ -46,19 +46,19 @@ pub fn handle(args: &Value) -> Value {
 }
 
 fn resolve_breadcrumbs_root() -> PathBuf {
-    cpc_paths::volumes_path()
-        .map(|path| path.join("breadcrumbs"))
-        .unwrap_or_else(|_| {
-            cpc_paths::data_path("hands")
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join("breadcrumbs")
-        })
+    if let Ok(volumes) = std::env::var("CPC_VOLUMES_PATH") {
+        let trimmed = volumes.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed).join("breadcrumbs");
+        }
+    }
+    crate::paths::hands_data_dir().join("breadcrumbs")
 }
 
-/// Resolve the hands_meta.jsonl path via the same legacy-fallback logic used by
-/// instrumentation.rs. We don't duplicate the resolver — we call it directly.
+/// Resolve the hands_meta.jsonl path via the same Hands-home logic used by
+/// instrumentation.rs.
 fn resolve_log_path() -> Option<PathBuf> {
-    crate::meta::instrumentation::_resolve_hands_log_dir(Path::new(LEGACY_LOG_DIR))
+    crate::meta::instrumentation::_resolve_hands_log_dir(&crate::paths::hands_logs_dir())
         .ok()
         .map(|dir| dir.join(LOG_FILE))
 }
