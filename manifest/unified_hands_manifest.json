@@ -18,7 +18,7 @@
     }
   },
   "counts": {
-    "raw_union_unique": 144,
+    "raw_union_unique": 148,
     "local_registrations": 128,
     "local_unique": 126,
     "local_exact_duplicate_registrations": 2,
@@ -28,17 +28,17 @@
     "local_only": 7,
     "removed_workflow_front_doors": 3,
     "template_only": 2,
-    "strict_unique": 109,
-    "full_unique": 107,
-    "default_unique": 105,
+    "strict_unique": 113,
+    "full_unique": 111,
+    "default_unique": 109,
     "template_catalog_tool": 1,
-    "compatibility_tools_list": 145,
-    "strict_tools_list": 110,
-    "full_tools_list": 108,
-    "default_tools_list": 106
+    "compatibility_tools_list": 149,
+    "strict_tools_list": 114,
+    "full_tools_list": 112,
+    "default_tools_list": 110
   },
   "profiles": {
-    "compatibility": "UNSAFE DEBUG PROFILE. All 144 canonical union tools are advertised, including raw content, trace, direct-fetch, native-plugin execution, QR, form-value, and UIA value/event surfaces. Use only for deliberate compatibility/debug work; exact duplicate registrations and three Workflow-owned self-record front doors remain removed.",
+    "compatibility": "UNSAFE DEBUG PROFILE. All 148 canonical union tools are advertised, including raw content, trace, direct-fetch, native-plugin execution, QR, form-value, and UIA value/event surfaces. Use only for deliberate compatibility/debug work; exact duplicate registrations and three Workflow-owned self-record front doors remain removed.",
     "strict": "Safe advertised surface with raw content, trace, direct-fetch, native-plugin execution, QR, form-value, and UIA value/event front doors hidden; retains the strict-only OCR alias and health alias.",
     "full": "Safe canonical surface with raw content, trace, direct-fetch, native-plugin execution, QR, form-value, UIA value/event, redundant compatibility, and absorbed front doors hidden.",
     "default": "Safe full surface minus manual attach-lock acquire/release; adds one catalog tool."
@@ -310,6 +310,19 @@
         "hands_plugin_load",
         "hands_plugin_unload",
         "hands_setup_status"
+      ]
+    },
+    {
+      "id": "live-screen",
+      "raw": 4,
+      "strict": 4,
+      "full": 4,
+      "default": 4,
+      "tools": [
+        "live_screen_start",
+        "live_screen_status",
+        "live_screen_stop",
+        "live_screen_request_help"
       ]
     }
   ],
@@ -2240,10 +2253,62 @@
       "exposed_strict": true,
       "exposed_full": true,
       "exposed_default": true
+    },
+    {
+      "name": "live_screen_start",
+      "collection": "live-screen",
+      "local": false,
+      "github_main": false,
+      "source_status": "Unified template only",
+      "ability": "Open a tailnet-only live view of this machine so the owner can watch and take over from a phone.",
+      "disposition": "canonical",
+      "replacement": null,
+      "exposed_strict": true,
+      "exposed_full": true,
+      "exposed_default": true
+    },
+    {
+      "name": "live_screen_status",
+      "collection": "live-screen",
+      "local": false,
+      "github_main": false,
+      "source_status": "Unified template only",
+      "ability": "Report whether the tailnet live screen is running and which URL the owner should open.",
+      "disposition": "canonical",
+      "replacement": null,
+      "exposed_strict": true,
+      "exposed_full": true,
+      "exposed_default": true
+    },
+    {
+      "name": "live_screen_stop",
+      "collection": "live-screen",
+      "local": false,
+      "github_main": false,
+      "source_status": "Unified template only",
+      "ability": "Stop the live screen and invalidate its session URL.",
+      "disposition": "canonical",
+      "replacement": null,
+      "exposed_strict": true,
+      "exposed_full": true,
+      "exposed_default": true
+    },
+    {
+      "name": "live_screen_request_help",
+      "collection": "live-screen",
+      "local": false,
+      "github_main": false,
+      "source_status": "Unified template only",
+      "ability": "Start the tailnet live screen when a sign-in or unexpected dialog needs the owner, and return a message to relay.",
+      "disposition": "canonical",
+      "replacement": null,
+      "exposed_strict": true,
+      "exposed_full": true,
+      "exposed_default": true
     }
   ],
   "checks": {
-    "expected_union_unique": 144,
+    "expected_union_unique": 148,
     "raw_union_matches_expected": true,
     "assigned_unique_matches_expected": true,
     "source_duplicate_names": [],
@@ -2252,9 +2317,9 @@
     "removed_workflow_front_doors_absent": true,
     "monitor_scope_present": true,
     "exact_cover": true,
-    "group_raw_sum": 144.0,
-    "group_strict_sum": 109.0,
-    "group_full_sum": 107.0,
-    "group_default_sum": 105.0
+    "group_raw_sum": 148.0,
+    "group_strict_sum": 113.0,
+    "group_full_sum": 111.0,
+    "group_default_sum": 109.0
   }
 }

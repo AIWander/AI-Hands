@@ -39,8 +39,8 @@ store, credential, and run any durable direct API method. Verify reused results 
 current visible state when accuracy matters.
 
 ### Profiles and Unsafe Compatibility
-`default`, `full`, and `strict` are safe-advertised and expose 106, 108, and 110
-entries including `hands_capability_catalog`. `compatibility` exposes 145 entries and
+`default`, `full`, and `strict` are safe-advertised and expose 110, 112, and 114
+entries including `hands_capability_catalog`. `compatibility` exposes 149 entries and
 is an unsafe debug escape hatch, not a speed path. A compatibility-only raw,
 built-in direct-fetch, or native-plugin call requires all three:
 `HANDS_TOOL_PROFILE=compatibility`, the matching process gate
@@ -70,6 +70,9 @@ available so cleanup cannot be trapped.
 
 The Hands HTTP dashboard is off by default. Set `HANDS_ENABLE_DASHBOARD=1` only when
 a local operator deliberately opts in after reviewing the listening boundary.
+
+### Stuck, and the owner is away
+Call `live_screen_request_help` for a sign-in, captcha, UAC prompt, or unexpected dialog. Do not type passwords or other secrets for the user. Keep using normal Hands tools while the owner watches the tailnet live screen.
 
 ### Vision = Verification, Not Perception
 Use vision tools (screenshot, OCR, template match) to **confirm** states, not to

@@ -44,6 +44,9 @@ regex = "1"
 # Opaque, deterministic physical-monitor identities
 sha2 = "0.10"
 
+# Session tokens for the tailnet live screen
+getrandom = "0.2"
+
 # QR code decoding for TOTP 2FA registration
 # v1.0.1 dep-bump: 0.7 → 0.10 to pull lru ^0.16 (GHSA-rhfx-m35p-ff5j, lru < 0.16.3)
 rqrr = { version = "0.11", default-features = false }
@@ -72,4 +75,5 @@ windows = { version = "0.58", features = [
     "Win32_UI_Shell",
     "Win32_Graphics_Gdi",
     "Win32_Storage_Xps",
+    "Win32_System_LibraryLoader",
 ]}

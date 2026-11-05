@@ -15,14 +15,20 @@ A single MCP server (`hands.exe`) with safe-advertised browser, Windows UIA, vis
 
 | Profile | Operational tools | Catalog | Advertised entries | Safety |
 |---|---:|---:|---:|---|
-| `default` | 105 | 1 | 106 | Safe-advertised; recommended |
-| `full` | 107 | 1 | 108 | Safe-advertised |
-| `strict` | 109 | 1 | 110 | Safe-advertised |
-| `compatibility` | 144 | 1 | 145 | Unsafe debug escape hatch |
+| `default` | 109 | 1 | 110 | Safe-advertised; recommended |
+| `full` | 111 | 1 | 112 | Safe-advertised |
+| `strict` | 113 | 1 | 114 | Safe-advertised |
+| `compatibility` | 148 | 1 | 149 | Unsafe debug escape hatch |
 
 Compatibility is not the fast path. A raw/debug, built-in direct-fetch, or native-plugin call requires `HANDS_TOOL_PROFILE=compatibility`, the matching process gate (`HANDS_ALLOW_UNSAFE_RAW_TOOLS=1`, `HANDS_ALLOW_UNSAFE_DIRECT_FETCH=1`, or `HANDS_ALLOW_UNSAFE_PLUGINS=1`), and the matching per-call acknowledgement (`allow_unsafe_raw=true`, `allow_unsafe_fetch=true`, or `allow_unsafe_plugin=true`). The composite `browser_script` and `browser_evaluate` tools require both the direct-fetch and raw gate pairs. Whenever monitor scope is active, these vendor composites and aliases fail closed even when every compatibility gate is present: `browser_agent`/`agent`, `browser_batch`/`batch`, `browser_script`/`script`, `browser_evaluate`/`evaluate`, `browser_screenshot_burst`/`screenshot_burst`, `browser_scroll_collect`/`scroll_collect`, `browser_wait_stable`/`wait_stable`, and `retry_click` (with `browser_retry_click` treated defensively as an alias). Their nested vendor steps cannot revalidate the bound browser window. Use individually scoped browser calls or compatibility-gated `hands_script`, which centrally revalidates each nested call. Safe profiles reduce the built-in first-party surface; Hands can still launch external desktop applications and is not a general OS or secrecy sandbox.
 
 Before enabling a monitor fence, clear browser routes and stop any active trace; fence activation refuses while either persistent state is active. Under an active fence, `browser_route` and `browser_trace_start` fail closed, while `browser_route_remove`, `browser_route_clear`, and `browser_trace_stop` remain available so cleanup cannot be trapped.
+
+## When you are stuck and the owner is away
+
+Call `live_screen_request_help` with a short reason and no secrets. It opens a tailnet-only page the owner can open on a phone, watch, and take over with taps or typing. Keep using normal Hands tools while that page is open.
+
+Do not type passwords, one-time codes, or other secrets for the user. At a sign-in, captcha, UAC prompt, or unexpected dialog, hand over with `live_screen_request_help`.
 
 ## First Steps -- Browser
 
