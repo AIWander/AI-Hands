@@ -44,7 +44,7 @@ function Get-ResolvedHandsHome {
 }
 
 function Resolve-HandsExecutable {
-    param([string]$Home)
+    param([string]$TargetHome)
     if ($HandsExe) {
         if (-not (Test-Path -LiteralPath $HandsExe)) {
             throw "HandsExe not found: $HandsExe"
@@ -55,7 +55,7 @@ function Resolve-HandsExecutable {
     if (-not $command) { $command = Get-Command hands.exe -ErrorAction SilentlyContinue }
     if ($command -and $command.Source) { return $command.Source }
     foreach ($relative in @('bin\hands.exe', 'hands.exe')) {
-        $candidate = Join-Path $Home $relative
+        $candidate = Join-Path $TargetHome $relative
         if (Test-Path -LiteralPath $candidate) {
             return (Resolve-Path -LiteralPath $candidate).Path
         }
@@ -63,7 +63,7 @@ function Resolve-HandsExecutable {
     throw @"
 hands.exe was not found.
 Pass -HandsExe, put hands on PATH, or place it in:
-    $(Join-Path $Home 'bin\hands.exe')
+    $(Join-Path $TargetHome 'bin\hands.exe')
 "@
 }
 
@@ -103,7 +103,7 @@ function Test-HasHandsName {
 }
 
 function Install-GuidanceFiles {
-    param([string]$Home)
+    param([string]$TargetHome)
     $payload = Join-Path (Split-Path -Parent $PSScriptRoot) 'payload'
     if (-not (Test-Path -LiteralPath $payload)) {
         Write-Host "Guidance payload not found beside the script. Existing install files were left as they are."
@@ -116,7 +116,7 @@ function Install-GuidanceFiles {
     )
     foreach ($copy in $copies) {
         $source = Join-Path $payload $copy.Source
-        $dest = Join-Path $Home $copy.Dest
+        $dest = Join-Path $TargetHome $copy.Dest
         if (-not (Test-Path -LiteralPath $source)) {
             Write-Warning "Missing payload file: $source"
             continue
@@ -138,7 +138,7 @@ function Install-GuidanceFiles {
     }
     foreach ($scriptName in @('Register-HandsClients.ps1', 'Initialize-HandsOnboarding.ps1')) {
         $source = Join-Path $PSScriptRoot $scriptName
-        $dest = Join-Path $Home $scriptName
+        $dest = Join-Path $TargetHome $scriptName
         if (-not (Test-Path -LiteralPath $source)) { continue }
         if ((Resolve-Path -LiteralPath $source).Path -eq $(if (Test-Path -LiteralPath $dest) { (Resolve-Path -LiteralPath $dest).Path } else { '' })) {
             continue
@@ -147,7 +147,7 @@ function Install-GuidanceFiles {
             Backup-ConfigFile -Path $dest | Out-Null
         }
         if ($DryRun) {
-            Write-Host "[DryRun] Would copy $scriptName into $Home"
+            Write-Host "[DryRun] Would copy $scriptName into $TargetHome"
             continue
         }
         Copy-Item -LiteralPath $source -Destination $dest -Force
@@ -160,7 +160,10 @@ function New-HandsJsonEntry {
     return [pscustomobject]@{
         command = $Command
         args    = @()
-        env     = [pscustomobject]@{ HANDS_TOOL_PROFILE = 'default' }
+        env     = [pscustomobject]@{
+            HANDS_TOOL_PROFILE = 'default'
+            HANDS_HOME         = $script:homeDir
+        }
     }
 }
 
@@ -222,13 +225,14 @@ function Test-TomlHasHands {
     param([string]$Text)
     return [regex]::IsMatch(
         $Text,
-        '(?im)^\s*\[mcp_servers\.(?:"hands"|"ai-hands"|"ai_hands"|hands|ai-hands|ai_hands)\]\s*$'
+        '(?im)^\s*\[mcp_servers\.(?:"hands"|"ai-hands"|"ai_hands"|hands|ai-hands|ai_hands)\]\s*(?:#.*)?$'
     )
 }
 
 function Get-TomlHandsBlock {
     param([string]$Command)
     $escaped = $Command.Replace('\', '\\').Replace('"', '\"')
+    $escapedHome = $script:homeDir.Replace('\', '\\').Replace('"', '\"')
     return @"
 
 [mcp_servers.hands]
@@ -237,6 +241,7 @@ args = []
 
 [mcp_servers.hands.env]
 HANDS_TOOL_PROFILE = "default"
+HANDS_HOME = "$escapedHome"
 "@
 }
 
@@ -262,6 +267,7 @@ function Register-TomlMcp {
     }
     if ($existed) { Backup-ConfigFile -Path $Path | Out-Null }
     $escaped = $Command.Replace('\', '\\').Replace('"', '\"')
+    $escapedHome = $script:homeDir.Replace('\', '\\').Replace('"', '\"')
     if ($hasHands) {
         $pattern = '(?im)(?<=^\s*\[mcp_servers\.(?:"hands"|"ai-hands"|"ai_hands"|hands|ai-hands|ai_hands)\][^\[]*?)(^\s*command\s*=\s*.*$)'
         if ([regex]::IsMatch($text, $pattern)) {
@@ -295,13 +301,13 @@ function Test-CommandPresent {
 }
 
 $homeDir = Get-ResolvedHandsHome
-$exe = Resolve-HandsExecutable -Home $homeDir
+$exe = Resolve-HandsExecutable -TargetHome $homeDir
 Write-Host "Hands home: $homeDir"
 Write-Host "Hands exe:  $exe"
 if (-not $DryRun -and -not (Test-Path -LiteralPath $homeDir)) {
     New-Item -ItemType Directory -Force -Path $homeDir | Out-Null
 }
-Install-GuidanceFiles -Home $homeDir
+Install-GuidanceFiles -TargetHome $homeDir
 
 $profileDir = $env:USERPROFILE
 if (-not $profileDir) { $profileDir = $env:HOME }

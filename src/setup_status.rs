@@ -397,7 +397,7 @@ fn toml_header_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| {
         Regex::new(
-            r#"(?im)^\s*\[mcp_servers\.(?:"hands"|"ai-hands"|"ai_hands"|hands|ai-hands|ai_hands)\]\s*$"#,
+            r#"(?im)^\s*\[mcp_servers\.(?:"hands"|"ai-hands"|"ai_hands"|hands|ai-hands|ai_hands)\]\s*(?:#.*)?$"#,
         )
         .expect("hands toml header pattern")
     })
@@ -526,19 +526,27 @@ fn spawn_tailscale_status(candidate: &Path) -> Result<String, TailscaleError> {
                 TailscaleError::StatusFailed
             }
         })?;
+    let Some(pipe) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(TailscaleError::StatusFailed);
+    };
+    // Drain stdout while waiting: a status larger than the pipe buffer would
+    // otherwise block the process until the timeout killed it.
+    let reader = thread::spawn(move || {
+        let mut stdout = String::new();
+        let mut limited = pipe.take(TAILSCALE_STATUS_MAX_BYTES + 1);
+        limited.read_to_string(&mut stdout).map(|_| stdout)
+    });
     let started = Instant::now();
     loop {
         match child.try_wait() {
             Ok(Some(_)) => {
-                let mut stdout = String::new();
-                if let Some(mut pipe) = child.stdout.take() {
-                    let _ = pipe.read_to_string(&mut stdout);
-                }
-                let trimmed = stdout.trim();
-                if trimmed.starts_with('{') && trimmed.len() <= 1_000_000 {
-                    return Ok(trimmed.to_string());
-                }
-                return Err(TailscaleError::StatusFailed);
+                let stdout = reader
+                    .join()
+                    .map_err(|_| TailscaleError::StatusFailed)?
+                    .map_err(|_| TailscaleError::StatusFailed)?;
+                return validated_tailscale_status(&stdout);
             }
             Ok(None) if started.elapsed() > Duration::from_secs(5) => {
                 let _ = child.kill();
@@ -546,8 +554,23 @@ fn spawn_tailscale_status(candidate: &Path) -> Result<String, TailscaleError> {
                 return Err(TailscaleError::StatusFailed);
             }
             Ok(None) => thread::sleep(Duration::from_millis(50)),
-            Err(_) => return Err(TailscaleError::StatusFailed),
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(TailscaleError::StatusFailed);
+            }
         }
+    }
+}
+
+const TAILSCALE_STATUS_MAX_BYTES: u64 = 1_000_000;
+
+fn validated_tailscale_status(stdout: &str) -> Result<String, TailscaleError> {
+    let trimmed = stdout.trim();
+    if trimmed.starts_with('{') && trimmed.len() as u64 <= TAILSCALE_STATUS_MAX_BYTES {
+        Ok(trimmed.to_string())
+    } else {
+        Err(TailscaleError::StatusFailed)
     }
 }
 
@@ -805,5 +828,28 @@ command = "npx"
                 || SERVER_INSTRUCTIONS.contains("Never invent")
         );
         assert!(SERVER_INSTRUCTIONS.contains("public URL"));
+    }
+
+    #[test]
+    fn toml_header_with_trailing_comment_is_detected() {
+        let toml = "[mcp_servers.hands] # local tools\ncommand = 'D:/bin/hands.exe'\n";
+        assert!(toml_header_pattern().is_match(toml));
+        assert!(hands_toml_section(toml).is_some());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn tailscale_status_larger_than_the_pipe_buffer_completes() {
+        let dir = std::env::temp_dir().join(format!("hands-ts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("big_status.cmd");
+        std::fs::write(
+            &script,
+            "@powershell -NoProfile -Command \"'{' + ('x' * 300000) + '}'\"\r\n",
+        )
+        .unwrap();
+        let status = spawn_tailscale_status(&script);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(matches!(status, Ok(text) if text.len() > 300_000));
     }
 }
